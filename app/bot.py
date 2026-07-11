@@ -578,8 +578,14 @@ async def handle_link(_, message: Message) -> None:
         ]
     ])
 
+    args_display = f"\n- **Args**: `{' '.join(sanitized_args)}`" if sanitized_args else ""
+    prompt_text = (
+        f"**Job #{job.id} registered**\n"
+        f"- **URL**: {url}{args_display}\n\n"
+        "Do you want to split files larger than 2GB for this job?"
+    )
     status_msg = await message.reply_text(
-        "Do you want to split files larger than 2GB for this job?",
+        prompt_text,
         reply_markup=keyboard
     )
     await store.set_status_message(job.id, status_msg.id)
@@ -609,7 +615,18 @@ async def handle_split_choice(_, callback_query: CallbackQuery) -> None:
     await store.db.commit()
 
     # Edit the message to show queued status (removing the inline keyboard)
-    status_text = f"Queued (job #{job_id})."
+    import json
+    parsed_args = []
+    if job.args:
+        try:
+            parsed_args = json.loads(job.args)
+        except Exception:
+            pass
+    args_display = f"\n- **Args**: `{' '.join(parsed_args)}`" if parsed_args else ""
+    status_text = (
+        f"**Queued (job #{job_id})**\n"
+        f"- **URL**: {job.url}{args_display}"
+    )
     await callback_query.message.edit_text(status_text)
     await callback_query.answer("Choice registered.")
 
