@@ -195,7 +195,21 @@ async def upload_file(
                         # Add screenshots after the video
                         for shot in screenshots:
                             media.append(InputMediaPhoto(str(shot)))
-                        await client.send_media_group(chat_id, media=media)
+
+                        # Dynamically patch save_file to track upload progress of the video file
+                        import types
+                        original_save_file = client.save_file
+
+                        async def custom_save_file(client_inst, path_arg, *args, **kwargs):
+                            if str(path_arg) == str(path):
+                                kwargs["progress"] = progress
+                            return await original_save_file(path_arg, *args, **kwargs)
+
+                        client.save_file = types.MethodType(custom_save_file, client)
+                        try:
+                            await client.send_media_group(chat_id, media=media)
+                        finally:
+                            client.save_file = original_save_file
                     else:
                         kwargs = {"caption": path.name}
                         if thumb_path:
