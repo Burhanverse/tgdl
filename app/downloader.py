@@ -78,7 +78,7 @@ async def run_with_progress(
     url: str,
     dest_dir: Path,
     archive_file: Path,
-    on_progress: Optional[Callable[[int], None]] = None,
+    on_progress: Optional[Callable[[int, Optional[str]], None]] = None,
     extra_args: Optional[list[str]] = None,
 ) -> DownloadResult:
 
@@ -113,8 +113,19 @@ async def run_with_progress(
             assert proc.stdout is not None
             async for line in proc.stdout:
                 count += 1
-                if on_progress and count % 5 == 0:
-                    on_progress(count)
+                text = line.decode(errors="replace").strip()
+                filename = None
+                if text:
+                    parts = text.split()
+                    if parts:
+                        last_part = parts[-1].strip("'\"")
+                        if "/" in last_part or "\\" in last_part or "." in last_part:
+                            try:
+                                filename = Path(last_part).name
+                            except Exception:
+                                pass
+                if on_progress:
+                    on_progress(count, filename)
 
         async def pump_stderr():
             assert proc.stderr is not None

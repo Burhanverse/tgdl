@@ -56,6 +56,7 @@ _current_job_id: int | None = None
 _active_job_metrics: dict[str, any] = {
     "download_speed": 0.0,
     "upload_speed": 0.0,
+    "current_download_file": None,
     "current_upload_file": None,
     "current_upload_pct": 0.0,
     "total_downloaded_bytes": 0,
@@ -130,6 +131,7 @@ async def process_job(job: Job) -> None:
     _active_job_metrics.update({
         "download_speed": 0.0,
         "upload_speed": 0.0,
+        "current_download_file": None,
         "current_upload_file": None,
         "current_upload_pct": 0.0,
         "total_downloaded_bytes": 0,
@@ -176,18 +178,30 @@ async def process_job(job: Job) -> None:
             dl_speed_str = format_size(download_speed)
 
             if downloader_done.is_set():
+                display_count = download_count
+            else:
+                display_count = sent + len(skipped) + 1
+                if display_count > download_count:
+                    display_count = download_count
+
+            dl_file = _active_job_metrics["current_download_file"] if not downloader_done.is_set() else None
+
+            if downloader_done.is_set():
                 status_text = (
                     f"**Downloading complete!** (Total: **{dl_size_str}**)\n"
+                    f"Processed: **{display_count}** item(s)\n\n"
                     f"**Uploading remaining files…**\n"
                     f"   • **Sent:** `{sent}`\n"
                     f"   • **Skipped:** `{len(skipped)}`"
                 )
             else:
+                dl_file_line = f"   • **File:** `{dl_file}`\n" if dl_file else ""
                 status_text = (
-                    f"**Downloading & Uploading…**\n\n"
+                    f"**Downloading & Uploading…**\n"
+                    f"Processed: **{display_count}** item(s)\n\n"
                     f"**Downloader Status:**\n"
-                    f"   • **Processed:** ~`{download_count}` items\n"
-                    f"   • **Size:** `{dl_size_str}`\n"
+                    f"{dl_file_line}"
+                    f"   • **Downloaded Data:** `{dl_size_str}`\n"
                     f"   • **Speed:** `{dl_speed_str}/s`\n\n"
                     f"**Uploader Status:**\n"
                     f"   • **Sent:** `{sent}`\n"
@@ -206,10 +220,12 @@ async def process_job(job: Job) -> None:
 
             await report(status_text)
 
-    def on_progress(count: int) -> None:
+    def on_progress(count: int, filename: Optional[str] = None) -> None:
         nonlocal download_count, last_downloader_edit
         download_count = count
         _active_job_metrics["download_count"] = count
+        if filename:
+            _active_job_metrics["current_download_file"] = filename
         now = time.time()
         # Rate limit status edits during download to at most once every 3.0 seconds
         if now - last_downloader_edit >= 3.0:
@@ -536,6 +552,7 @@ async def status_cmd(_, message: Message) -> None:
             ul_speed = _active_job_metrics["upload_speed"]
             dl_bytes = _active_job_metrics["total_downloaded_bytes"]
             dl_count = _active_job_metrics["download_count"]
+            dl_file = _active_job_metrics["current_download_file"]
             ul_pct = _active_job_metrics["current_upload_pct"]
             ul_file = _active_job_metrics["current_upload_file"]
 
@@ -554,8 +571,12 @@ async def status_cmd(_, message: Message) -> None:
                 f"- **Args**: `{args_str}`\n"
                 f"- **Split > 2GB**: {split_str}\n\n"
                 f"**Downloader Metrics**\n"
+            )
+            if job.status == JobStatus.DOWNLOADING and dl_file:
+                status_text += f"- **Current File**: `{dl_file}`\n"
+            status_text += (
                 f"- **Files Downloaded**: {dl_count}\n"
-                f"- **Downloaded Size**: {dl_bytes_str}\n"
+                f"- **Downloaded Data**: {dl_bytes_str}\n"
                 f"- **Download Speed**: {dl_speed_str}/s\n\n"
                 f"**Uploader Metrics**\n"
                 f"- **Files Sent**: {job.sent_files} / {job.total_files if job.total_files > 0 else 'Calculating'}\n"
