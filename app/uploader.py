@@ -4,6 +4,7 @@ import asyncio
 import logging
 import random
 import shutil
+import tempfile
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 
@@ -33,7 +34,7 @@ async def extract_video_thumbnail(video_path: Path) -> Path | None:
         log.warning("ffmpeg not found on PATH; skipping video thumbnail extraction")
         return None
 
-    thumb_path = video_path.with_name(f"{video_path.stem}_thumb.jpg")
+    thumb_path = Path(tempfile.gettempdir()) / f"{video_path.stem}_thumb.jpg"
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg",
@@ -105,15 +106,12 @@ async def take_screenshots(video_path: Path, duration: int) -> list[Path]:
         log.warning("Duration is 0 or unknown; skipping screenshots")
         return []
 
-    # Generate 9 random timestamps between 5% and 95% of duration
-    # Since Telegram limits media groups to 10 items, we do 9 screenshots + 1 video.
     timestamps = sorted([random.uniform(0.05 * duration, 0.95 * duration) for _ in range(9)])
 
     screenshots: list[Path] = []
     for i, ts in enumerate(timestamps):
-        shot_path = video_path.with_name(f"{video_path.stem}_screenshot_{i}.jpg")
+        shot_path = Path(tempfile.gettempdir()) / f"{video_path.stem}_screenshot_{i}.jpg"
         try:
-            # -ss before -i makes seeking near-instantaneous
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg",
                 "-ss", f"{ts:.3f}",
@@ -177,13 +175,8 @@ async def upload_file(
                 attempt += 1
                 try:
                     if ext in VIDEO_EXT and screenshots:
-                        # Build media group for video + screenshots
                         media = []
-                        # Add screenshots as InputMediaPhoto
-                        for shot in screenshots:
-                            media.append(InputMediaPhoto(str(shot)))
-
-                        # Add video as InputMediaVideo
+                        # Add video first so it is the cover and caption holder
                         video_kwargs = {
                             "media": str(path),
                             "caption": path.name,
@@ -199,10 +192,11 @@ async def upload_file(
 
                         media.append(InputMediaVideo(**video_kwargs))
 
-                        # Upload media group
+                        # Add screenshots after the video
+                        for shot in screenshots:
+                            media.append(InputMediaPhoto(str(shot)))
                         await client.send_media_group(chat_id, media=media)
                     else:
-                        # Upload single file
                         kwargs = {"caption": path.name}
                         if thumb_path:
                             kwargs["thumb"] = str(thumb_path)
@@ -232,14 +226,12 @@ async def upload_file(
                     )
                     await asyncio.sleep(delay)
     finally:
-        # Cleanup screenshots
         for shot in screenshots:
             if shot.exists():
                 try:
                     shot.unlink()
                 except Exception:
                     pass
-        # Cleanup thumbnail
         if thumb_path and thumb_path.exists():
             try:
                 thumb_path.unlink()
