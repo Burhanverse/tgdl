@@ -1,0 +1,25 @@
+[Unit]
+Description=Telegram gallery-dl download/upload bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tgdlbot
+Group=tgdlbot
+WorkingDirectory=/opt/tgdl-bot
+EnvironmentFile=/opt/tgdl-bot/.env
+ExecStart=/opt/tgdl-bot/.venv/bin/python -m app.bot
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tgdl-bot/data /opt/tgdl-bot/logs
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
