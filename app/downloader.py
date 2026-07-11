@@ -138,10 +138,20 @@ async def run_with_progress(
             )
             returncode = await proc.wait()
         except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
             last_stderr = f"gallery-dl timed out after {settings.gdl_run_timeout_s}s"
             returncode = 1
+        except asyncio.CancelledError:
+            try:
+                proc.terminate()
+                await proc.wait()
+            except Exception:
+                pass
+            raise
 
         last_stderr = last_stderr or "".join(stderr_buf)[-3000:]
         files = sorted(p for p in dest_dir.rglob("*") if p.is_file())
