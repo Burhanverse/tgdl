@@ -25,8 +25,8 @@ class DownloadResult:
     attempts: int = 0
 
 
-def _build_cmd(url: str, dest_dir: Path, archive_file: Path) -> list[str]:
-    return [
+def _build_cmd(url: str, dest_dir: Path, archive_file: Path, extra_args: Optional[list[str]] = None) -> list[str]:
+    cmd = [
         "gallery-dl",
         "--no-mtime",
         "-D", str(dest_dir),
@@ -36,8 +36,11 @@ def _build_cmd(url: str, dest_dir: Path, archive_file: Path) -> list[str]:
         "--limit-rate", settings.gdl_limit_rate,
         "--retries", str(settings.gdl_retries),
         "-v",
-        url,
     ]
+    if extra_args:
+        cmd.extend(extra_args)
+    cmd.append(url)
+    return cmd
 
 
 async def _stream_run(cmd: list[str]) -> tuple[int, str, Callable[[], int]]:
@@ -76,6 +79,7 @@ async def run_with_progress(
     dest_dir: Path,
     archive_file: Path,
     on_progress: Optional[Callable[[int], None]] = None,
+    extra_args: Optional[list[str]] = None,
 ) -> DownloadResult:
 
     if shutil.which("gallery-dl") is None:
@@ -95,8 +99,8 @@ async def run_with_progress(
     last_stderr = ""
     while True:
         attempts += 1
-        cmd = _build_cmd(url, dest_dir, archive_file)
-        log.info("gallery-dl run attempt=%s url=%s", attempts, url)
+        cmd = _build_cmd(url, dest_dir, archive_file, extra_args)
+        log.info("gallery-dl run attempt=%s url=%s args=%s", attempts, url, extra_args)
 
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -147,8 +151,6 @@ async def run_with_progress(
 
         rate_limited = looks_rate_limited(last_stderr)
         if not rate_limited or backoff.exhausted:
-            # Not a rate-limit signature (or we've retried enough) — surface
-            # whatever files we did get plus the failure.
             return DownloadResult(
                 ok=False, files=files, error_tail=last_stderr, attempts=attempts
             )

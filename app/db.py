@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     skipped_files INTEGER NOT NULL DEFAULT 0,
     error TEXT,
     split_large_files INTEGER NOT NULL DEFAULT 1,
+    args TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
@@ -57,6 +58,7 @@ class Job:
     created_at: float
     updated_at: float
     split_large_files: int = 1
+    args: Optional[str] = None
 
     @property
     def download_dir(self) -> str:
@@ -75,7 +77,11 @@ class JobStore:
         # Automatic column migration if jobs table already exists
         try:
             await self._db.execute("ALTER TABLE jobs ADD COLUMN split_large_files INTEGER NOT NULL DEFAULT 1")
-        except aiosqlite.OperationalError:
+        except Exception:
+            pass  # Already exists
+        try:
+            await self._db.execute("ALTER TABLE jobs ADD COLUMN args TEXT")
+        except Exception:
             pass  # Already exists
         await self._db.commit()
 
@@ -88,11 +94,11 @@ class JobStore:
         assert self._db is not None, "JobStore not opened — call await store.open() first"
         return self._db
 
-    async def create_job(self, chat_id: int, url: str, split_large_files: int = 1) -> Job:
+    async def create_job(self, chat_id: int, url: str, split_large_files: int = 1, args: Optional[str] = None) -> Job:
         now = time.time()
         cur = await self.db.execute(
-            "INSERT INTO jobs (chat_id, url, status, split_large_files, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (chat_id, url, JobStatus.QUEUED, split_large_files, now, now),
+            "INSERT INTO jobs (chat_id, url, status, split_large_files, args, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (chat_id, url, JobStatus.QUEUED, split_large_files, args, now, now),
         )
         await self.db.commit()
         job = await self.get_job(cur.lastrowid)
@@ -170,6 +176,7 @@ class JobStore:
     def _row_to_job(row: aiosqlite.Row) -> Job:
         cols = row.keys()
         split_large_files = row["split_large_files"] if "split_large_files" in cols else 1
+        args = row["args"] if "args" in cols else None
         return Job(
             id=row["id"],
             chat_id=row["chat_id"],
@@ -183,4 +190,5 @@ class JobStore:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             split_large_files=split_large_files,
+            args=args,
         )

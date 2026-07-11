@@ -222,8 +222,16 @@ async def process_job(job: Job) -> None:
 
     async def run_downloader():
         try:
+            extra_args = None
+            if job.args:
+                import json
+                try:
+                    extra_args = json.loads(job.args)
+                except Exception:
+                    log.exception("Failed to parse extra args from job: %s", job.args)
+
             return await run_with_progress(
-                job.url, dest_dir, settings.gdl_archive_path, on_progress=on_progress
+                job.url, dest_dir, settings.gdl_archive_path, on_progress=on_progress, extra_args=extra_args
             )
         finally:
             downloader_done.set()
@@ -498,18 +506,67 @@ async def cancel_cmd(_, message: Message) -> None:
     )
 
 
+def sanitize_gdl_args(args: list[str]) -> list[str]:
+    sanitized = []
+    skip_next = False
+    for i, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+
+        # Strip directory/config override options
+        if arg in ("-d", "--directory", "--config"):
+            skip_next = True
+            continue
+
+        # Ignore help / version arguments that would prevent download
+        if arg in ("-h", "--help", "--version"):
+            continue
+
+        # If it is -o or --option, check the value
+        if arg in ("-o", "--option"):
+            if i + 1 < len(args):
+                val = args[i + 1]
+                # If it tries to set base-directory, skip both
+                if "base-directory" in val or "directory" in val or "path" in val:
+                    skip_next = True
+                    continue
+            else:
+                continue
+
+        sanitized.append(arg)
+    return sanitized
+
+
 @app.on_message(filters.text & ~filters.command(["start", "status", "cancel"]))
 async def handle_link(_, message: Message) -> None:
     text = (message.text or "").strip()
     is_private = message.chat.type == ChatType.PRIVATE
 
-    if not text.startswith(("http://", "https://")):
+    import shlex
+    import json
+
+    try:
+        tokens = shlex.split(text)
+    except Exception:
+        tokens = text.split()
+
+    if not tokens:
+        return
+
+    url = tokens[0]
+    raw_args = tokens[1:]
+
+    if not url.startswith(("http://", "https://")):
         if is_private:
             await message.reply_text("Send an actual URL.")
         return
 
+    sanitized_args = sanitize_gdl_args(raw_args)
+    args_json = json.dumps(sanitized_args) if sanitized_args else None
+
     # Create job in "waiting" status
-    job = await store.create_job(message.chat.id, text, split_large_files=1)
+    job = await store.create_job(message.chat.id, url, split_large_files=1, args=args_json)
     await store.update_progress(job.id, status="waiting")
 
     # Send confirmation inline keyboard
