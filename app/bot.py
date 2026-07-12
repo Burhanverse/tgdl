@@ -16,6 +16,7 @@ from .config import settings
 from .db import Job, JobStatus, JobStore
 from .downloader import GalleryDLNotFound, run_with_progress
 from .uploader import UploadTooLarge, upload_file
+from .middleware import is_job_owner
 
 log = logging.getLogger("tgdl_bot")
 
@@ -606,10 +607,11 @@ async def start_cmd(_, message: Message) -> None:
 @app.on_message(filters.command("status"))
 async def status_cmd(_, message: Message) -> None:
     import json
+    chat_id = message.chat.id
 
     if _current_job_id is not None:
         job = await store.get_job(_current_job_id)
-        if job:
+        if job and is_job_owner(chat_id, job):
             # Parse arguments
             parsed_args = []
             if job.args:
@@ -666,11 +668,11 @@ async def status_cmd(_, message: Message) -> None:
             await message.reply_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
             return
 
-    # Check for waiting/queued jobs
-    queued = await store.queued_jobs()
+    # Check for waiting/queued jobs for THIS chat
+    queued = [q for q in await store.queued_jobs() if is_job_owner(chat_id, q)]
 
-    # Query waiting jobs directly
-    cur = await store.db.execute("SELECT * FROM jobs WHERE status = 'waiting' ORDER BY id")
+    # Query waiting jobs directly for THIS chat
+    cur = await store.db.execute("SELECT * FROM jobs WHERE status = 'waiting' AND chat_id = ? ORDER BY id", (chat_id,))
     waiting_rows = await cur.fetchall()
     waiting = [store._row_to_job(r) for r in waiting_rows]
 
@@ -709,13 +711,33 @@ async def status_cmd(_, message: Message) -> None:
 
 @app.on_message(filters.command("cancel"))
 async def cancel_cmd(_, message: Message) -> None:
-    if _current_job_id is None:
-        await message.reply_text("Nothing is currently running.")
-        return
-    await store.update_progress(_current_job_id, status=JobStatus.CANCELLED)
-    await message.reply_text(
-        f"Marked job #{_current_job_id} for cancellation — it'll stop after the current file finishes."
+    chat_id = message.chat.id
+    active_cancelled = False
+
+    if _current_job_id is not None:
+        job = await store.get_job(_current_job_id)
+        if job and is_job_owner(chat_id, job):
+            await store.update_progress(job.id, status=JobStatus.CANCELLED)
+            await message.reply_text(
+                f"Marked active job #{job.id} for cancellation — it'll stop after the current file finishes."
+            )
+            active_cancelled = True
+
+    # Cancel queued/waiting jobs for this chat so they don't start
+    cur = await store.db.execute(
+        "SELECT id FROM jobs WHERE chat_id = ? AND status IN ('queued', 'waiting')",
+        (chat_id,)
     )
+    rows = await cur.fetchall()
+    cancelled_ids = [r[0] for r in rows]
+    if cancelled_ids:
+        for cid in cancelled_ids:
+            await store.update_progress(cid, status=JobStatus.CANCELLED)
+        await message.reply_text(
+            f"Cancelled {len(cancelled_ids)} queued/waiting job(s) for this chat."
+        )
+    elif not active_cancelled:
+        await message.reply_text("No active or queued jobs found for this chat.")
 
 
 @app.on_message(filters.command("gdl"))
@@ -987,6 +1009,11 @@ async def handle_split_choice(_, callback_query: CallbackQuery) -> None:
     job = await store.get_job(job_id)
     if not job:
         await callback_query.answer("Job not found.", show_alert=True)
+        return
+
+    # Verify if the callback comes from the authorized chat where the job was registered
+    if not is_job_owner(callback_query.message.chat.id, job):
+        await callback_query.answer("Unauthorized: You cannot manage split choices for this job.", show_alert=True)
         return
 
     if job.status != "waiting":
