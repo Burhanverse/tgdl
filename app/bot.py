@@ -145,7 +145,6 @@ async def process_job(job: Job) -> None:
         if msg_id:
             await safe_edit(chat_id, msg_id, text)
 
-    # In-memory tracking to avoid duplicate concurrent uploads and reduce DB hits
     uploading_files: set[str] = set()
     uploaded_filenames = await store.get_uploaded_filenames(job.id)
     sent = len(uploaded_filenames)
@@ -156,10 +155,8 @@ async def process_job(job: Job) -> None:
     current_upload_pct: float = 0.0
     upload_speed: float = 0.0
     last_uploaded_bytes = 0
-    last_progress_edit = 0.0
     last_upload_speed_time = 0.0
-    last_edit_time = 0.0
-    edit_pending = False
+    last_download_file: str | None = None
 
     # For download size/speed tracking
     total_downloaded_bytes = 0
@@ -172,9 +169,9 @@ async def process_job(job: Job) -> None:
     downloader_done = asyncio.Event()
     uploader_done = asyncio.Event()
     download_count = 0
+    trigger_event = asyncio.Event()
 
     async def perform_status_edit() -> None:
-        nonlocal last_edit_time
         async with status_lock:
             dl_size_str = format_size(total_downloaded_bytes)
             dl_speed_str = format_size(download_speed)
@@ -221,43 +218,37 @@ async def process_job(job: Job) -> None:
                 )
 
             await report(status_text)
-            last_edit_time = time.time()
 
-    async def scheduled_status_edit(delay: float) -> None:
-        nonlocal edit_pending
-        await asyncio.sleep(delay)
+    async def status_updater_loop() -> None:
         try:
-            await perform_status_edit()
-        finally:
-            edit_pending = False
+            while not (downloader_done.is_set() and uploader_done.is_set()):
+                if _shutdown_event.is_set():
+                    break
+                try:
+                    await asyncio.wait_for(trigger_event.wait(), timeout=10.0)
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    trigger_event.clear()
 
-    async def update_status_msg() -> None:
-        nonlocal last_edit_time, edit_pending
-        if edit_pending:
-            return
-
-        now = time.time()
-        elapsed = now - last_edit_time
-        cooldown = 10.0
-
-        if elapsed >= cooldown:
-            edit_pending = True
-            try:
                 await perform_status_edit()
-            finally:
-                edit_pending = False
-        else:
-            edit_pending = True
-            delay = cooldown - elapsed
-            asyncio.create_task(scheduled_status_edit(delay))
+                await asyncio.sleep(6.0)
+
+            await perform_status_edit()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            log.exception("Error in status updater loop")
 
     def on_progress(count: int, filename: Optional[str] = None) -> None:
-        nonlocal download_count
+        nonlocal download_count, last_download_file
         download_count = count
         _active_job_metrics["download_count"] = count
         if filename:
             _active_job_metrics["current_download_file"] = filename
-        asyncio.create_task(update_status_msg())
+            if filename != last_download_file:
+                last_download_file = filename
+                trigger_event.set()
 
     async def on_upload_progress(current: int, total: int) -> None:
         nonlocal current_upload_pct, upload_speed, last_uploaded_bytes, last_upload_speed_time
@@ -278,8 +269,6 @@ async def process_job(job: Job) -> None:
 
         current_upload_pct = pct
         _active_job_metrics["current_upload_pct"] = pct
-
-        await update_status_msg()
 
     async def run_downloader():
         try:
@@ -361,7 +350,7 @@ async def process_job(job: Job) -> None:
                 if not split_parts:
                     skipped.append((f.name, "File exceeds 1.95GB limit and was skipped"))
                     await store.update_progress(job.id, sent_files=sent, skipped_files=len(skipped))
-                    await update_status_msg()
+                    trigger_event.set()
                     continue
                 # Append split parts to pending list to process in the current run
                 for part in split_parts:
@@ -381,7 +370,7 @@ async def process_job(job: Job) -> None:
                 _active_job_metrics["current_upload_file"] = f.name
                 _active_job_metrics["current_upload_pct"] = 0.0
                 _active_job_metrics["upload_speed"] = 0.0
-                await update_status_msg()
+                trigger_event.set()
 
                 await upload_file(app, chat_id, f, progress=on_upload_progress)
                 await store.mark_uploaded(job.id, f.name)
@@ -416,7 +405,7 @@ async def process_job(job: Job) -> None:
                     uploading_files.remove(f.name)
 
             await store.update_progress(job.id, sent_files=sent, skipped_files=len(skipped))
-            await update_status_msg()
+            trigger_event.set()
 
             session_uploaded_count += 1
             if session_uploaded_count % settings.tg_batch_size == 0:
@@ -462,20 +451,22 @@ async def process_job(job: Job) -> None:
     uploader_task = asyncio.create_task(run_uploader())
     monitor_task = asyncio.create_task(monitor_download_speed())
     cancellation_task = asyncio.create_task(check_cancellation())
+    updater_task = asyncio.create_task(status_updater_loop())
 
     try:
         await store.update_progress(job.id, status=JobStatus.DOWNLOADING)
         await report(f"Downloading:\n{job.url}\n(rate-limited, large albums take a while)")
 
         result = await downloader_task
-        await update_status_msg()
+        trigger_event.set()
         await uploader_task
     except asyncio.CancelledError:
         log.info("Job %s was cancelled/aborted", job.id)
         downloader_task.cancel()
         uploader_task.cancel()
         monitor_task.cancel()
-        await asyncio.gather(downloader_task, uploader_task, monitor_task, return_exceptions=True)
+        updater_task.cancel()
+        await asyncio.gather(downloader_task, uploader_task, monitor_task, updater_task, return_exceptions=True)
 
         db_job = await store.get_job(job.id)
         if _shutdown_event.is_set() or (db_job and db_job.status == JobStatus.QUEUED):
@@ -498,7 +489,8 @@ async def process_job(job: Job) -> None:
     finally:
         monitor_task.cancel()
         cancellation_task.cancel()
-        await asyncio.gather(monitor_task, cancellation_task, return_exceptions=True)
+        updater_task.cancel()
+        await asyncio.gather(monitor_task, cancellation_task, updater_task, return_exceptions=True)
         _current_job_id = None
 
     # Final cleanup and report for successful run
