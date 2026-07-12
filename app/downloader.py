@@ -127,77 +127,77 @@ async def run_with_progress(
             cmd = _build_cmd(urls, dest_dir, archive_file, extra_args, links_file)
             log.info("gallery-dl run attempt=%s url_count=%s args=%s", attempts, len(urls), extra_args)
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        count = 0
-        stderr_buf: list[str] = []
-
-        async def pump_stdout():
-            nonlocal count
-            assert proc.stdout is not None
-            async for line in proc.stdout:
-                count += 1
-                text = line.decode(errors="replace").strip()
-                filename = None
-                if text:
-                    parts = text.split()
-                    if parts:
-                        last_part = parts[-1].strip("'\"")
-                        if "/" in last_part or "\\" in last_part or "." in last_part:
-                            try:
-                                filename = Path(last_part).name
-                            except Exception:
-                                pass
-                if on_progress:
-                    on_progress(count, filename)
-
-        async def pump_stderr():
-            assert proc.stderr is not None
-            async for line in proc.stderr:
-                stderr_buf.append(line.decode(errors="replace"))
-
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(pump_stdout(), pump_stderr()),
-                timeout=settings.gdl_run_timeout_s,
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            returncode = await proc.wait()
-        except asyncio.TimeoutError:
+            count = 0
+            stderr_buf: list[str] = []
+
+            async def pump_stdout():
+                nonlocal count
+                assert proc.stdout is not None
+                async for line in proc.stdout:
+                    count += 1
+                    text = line.decode(errors="replace").strip()
+                    filename = None
+                    if text:
+                        parts = text.split()
+                        if parts:
+                            last_part = parts[-1].strip("'\"")
+                            if "/" in last_part or "\\" in last_part or "." in last_part:
+                                try:
+                                    filename = Path(last_part).name
+                                except Exception:
+                                    pass
+                    if on_progress:
+                        on_progress(count, filename)
+
+            async def pump_stderr():
+                assert proc.stderr is not None
+                async for line in proc.stderr:
+                    stderr_buf.append(line.decode(errors="replace"))
+
             try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
-            last_stderr = f"gallery-dl timed out after {settings.gdl_run_timeout_s}s"
-            returncode = 1
-        except asyncio.CancelledError:
-            try:
-                proc.terminate()
-                await proc.wait()
-            except Exception:
-                pass
-            raise
+                await asyncio.wait_for(
+                    asyncio.gather(pump_stdout(), pump_stderr()),
+                    timeout=settings.gdl_run_timeout_s,
+                )
+                returncode = await proc.wait()
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+                last_stderr = f"gallery-dl timed out after {settings.gdl_run_timeout_s}s"
+                returncode = 1
+            except asyncio.CancelledError:
+                try:
+                    proc.terminate()
+                    await proc.wait()
+                except Exception:
+                    pass
+                raise
 
-        last_stderr = last_stderr or "".join(stderr_buf)[-3000:]
-        files = sorted(p for p in dest_dir.rglob("*") if p.is_file())
+            last_stderr = last_stderr or "".join(stderr_buf)[-3000:]
+            files = sorted(p for p in dest_dir.rglob("*") if p.is_file())
 
-        if returncode == 0:
-            return DownloadResult(ok=True, files=files, error_tail=last_stderr, attempts=attempts)
+            if returncode == 0:
+                return DownloadResult(ok=True, files=files, error_tail=last_stderr, attempts=attempts)
 
-        rate_limited = looks_rate_limited(last_stderr)
-        if not rate_limited or backoff.exhausted:
-            return DownloadResult(
-                ok=False, files=files, error_tail=last_stderr, attempts=attempts
+            rate_limited = looks_rate_limited(last_stderr)
+            if not rate_limited or backoff.exhausted:
+                return DownloadResult(
+                    ok=False, files=files, error_tail=last_stderr, attempts=attempts
+                )
+
+            delay = backoff.next_delay()
+            log.warning(
+                "gallery-dl looks rate-limited (attempt %s), backing off %.0fs before retry",
+                attempts, delay,
             )
-
-        delay = backoff.next_delay()
-        log.warning(
-            "gallery-dl looks rate-limited (attempt %s), backing off %.0fs before retry",
-            attempts, delay,
-        )
-        await asyncio.sleep(delay)
-        last_stderr = ""
+            await asyncio.sleep(delay)
+            last_stderr = ""
     finally:
         if links_file and links_file.exists():
             links_file.unlink(missing_ok=True)
