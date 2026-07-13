@@ -31,6 +31,7 @@ from .archive import (
     _archive_events,
     _archive_choices,
     _extracted_archives,
+    _extracted_file_names,
     ARCHIVE_EXT,
     extract_archive_async,
     handle_archive_choice,
@@ -224,21 +225,27 @@ async def process_job(job: Job) -> None:
     async def perform_status_edit() -> bool:
         async with status_lock:
             nonlocal msg_id, last_edited_text
-            if downloader_done.is_set() and current_upload_file:
-                try:
-                    f_path = dest_dir / current_upload_file
-                    if f_path.exists() and f_path.stat().st_size < 25 * 1024 * 1024:
-                        if msg_id:
-                            try:
-                                await app.delete_messages(chat_id, msg_id)
-                            except Exception:
-                                pass
-                            msg_id = None
-                            last_edited_text = ""
-                            await store.set_status_message(job.id, None)
-                        return True
-                except Exception:
-                    pass
+            if downloader_done.is_set():
+                has_extracted = len(_extracted_archives.get(job.id, set())) > 0
+                is_small_file = False
+                if current_upload_file:
+                    try:
+                        f_path = dest_dir / current_upload_file
+                        if f_path.exists() and f_path.stat().st_size < 25 * 1024 * 1024:
+                            is_small_file = True
+                    except Exception:
+                        pass
+
+                if has_extracted or is_small_file:
+                    if msg_id:
+                        try:
+                            await app.delete_messages(chat_id, msg_id)
+                        except Exception:
+                            pass
+                        msg_id = None
+                        last_edited_text = ""
+                        await store.set_status_message(job.id, None)
+                    return True
 
             status_text = compile_status_text(
                 job=job,
@@ -405,6 +412,7 @@ async def process_job(job: Job) -> None:
             # Check if this file is an archive
             is_archive = f.suffix.lower() in ARCHIVE_EXT
             if is_archive:
+                archive_prompt_msg_id = None
                 # Find or generate archive_id
                 if job.id not in _archive_ids:
                     _archive_ids[job.id] = {}
@@ -432,12 +440,13 @@ async def process_job(job: Job) -> None:
                         f"- **File**: `{f.name}`\n\n"
                         f"Do you want to upload the archive file only, or extract its contents and upload both?"
                     )
-                    await app.send_message(
+                    prompt_msg = await app.send_message(
                         chat_id,
                         prompt_text,
                         reply_markup=keyboard,
                         link_preview_options=LinkPreviewOptions(is_disabled=True)
                     )
+                    archive_prompt_msg_id = prompt_msg.id
 
                     if job.id not in _archive_events:
                         _archive_events[job.id] = {}
@@ -454,23 +463,92 @@ async def process_job(job: Job) -> None:
                     _extracted_archives[job.id].add(f.name)
 
                     log.info("Extracting archive %s for job %s", f.name, job.id)
-                    extracted = await extract_archive_async(f, dest_dir)
-                    if extracted:
-                        log.info("Successfully extracted archive %s", f.name)
-                        await app.send_message(
-                            chat_id,
-                            f"**Job #{job.id} - Archive Extracted**\nSuccessfully extracted `{f.name}` into download directory.",
-                            link_preview_options=LinkPreviewOptions(is_disabled=True)
-                        )
-                        # Break loop to force re-scanning of extracted files
-                        break
-                    else:
-                        log.error("Failed to extract archive %s", f.name)
-                        await app.send_message(
-                            chat_id,
-                            f"**Job #{job.id} - Extraction Failed**\nFailed to extract `{f.name}`.",
-                            link_preview_options=LinkPreviewOptions(is_disabled=True)
-                        )
+                    status_msg = await app.send_message(
+                        chat_id,
+                        f"**Job #{job.id} - Archive Extraction**\nExtracting `{f.name}`...",
+                        link_preview_options=LinkPreviewOptions(is_disabled=True)
+                    )
+
+                    before_files = set()
+                    try:
+                        before_files = {p.resolve() for p in dest_dir.rglob("*") if p.is_file()}
+                    except Exception:
+                        pass
+
+                    try:
+                        extracted = await extract_archive_async(f, dest_dir)
+                        if extracted:
+                            log.info("Successfully extracted archive %s", f.name)
+                            try:
+                                after_files = {p.resolve() for p in dest_dir.rglob("*") if p.is_file()}
+                                new_files = after_files - before_files
+                                if job.id not in _extracted_file_names:
+                                    _extracted_file_names[job.id] = set()
+                                for new_f in new_files:
+                                    _extracted_file_names[job.id].add(new_f.name)
+                            except Exception:
+                                pass
+
+                            if archive_prompt_msg_id:
+                                try:
+                                    await app.delete_messages(chat_id, archive_prompt_msg_id)
+                                except Exception:
+                                    pass
+                            try:
+                                await app.delete_messages(chat_id, status_msg.id)
+                            except Exception:
+                                pass
+
+                            success_msg = await app.send_message(
+                                chat_id,
+                                f"**Job #{job.id} - Archive Extracted**\nSuccessfully extracted `{f.name}` into download directory.",
+                                link_preview_options=LinkPreviewOptions(is_disabled=True)
+                            )
+                            async def delete_success_msg(m):
+                                await asyncio.sleep(5)
+                                try:
+                                    await app.delete_messages(chat_id, m.id)
+                                except Exception:
+                                    pass
+                            asyncio.create_task(delete_success_msg(success_msg))
+
+                            # Break loop to force re-scanning of extracted files
+                            break
+                        else:
+                            log.error("Failed to extract archive %s", f.name)
+                            try:
+                                await app.delete_messages(chat_id, status_msg.id)
+                            except Exception:
+                                pass
+                            fail_msg = await app.send_message(
+                                chat_id,
+                                f"**Job #{job.id} - Extraction Failed**\nFailed to extract `{f.name}`.",
+                                link_preview_options=LinkPreviewOptions(is_disabled=True)
+                            )
+                            if archive_prompt_msg_id:
+                                try:
+                                    await app.delete_messages(chat_id, archive_prompt_msg_id)
+                                except Exception:
+                                    pass
+                            async def delete_fail_msg(m):
+                                await asyncio.sleep(5)
+                                try:
+                                    await app.delete_messages(chat_id, m.id)
+                                except Exception:
+                                    pass
+                            asyncio.create_task(delete_fail_msg(fail_msg))
+                    except Exception:
+                        try:
+                            await app.delete_messages(chat_id, status_msg.id)
+                        except Exception:
+                            pass
+                        raise
+
+                if choice == "only" and archive_prompt_msg_id:
+                    try:
+                        await app.delete_messages(chat_id, archive_prompt_msg_id)
+                    except Exception:
+                        pass
 
             # Check if this file needs conversion
             is_incompatible = f.suffix.lower() in CONVERSION_EXT
@@ -768,6 +846,7 @@ async def process_job(job: Job) -> None:
         _archive_events.pop(job.id, None)
         _archive_choices.pop(job.id, None)
         _extracted_archives.pop(job.id, None)
+        _extracted_file_names.pop(job.id, None)
         _conversion_ids.pop(job.id, None)
         _conversion_events.pop(job.id, None)
         _conversion_choices.pop(job.id, None)

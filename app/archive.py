@@ -14,6 +14,7 @@ _archive_ids: dict[int, dict[str, str]] = {}
 _archive_events: dict[int, dict[str, asyncio.Event]] = {}
 _archive_choices: dict[int, dict[str, str]] = {}
 _extracted_archives: dict[int, set[str]] = {}
+_extracted_file_names: dict[int, set[str]] = {}
 ARCHIVE_EXT = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
 
 
