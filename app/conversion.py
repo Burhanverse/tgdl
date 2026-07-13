@@ -108,3 +108,23 @@ async def handle_conversion_choice(client: Client, callback_query: CallbackQuery
         )
     except Exception:
         pass
+
+
+async def convert_image_to_png_async(input_path: Path, output_path: Path) -> bool:
+    """Asynchronously convert an unsupported image format to PNG using ffmpeg."""
+    cmd = [
+        "ffmpeg", "-y", "-nostdin", "-i", str(input_path),
+        str(output_path)
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        returncode = await proc.wait()
+        return returncode == 0
+    except Exception:
+        log.exception("ffmpeg image to PNG conversion failed for %s", input_path.name)
+        return False

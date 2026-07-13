@@ -13,10 +13,14 @@ from pyrogram.errors import FloodWait, RPCError
 from pyrogram.types import InputMediaPhoto, InputMediaVideo
 
 from .config import settings
+from .conversion import convert_image_to_png_async
 
 log = logging.getLogger(__name__)
 
-IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+IMAGE_EXT = {
+    ".jpg", ".jpeg", ".png", ".webp", ".gif",
+    ".bmp", ".tiff", ".heic", ".heif", ".ico"
+}
 VIDEO_EXT = {
     ".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".wmv",
     ".3gp", ".mpeg", ".mpg", ".m4v", ".ts", ".f4v"
@@ -142,11 +146,25 @@ async def upload_file(
     path: Path,
     progress: Callable[[int, int], Coroutine[None, None, None]] | None = None
 ) -> None:
+    ext = path.suffix.lower()
+    converted_png_path = None
+    CONVERTIBLE_IMAGE_EXT = {".webp", ".bmp", ".tiff", ".heic", ".heif", ".ico"}
+    if ext in CONVERTIBLE_IMAGE_EXT:
+        log.info("Converting unsupported image %s to PNG for standard inline photo display", path.name)
+        png_path = path.with_suffix(".png")
+        success = await convert_image_to_png_async(path, png_path)
+        if success:
+            converted_png_path = png_path
+            path.unlink(missing_ok=True)
+            path = png_path
+            ext = ".png"
+            log.info("Successfully converted unsupported image to PNG: %s", png_path.name)
+        else:
+            log.warning("Failed to convert image %s to png", path.name)
+
     size = path.stat().st_size
     if size > settings.max_upload_bytes:
         raise UploadTooLarge(f"{path.name} is {size / 1e9:.2f}GB, exceeds 2GB MTProto limit")
-
-    ext = path.suffix.lower()
     thumb_path = None
     screenshots: list[Path] = []
     video_meta = {}
@@ -168,7 +186,7 @@ async def upload_file(
             elif ext in VIDEO_EXT:
                 mode = "video"
             elif ext in IMAGE_EXT:
-                if ext in (".webp", ".gif"):
+                if ext in (".webp", ".gif", ".bmp", ".tiff", ".heic", ".heif", ".ico"):
                     mode = "document"
                 else:
                     mode = "photo"
@@ -296,6 +314,11 @@ async def upload_file(
         if thumb_path and thumb_path.exists():
             try:
                 thumb_path.unlink()
+            except Exception:
+                pass
+        if converted_png_path and converted_png_path.exists():
+            try:
+                converted_png_path.unlink()
             except Exception:
                 pass
 
