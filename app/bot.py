@@ -142,7 +142,6 @@ ARCHIVE_EXT = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
 async def extract_archive_async(archive_path: Path, extract_dir: Path) -> bool:
     import shutil
     import asyncio
-    # Run shutil.unpack_archive in an executor so it doesn't block the loop
     loop = asyncio.get_running_loop()
     try:
         await loop.run_in_executor(None, shutil.unpack_archive, str(archive_path), str(extract_dir))
@@ -150,7 +149,6 @@ async def extract_archive_async(archive_path: Path, extract_dir: Path) -> bool:
     except Exception:
         pass
 
-    # Fallback to CLI tools
     ext = archive_path.suffix.lower()
     if ext == ".zip" and shutil.which("unzip"):
         try:
@@ -198,6 +196,33 @@ async def process_job(job: Job) -> None:
     dest_dir = settings.downloads_dir / job.download_dir
 
     last_edited_text = ""
+    _rotating_status = False
+
+    async def rotate_status_message(new_text: str) -> None:
+        nonlocal msg_id, last_edited_text, _rotating_status
+        if _rotating_status:
+            return
+        _rotating_status = True
+        try:
+            if msg_id:
+                try:
+                    await app.delete_messages(chat_id, msg_id)
+                except Exception:
+                    pass
+                msg_id = None
+            try:
+                new_msg = await app.send_message(
+                    chat_id,
+                    new_text,
+                    link_preview_options=LinkPreviewOptions(is_disabled=True)
+                )
+                msg_id = new_msg.id
+                last_edited_text = new_text
+                await store.set_status_message(job.id, msg_id)
+            except Exception:
+                log.exception("Failed to send new status message")
+        finally:
+            _rotating_status = False
 
     async def report(text: str) -> bool:
         nonlocal last_edited_text
@@ -206,7 +231,9 @@ async def process_job(job: Job) -> None:
             if success:
                 last_edited_text = text
             return success
-        return False
+        else:
+            await rotate_status_message(text)
+            return True
 
     uploading_files: set[str] = set()
     uploaded_filenames = await store.get_uploaded_filenames(job.id)
@@ -298,7 +325,9 @@ async def process_job(job: Job) -> None:
             return await report(status_text)
 
     async def status_updater_loop() -> None:
-        current_cooldown = 10.0
+        base_cooldown = 20.0
+        current_cooldown = base_cooldown
+        edit_count = 0
         try:
             while not (downloader_done.is_set() and uploader_done.is_set()):
                 if _shutdown_event.is_set():
@@ -310,12 +339,19 @@ async def process_job(job: Job) -> None:
                 else:
                     trigger_event.clear()
 
+                edit_count += 1
+                if edit_count > 60:
+                    current_cooldown = max(current_cooldown, 45.0)
+                elif edit_count > 30:
+                    current_cooldown = max(current_cooldown, 30.0)
+
                 success = await perform_status_edit()
                 if not success:
-                    current_cooldown = min(current_cooldown + 10.0, 60.0)
+                    current_cooldown = min(current_cooldown + 15.0, 90.0)
                     log.info("Status updater loop backed off to %ss cooldown", current_cooldown)
                 else:
-                    current_cooldown = max(current_cooldown - 2.0, 10.0)
+                    target = 45.0 if edit_count > 60 else (30.0 if edit_count > 30 else base_cooldown)
+                    current_cooldown = max(current_cooldown - 2.0, target)
 
                 await asyncio.sleep(current_cooldown)
 
@@ -564,6 +600,15 @@ async def process_job(job: Job) -> None:
             await store.update_progress(job.id, sent_files=sent, skipped_files=len(skipped))
             trigger_event.set()
 
+            if msg_id:
+                try:
+                    await app.delete_messages(chat_id, msg_id)
+                except Exception:
+                    pass
+                msg_id = None
+                last_edited_text = ""
+                await store.set_status_message(job.id, None)
+
             session_uploaded_count += 1
             if session_uploaded_count % settings.tg_batch_size == 0:
                 await asyncio.sleep(settings.tg_batch_cooldown_s)
@@ -648,6 +693,11 @@ async def process_job(job: Job) -> None:
         cancellation_task.cancel()
         updater_task.cancel()
         await asyncio.gather(monitor_task, cancellation_task, updater_task, return_exceptions=True)
+        if msg_id:
+            try:
+                await app.delete_messages(chat_id, msg_id)
+            except Exception:
+                pass
         _archive_ids.pop(job.id, None)
         _archive_events.pop(job.id, None)
         _archive_choices.pop(job.id, None)
