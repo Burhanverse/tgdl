@@ -155,7 +155,6 @@ async def upload_file(
         success = await convert_image_to_png_async(path, png_path)
         if success:
             converted_png_path = png_path
-            path.unlink(missing_ok=True)
             path = png_path
             ext = ".png"
             log.info("Successfully converted unsupported image to PNG: %s", png_path.name)
