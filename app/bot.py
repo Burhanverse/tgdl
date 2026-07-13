@@ -159,6 +159,12 @@ async def process_job(job: Job) -> None:
 
     last_edited_text = ""
     _rotating_status = False
+    is_torrent = (
+        job.url.startswith("magnet:") or
+        job.url.startswith("torrent:") or
+        job.url.endswith(".torrent") or
+        "magnet:?xt=" in job.url
+    )
 
     async def rotate_status_message(new_text: str) -> None:
         nonlocal msg_id, last_edited_text, _rotating_status
@@ -326,6 +332,17 @@ async def process_job(job: Job) -> None:
 
     async def run_downloader():
         try:
+            if is_torrent:
+                def on_torrent_progress(pct: float, downloaded_bytes: float, speed_bytes: float) -> None:
+                    status._active_job_metrics["download_pct"] = pct
+                    status._active_job_metrics["total_downloaded_bytes"] = downloaded_bytes
+                    status._active_job_metrics["download_speed"] = speed_bytes
+
+                from .torrent import download_torrent_async
+                return await download_torrent_async(
+                    job.url, dest_dir, on_progress=on_torrent_progress
+                )
+
             extra_args = None
             if job.args:
                 import json
@@ -343,6 +360,12 @@ async def process_job(job: Job) -> None:
     async def monitor_download_speed():
         nonlocal total_downloaded_bytes, download_speed, last_download_size, last_download_time
         try:
+            if is_torrent:
+                while not downloader_done.is_set():
+                    trigger_event.set()
+                    await asyncio.sleep(1)
+                return
+
             while not downloader_done.is_set():
                 if not dest_dir.exists():
                     await asyncio.sleep(2)
@@ -1111,6 +1134,75 @@ async def gdl_cmd(_, message: Message) -> None:
     await store.set_status_message(job.id, status_msg.id)
 
 
+@app.on_message(filters.command("tor"))
+async def tor_cmd(_, message: Message) -> None:
+    target_url = None
+
+    if message.reply_to_message and message.reply_to_message.document:
+        doc = message.reply_to_message.document
+        if doc.file_name.endswith(".torrent") or (doc.mime_type and "torrent" in doc.mime_type):
+            temp_path = await message.reply_to_message.download()
+            if temp_path:
+                torrents_dir = settings.data_dir / "torrents"
+                torrents_dir.mkdir(parents=True, exist_ok=True)
+                
+                import uuid
+                dest_path = torrents_dir / f"{uuid.uuid4()}.torrent"
+                import shutil
+                try:
+                    shutil.move(temp_path, dest_path)
+                    target_url = f"torrent:{dest_path.absolute()}"
+                except Exception as e:
+                    log.exception("Failed to save replied torrent file")
+                    await message.reply_text(f"Failed to save torrent file: {e}")
+                    return
+            else:
+                await message.reply_text("Failed to download replied torrent file.")
+                return
+
+    if not target_url:
+        cmd_args = message.command
+        if len(cmd_args) < 2:
+            await message.reply_text("Send a magnet link or reply to a `.torrent` file with `/tor <magnet/url>`.")
+            return
+        
+        input_url = cmd_args[1].strip()
+        if input_url.startswith("magnet:") or input_url.startswith(("http://", "https://")):
+            target_url = input_url
+        else:
+            await message.reply_text("Please provide a valid magnet link or torrent URL.")
+            return
+
+    job = await store.create_job(message.chat.id, target_url, split_large_files=1, args=None)
+    await store.update_progress(job.id, status="waiting")
+
+    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
+            InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+        ]
+    ])
+
+    url_display = target_url
+    if target_url.startswith("magnet:"):
+        url_display = target_url[:60] + "..." if len(target_url) > 60 else target_url
+    elif target_url.startswith("torrent:"):
+        url_display = "local torrent file"
+
+    prompt_text = (
+        f"**Torrent Job #{job.id} registered**\n"
+        f"- **Target**: `{url_display}`\n\n"
+        "Do you want to split files larger than 2GB for this job?"
+    )
+    status_msg = await message.reply_text(
+        prompt_text,
+        reply_markup=keyboard,
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
+    )
+    await store.set_status_message(job.id, status_msg.id)
+
+
 def extract_domain_name(url: str) -> str:
     from urllib.parse import urlparse
     try:
@@ -1229,7 +1321,7 @@ def sanitize_gdl_args(args: list[str], url: Optional[str | list[str]] = None) ->
     return sanitized
 
 
-@app.on_message(filters.text & ~filters.command(["start", "status", "cancel", "gdl"]))
+@app.on_message(filters.text & ~filters.command(["start", "status", "cancel", "gdl", "tor"]))
 async def handle_link(_, message: Message) -> None:
     text = (message.text or "").strip()
     is_private = message.chat.type == ChatType.PRIVATE
@@ -1363,6 +1455,12 @@ async def main() -> None:
             "`pip install gallery-dl --break-system-packages`"
         )
 
+    if shutil.which("aria2c") is None:
+        log.warning(
+            "aria2c not found on PATH — torrent downloads will fail. "
+            "Please install it using: `sudo apt-get install aria2`"
+        )
+
     await _startup()
 
     try:
@@ -1374,6 +1472,7 @@ async def main() -> None:
                 await app.set_bot_commands([
                     BotCommand("start", "Start the bot and see instructions"),
                     BotCommand("gdl", "Process replied .txt links file with optional arguments"),
+                    BotCommand("tor", "Download torrent/magnet link or replied .torrent file"),
                     BotCommand("status", "Check current active job details or queue status"),
                     BotCommand("cancel", "Instantly abort the active download/upload task"),
                 ])

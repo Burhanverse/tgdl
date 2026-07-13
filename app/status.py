@@ -21,6 +21,7 @@ _active_job_metrics = {
     "current_upload_pct": 0.0,
     "total_downloaded_bytes": 0,
     "download_count": 0,
+    "download_pct": 0.0,
 }
 
 
@@ -109,14 +110,31 @@ def compile_status_text(
         f"**Downloader Metrics**\n"
     )
 
+    is_torrent = (
+        job.url.startswith("magnet:") or
+        job.url.startswith("torrent:") or
+        job.url.endswith(".torrent") or
+        "magnet:?xt=" in job.url
+    )
+
     if not downloader_done:
-        if dl_file:
-            status_text += f"- **Current File**: `{dl_file}`\n"
-        status_text += (
-            f"- **Files Downloaded**: {download_count}\n"
-            f"- **Downloaded Data**: {dl_bytes_str}\n"
-            f"- **Download Speed**: {dl_speed_str}/s\n\n"
-        )
+        if is_torrent:
+            dl_pct = _active_job_metrics.get("download_pct", 0.0)
+            dl_bar = make_progress_bar(dl_pct)
+            status_text += (
+                f"- **Progress**: {dl_pct:.1f}%\n"
+                f"  `[{dl_bar}]`\n"
+                f"- **Downloaded Data**: {dl_bytes_str}\n"
+                f"- **Download Speed**: {dl_speed_str}/s\n\n"
+            )
+        else:
+            if dl_file:
+                status_text += f"- **Current File**: `{dl_file}`\n"
+            status_text += (
+                f"- **Files Downloaded**: {download_count}\n"
+                f"- **Downloaded Data**: {dl_bytes_str}\n"
+                f"- **Download Speed**: {dl_speed_str}/s\n\n"
+            )
     else:
         status_text += (
             f"- **Downloading**: `Complete` (Total: {dl_bytes_str})\n"
