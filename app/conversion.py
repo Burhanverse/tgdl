@@ -24,7 +24,7 @@ async def convert_media_async(input_path: Path, output_path: Path) -> bool:
     """Asynchronously convert video to MP4 container with H.264 video and AAC audio.
     Uses visually lossless quality settings (-crf 18) to preserve native quality."""
     cmd = [
-        "ffmpeg", "-y", "-i", str(input_path),
+        "ffmpeg", "-y", "-nostdin", "-i", str(input_path),
         "-c:v", "libx264", "-preset", "superfast", "-crf", "18",
         "-c:a", "aac", "-b:a", "192k", "-pix_fmt", "yuv420p",
         str(output_path)
@@ -32,6 +32,7 @@ async def convert_media_async(input_path: Path, output_path: Path) -> bool:
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL
         )
