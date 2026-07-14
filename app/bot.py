@@ -1276,6 +1276,19 @@ async def unzip_cmd(_, message: Message) -> None:
         await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
         return
 
+    limit_2gb = int(1.95 * 1024 * 1024 * 1024)
+    if doc.file_size and doc.file_size < limit_2gb:
+        await store.db.execute(
+            "UPDATE jobs SET status = ?, split_large_files = ? WHERE id = ?",
+            (JobStatus.QUEUED, 1, job.id)
+        )
+        await store.db.commit()
+        await status_msg.edit_text(
+            compile_queued_status_text(job.id, f"unzip:{filename}", "")
+        )
+        await job_queue.put(job.id)
+        return
+
     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     keyboard = InlineKeyboardMarkup([
         [
