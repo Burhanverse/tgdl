@@ -162,6 +162,8 @@ async def upload_file(
             log.warning("Failed to convert image %s to png", path.name)
 
     size = path.stat().st_size
+    if size == 0:
+        raise UploadTooLarge(f"{path.name} is empty (0 bytes) and cannot be uploaded")
     if size > settings.max_upload_bytes:
         raise UploadTooLarge(f"{path.name} is {size / 1e9:.2f}GB, exceeds 2GB MTProto limit")
     thumb_path = None
