@@ -182,7 +182,6 @@ async def upload_file(
 
     try:
         async with _upload_semaphore:
-            # Determine initial upload mode
             if ext in VIDEO_EXT and screenshots:
                 mode = "group"
             elif ext in VIDEO_EXT:
@@ -249,7 +248,7 @@ async def upload_file(
                         await client.send_photo(chat_id, str(path), **kwargs)
                         return
 
-                    else:  # document mode
+                    else:  
                         kwargs = {"caption": path.name}
                         if thumb_path:
                             kwargs["thumb"] = str(thumb_path)
@@ -294,13 +293,8 @@ async def upload_file(
                             mode = "video"
                             attempt = 0
                             continue
-                        elif mode == "video":
-                            log.warning("Video upload failed with MediaInvalid for %s. Falling back to document upload.", path.name)
-                            mode = "document"
-                            attempt = 0
-                            continue
-                        elif mode == "photo":
-                            log.warning("Photo upload failed with MediaInvalid for %s. Falling back to document upload.", path.name)
+                        elif mode in ("video", "photo"):
+                            log.warning("%s upload failed with MediaInvalid for %s. Falling back to document upload as last resort.", mode.capitalize(), path.name)
                             mode = "document"
                             attempt = 0
                             continue

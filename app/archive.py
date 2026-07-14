@@ -11,7 +11,6 @@ from .status import compile_archive_choice_status_text
 
 log = logging.getLogger(__name__)
 
-# Global archive state registries
 _archive_ids: dict[int, dict[str, str]] = {}
 _archive_events: dict[int, dict[str, asyncio.Event]] = {}
 _archive_choices: dict[int, dict[str, str]] = {}
@@ -27,7 +26,6 @@ class ArchivePasswordRequired(Exception):
 async def extract_archive_async(archive_path: Path, extract_dir: Path, password: Optional[str] = None) -> bool:
     ext = archive_path.suffix.lower()
 
-    # 1. Try native commands first for speed and robustness
     if ext == ".zip" and shutil.which("unzip"):
         try:
             log.info("Extracting %s using unzip command line tool", archive_path.name)
@@ -98,7 +96,6 @@ async def extract_archive_async(archive_path: Path, extract_dir: Path, password:
         except Exception:
             log.exception("tar command failed")
 
-    # If the format-specific tool wasn't found or failed, try 7z which supports almost everything
     if shutil.which("7z"):
         try:
             log.info("Extracting %s using 7z command line tool", archive_path.name)
@@ -135,7 +132,7 @@ async def handle_archive_choice(
 ) -> None:
     data = callback_query.data
     parts = data.split(":")
-    choice = parts[0].split("_")[1]  # "only" or "ext"
+    choice = parts[0].split("_")[1]  
     job_id = int(parts[1])
     archive_id = parts[2]
 
@@ -153,16 +150,13 @@ async def handle_archive_choice(
         await callback_query.answer("Archive choice expired or not found.", show_alert=True)
         return
 
-    # Save choice
     if job_id not in _archive_choices:
         _archive_choices[job_id] = {}
     _archive_choices[job_id][archive_id] = choice
 
-    # Trigger event
     if job_id in _archive_events and archive_id in _archive_events[job_id]:
         _archive_events[job_id][archive_id].set()
 
-    # Update message text
     choice_str = "Upload Archive Only" if choice == "only" else "Upload Archive + Extract Contents"
     status_text = compile_archive_choice_status_text(job.id, filename, choice_str)
     await callback_query.message.edit_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))

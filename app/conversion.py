@@ -11,21 +11,19 @@ from .status import compile_conversion_choice_status_text
 
 log = logging.getLogger(__name__)
 
-# Extensions that are typically incompatible with inline playback on Telegram
 CONVERSION_EXT = {".ts", ".flv", ".avi", ".wmv", ".asf"}
 
 # State registries
-_conversion_ids: dict[int, dict[str, str]] = {}  # job_id -> conv_id -> filename
-_conversion_events: dict[int, dict[str, asyncio.Event]] = {}  # job_id -> conv_id -> Event
-_conversion_choices: dict[int, dict[str, str]] = {}  # job_id -> conv_id -> "mp4" | "orig"
-_converted_files: dict[int, set[str]] = {}  # job_id -> set(original_filenames)
+_conversion_ids: dict[int, dict[str, str]] = {}  
+_conversion_events: dict[int, dict[str, asyncio.Event]] = {}  
+_conversion_choices: dict[int, dict[str, str]] = {}  
+_converted_files: dict[int, set[str]] = {}  
 
 
 async def convert_media_async(input_path: Path, output_path: Path) -> bool:
     """Asynchronously convert video to MP4 container.
     First tries to do a direct stream copy (instant, zero quality loss).
     If that fails, falls back to transcoding with visually lossless settings (-crf 18)."""
-    # 1. Attempt stream copy
     copy_cmd = [
         "ffmpeg", "-y", "-nostdin", "-i", str(input_path),
         "-c", "copy",
@@ -46,10 +44,8 @@ async def convert_media_async(input_path: Path, output_path: Path) -> bool:
     except Exception:
         log.exception("Fast stream copy failed for %s", input_path.name)
 
-    # Clean up output if partial/failed copy
     output_path.unlink(missing_ok=True)
 
-    # 2. Fallback to full transcode
     log.warning("Fast stream copy failed or unsupported. Falling back to full H.264 transcoding for %s", input_path.name)
     transcode_cmd = [
         "ffmpeg", "-y", "-nostdin", "-i", str(input_path),
@@ -74,7 +70,7 @@ async def convert_media_async(input_path: Path, output_path: Path) -> bool:
 async def handle_conversion_choice(client: Client, callback_query: CallbackQuery, store, is_job_owner) -> None:
     data = callback_query.data
     parts = data.split(":")
-    choice = parts[0]  # "convert_mp4" or "convert_orig"
+    choice = parts[0]  
     job_id = int(parts[1])
     conv_id = parts[2]
 

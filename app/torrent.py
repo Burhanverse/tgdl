@@ -11,8 +11,6 @@ from .downloader import DownloadResult
 
 log = logging.getLogger(__name__)
 
-# Pattern matching: [#hash downloaded/total(pct%) CN:x SPD:speed]
-# Example: [#e81e9b 3.2MiB/12MiB(26%) CN:5 SPD:1.1MiB]
 PROGRESS_RE = re.compile(
     r"\[#\w+\s+([^\s/]+)/([^\s(]+)\((\d+)%\)\s+CN:\d+\s+SPD:([^\s\]]+)\]"
 )
@@ -56,7 +54,6 @@ async def download_torrent_async(
     if target.startswith("torrent:"):
         target = target[len("torrent:"):]
 
-    # Build the command arguments
     cmd = [
         "aria2c",
         f"--dir={dest_dir}",
@@ -111,7 +108,6 @@ async def download_torrent_async(
             if len(stderr_chunks) > 100:
                 stderr_chunks.pop(0)
 
-    # Concurrently parse stdout and stderr streams
     await asyncio.gather(read_stdout(), read_stderr())
 
     returncode = await proc.wait()
