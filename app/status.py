@@ -188,7 +188,10 @@ def compile_job_status_text(job, job_state) -> str:
         split_str = "Yes" if job.split_large_files else "No"
         job_text = f"**Torrent Job #{job.id}**\n"
         
-        if job.url.startswith("torrent:"):
+        torrent_name = getattr(job_state, "torrent_name", None)
+        if torrent_name:
+            job_text += f"- **Name**: `{torrent_name}`\n"
+        elif job.url.startswith("torrent:"):
             from pathlib import Path
             torrent_path = job.url[len("torrent:"):]
             name = Path(torrent_path).name
@@ -201,6 +204,7 @@ def compile_job_status_text(job, job_state) -> str:
             f"- **Tool**: `aria2c`\n"
             f"- **Split > 2GB**: {split_str}\n"
         )
+
 
         if not job_state.downloader_done.is_set():
             dl_speed_str = format_size(job_state.download_speed)
