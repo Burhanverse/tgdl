@@ -258,8 +258,9 @@ async def cancel_cmd(_, message: Message) -> None:
             await message.reply_text(f"Job #{job_id} not found or not owned by you.")
             return
 
-        if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+        if job.status in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED):
             await message.reply_text(f"Job #{job_id} is already in `{job.status}` state.")
+
             return
 
         cancelled = await queue_manager.cancel_job(job.id)
@@ -791,8 +792,9 @@ async def handle_cancel_job_cb(_, callback_query: CallbackQuery) -> None:
         await callback_query.answer("Unauthorized: You do not own this job.", show_alert=True)
         return
 
-    if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+    if job.status in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED):
         await callback_query.answer(f"Job is already {job.status}.")
+
         try:
             await callback_query.message.delete()
         except Exception:

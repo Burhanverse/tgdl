@@ -187,9 +187,10 @@ async def download_torrent_async(
     proc = ARIA2_PROC
 
     target = torrent_or_magnet
-    is_torrent_file = target.startswith("torrent:") or target.endswith(".torrent")
+    is_torrent_file = (target.startswith("torrent:") or target.endswith(".torrent")) and not target.startswith(("http://", "https://"))
     if target.startswith("torrent:"):
         target = target[len("torrent:"):]
+
 
     # Add the download via RPC
     gid = None
