@@ -12,8 +12,26 @@ from .downloader import DownloadResult
 log = logging.getLogger(__name__)
 
 PROGRESS_RE = re.compile(
-    r"\[#\w+\s+([^\s/]+)/([^\s(]+)\((\d+)%\)\s+CN:\d+\s+SPD:([^\s\]]+)\]"
+    r"\[#\w+\s+([^\s/]+)/([^\s(]+)\((\d+)%\)\s+CN:\d+\s+(?:SPD|DL):([^\s\]]+)\]"
 )
+
+TRACKERS = [
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.coppersurfer.tk:6969/announce",
+    "udp://tracker.openbittorrent.com:6969/announce",
+    "udp://tracker.internetwarriors.net:1337/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "udp://open.demonii.com:1337/announce",
+    "udp://tracker.cyberia.is:6969/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://retracker.lanta-net.ru:2710/announce",
+    "udp://tracker.tiny-vps.com:6969/announce",
+    "udp://valkyrie.info:6969/announce",
+    "udp://ipv4.tracker.harry.lu:80/announce",
+    "http://tracker.gbitt.info:80/announce",
+    "http://tracker.ipv6tracker.ru:80/announce"
+]
 
 
 def parse_speed_to_bytes(speed_str: str) -> float:
@@ -54,6 +72,8 @@ async def download_torrent_async(
     if target.startswith("torrent:"):
         target = target[len("torrent:"):]
 
+    tracker_arg = f"--bt-tracker={','.join(TRACKERS)}"
+
     cmd = [
         "aria2c",
         f"--dir={dest_dir}",
@@ -61,10 +81,17 @@ async def download_torrent_async(
         "--seed-ratio=0.0",
         "--summary-interval=1",
         "--follow-torrent=mem",
+        "--enable-dht=true",
+        "--bt-enable-lpd=true",
+        "--enable-peer-exchange=true",
+        "--bt-max-peers=80",
+        "--max-overall-upload-limit=50K",
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        tracker_arg,
         target
     ]
 
-    log.info("Running aria2c command: %s", " ".join(cmd))
+    log.info("Running aria2c command with optimized torrent parameters")
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -116,6 +143,9 @@ async def download_torrent_async(
 
     files = []
     if ok and dest_dir.exists():
-        files = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
+        files = [
+            p for p in dest_dir.rglob("*")
+            if p.is_file() and not p.name.endswith(".part") and not p.name.endswith(".aria2")
+        ]
 
     return DownloadResult(ok=ok, files=files, error_tail=error_tail, attempts=1)
