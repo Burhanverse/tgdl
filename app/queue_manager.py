@@ -16,6 +16,7 @@ from .db import Job, JobStatus, JobStore
 from .uploader import upload_file, UploadTooLarge
 from .conversion import (
     convert_media_async,
+    CONVERSION_EXT,
     _conversion_ids,
     _conversion_events,
     _conversion_choices,
@@ -65,6 +66,8 @@ class JobState:
         self.session_uploaded_count = 0
         self.deleted_bytes = 0
         self.initial_download_msg = None
+        self.is_converting = False
+        self.conversion_file = None
 
 
 class QueueManager:
@@ -200,14 +203,6 @@ class QueueManager:
             await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
         try:
-            await self.store.update_progress(job.id, status=JobStatus.DOWNLOADING)
-            job_state.initial_download_msg = await safe_send(
-                self.client,
-                chat_id,
-                f"Downloading:\n{job.url}\n(large files or magnet links take a while)",
-                link_preview_options=LinkPreviewOptions(is_disabled=True)
-            )
-
             is_torrent = (
                 job.url.startswith("magnet:") or
                 job.url.startswith("torrent:") or
@@ -215,6 +210,19 @@ class QueueManager:
                 "magnet:?xt=" in job.url
             )
             is_unzip = job.url.startswith("unzip:")
+
+            if is_torrent:
+                initial_text = "Starting torrent download..."
+            else:
+                initial_text = f"Downloading:\n{job.url}\n(large files or magnet links take a while)"
+
+            await self.store.update_progress(job.id, status=JobStatus.DOWNLOADING)
+            job_state.initial_download_msg = await safe_send(
+                self.client,
+                chat_id,
+                initial_text,
+                link_preview_options=LinkPreviewOptions(is_disabled=True)
+            )
 
             def reg(proc):
                 job_state.active_process = proc
@@ -346,11 +354,17 @@ class QueueManager:
             except Exception:
                 return
 
+            db_total = len(files)
+            if job.total_files != db_total:
+                await self.store.update_progress(job.id, total_files=db_total)
+                job = await self.store.get_job(job.id)
+
             pending = [
                 f for f in files
                 if str(f.relative_to(dest_dir)) not in job_state.uploaded_filenames
                 and str(f.relative_to(dest_dir)) not in job_state.uploading_files
             ]
+
 
             for f in pending:
                 if not job_state.downloader_done.is_set():
@@ -656,23 +670,65 @@ class QueueManager:
                     await asyncio.sleep(delay)
 
         async def run_uploader() -> None:
-            while not job_state.downloader_done.is_set():
-                has_completed_file = False
-                if dest_dir.exists():
-                    try:
-                        files = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
+            is_torrent = (
+                job.url.startswith("magnet:") or
+                job.url.startswith("torrent:") or
+                job.url.endswith(".torrent") or
+                "magnet:?xt=" in job.url
+            )
+
+            if is_torrent:
+                while not job_state.downloader_done.is_set():
+                    await asyncio.sleep(2.0)
+
+                try:
+                    if dest_dir.exists():
+                        files = sorted(p for p in dest_dir.rglob("*") if p.is_file())
                         for f in files:
-                            sz1 = f.stat().st_size
-                            await asyncio.sleep(0.5)
-                            sz2 = f.stat().st_size
-                            if sz1 == sz2 and sz1 > 0:
-                                has_completed_file = True
+                            db_job = await self.store.get_job(job.id)
+                            if not db_job or db_job.status == JobStatus.CANCELLED or job_state.uploader_done.is_set():
                                 break
-                    except Exception:
-                        pass
-                if has_completed_file:
-                    break
-                await asyncio.sleep(2.0)
+
+                            if f.suffix.lower() in CONVERSION_EXT:
+                                job_state.is_converting = True
+                                job_state.conversion_file = f.name
+                                job_state.trigger_event.set()
+
+                                output_path = f.with_suffix(".mp4")
+                                if output_path.exists():
+                                    output_path = f.with_name(f"{f.stem}_converted.mp4")
+
+                                log.info("Converting incompatible torrent file %s to %s", f.name, output_path.name)
+                                success = await convert_media_async(f, output_path)
+                                if success:
+                                    log.info("Successfully converted incompatible torrent file %s", f.name)
+                                else:
+                                    log.error("Failed to convert incompatible torrent file %s", f.name)
+                except Exception as ce:
+                    log.exception("Error during torrent media conversion: %s", ce)
+                finally:
+                    job_state.is_converting = False
+                    job_state.conversion_file = None
+                    job_state.trigger_event.set()
+            else:
+                while not job_state.downloader_done.is_set():
+                    has_completed_file = False
+                    if dest_dir.exists():
+                        try:
+                            files = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
+                            for f in files:
+                                sz1 = f.stat().st_size
+                                await asyncio.sleep(0.5)
+                                sz2 = f.stat().st_size
+                                if sz1 == sz2 and sz1 > 0:
+                                    has_completed_file = True
+                                    break
+                        except Exception:
+                            pass
+                    if has_completed_file:
+                        break
+                    await asyncio.sleep(2.0)
+
 
             while True:
                 await perform_uploads()

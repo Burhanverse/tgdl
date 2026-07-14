@@ -11,9 +11,8 @@ from .status import compile_conversion_choice_status_text
 
 log = logging.getLogger(__name__)
 
-CONVERSION_EXT = {".ts", ".flv", ".avi", ".wmv", ".asf"}
+CONVERSION_EXT = {".ts", ".flv", ".avi", ".wmv", ".asf", ".mkv"}
 
-# State registries
 _conversion_ids: dict[int, dict[str, str]] = {}  
 _conversion_events: dict[int, dict[str, asyncio.Event]] = {}  
 _conversion_choices: dict[int, dict[str, str]] = {}  

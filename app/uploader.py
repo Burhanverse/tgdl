@@ -13,7 +13,7 @@ from pyrogram.errors import FloodWait, RPCError
 from pyrogram.types import InputMediaPhoto, InputMediaVideo
 
 from .config import settings
-from .conversion import convert_image_to_png_async
+from .conversion import convert_image_to_png_async, CONVERSION_EXT
 
 log = logging.getLogger(__name__)
 
@@ -181,7 +181,9 @@ async def upload_file(
 
     try:
         async with _upload_semaphore:
-            if ext in VIDEO_EXT and screenshots:
+            if ext in CONVERSION_EXT:
+                mode = "document"
+            elif ext in VIDEO_EXT and screenshots:
                 mode = "group"
             elif ext in VIDEO_EXT:
                 mode = "video"
