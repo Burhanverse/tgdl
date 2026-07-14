@@ -222,6 +222,8 @@ async def download_torrent_async(
 
     ok = False
     error_tail = ""
+    start_time = asyncio.get_event_loop().time()
+    last_active_time = start_time
     try:
         while True:
             # Check if global daemon subprocess is still running
@@ -259,12 +261,21 @@ async def download_torrent_async(
                 error_tail = f"Aria2 error code {error_code}: {error_msg}"
                 break
 
-            # Calculate progress and extract torrent name
+            # Calculate progress and extract peer counts
             completed_len = float(result.get("completedLength", 0))
             total_len = float(result.get("totalLength", 0))
             speed = float(result.get("downloadSpeed", 0))
+            seeders = int(result.get("numSeeders", 0))
+            connections = int(result.get("connections", 0))
 
             pct = (completed_len * 100.0 / total_len) if total_len > 0 else 0.0
+
+            # Dead torrent timeout detection (no progress, no speed, and no active seeders for 5 minutes)
+            now = asyncio.get_event_loop().time()
+            if completed_len > 0 or speed > 0 or seeders > 0:
+                last_active_time = now
+            elif now - last_active_time > 300.0:  # 5 minutes
+                raise Exception("Torrent is dead (stuck at 0% with no active seeders/peers).")
 
             # Extract resolved torrent name
             torrent_name = None
@@ -281,11 +292,15 @@ async def download_torrent_async(
 
             if on_progress:
                 try:
-                    on_progress(pct, completed_len, speed, torrent_name)
+                    on_progress(pct, completed_len, speed, seeders, connections, torrent_name)
                 except TypeError:
-                    on_progress(pct, completed_len, speed)
+                    try:
+                        on_progress(pct, completed_len, speed, torrent_name)
+                    except TypeError:
+                        on_progress(pct, completed_len, speed)
 
             await asyncio.sleep(2.0)
+
     except Exception as e:
         log.exception("Exception in progress monitoring loop")
         error_tail = str(e)

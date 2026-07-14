@@ -210,13 +210,22 @@ def compile_job_status_text(job, job_state) -> str:
             dl_speed_str = format_size(job_state.download_speed)
             dl_bytes_str = format_size(job_state.total_downloaded_bytes)
             bar = make_progress_bar(job_state.download_pct)
+            
+            peers_info = ""
+            if is_torrent:
+                seeders = getattr(job_state, "torrent_seeders", 0)
+                peers = getattr(job_state, "torrent_peers", 0)
+                peers_info = f"- **Peers**: `Seeders: {seeders} | Leechers/Peers: {peers}`\n"
+
             job_text += (
                 f"- **Status**: `Downloading`\n"
                 f"- **Progress**: {job_state.download_pct:.1f}%\n"
                 f"  `[{bar}]`\n"
                 f"- **Downloaded**: {dl_bytes_str}\n"
                 f"- **Speed**: {dl_speed_str}/s\n"
+                f"{peers_info}"
             )
+
         elif getattr(job_state, "is_converting", False):
             conv_file = getattr(job_state, "conversion_file", "media file")
             job_text += (

@@ -284,10 +284,19 @@ class QueueManager:
                     archive_files = [p for p in dest_dir.iterdir() if p.is_file()]
                 result = DownloadResult(ok=True, files=archive_files)
             elif is_torrent:
-                def on_torrent_progress(pct: float, downloaded_bytes: float, speed_bytes: float, name: Optional[str] = None) -> None:
+                def on_torrent_progress(
+                    pct: float,
+                    downloaded_bytes: float,
+                    speed_bytes: float,
+                    seeders: int = 0,
+                    connections: int = 0,
+                    name: Optional[str] = None
+                ) -> None:
                     job_state.download_pct = pct
                     job_state.total_downloaded_bytes = downloaded_bytes
                     job_state.download_speed = speed_bytes
+                    job_state.torrent_seeders = seeders
+                    job_state.torrent_peers = connections
                     if name:
                         job_state.torrent_name = name
 
@@ -295,6 +304,7 @@ class QueueManager:
                 result = await download_torrent_async(
                     job.url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
                 )
+
 
             else:
                 extra_args = None
