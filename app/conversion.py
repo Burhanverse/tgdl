@@ -7,6 +7,7 @@ from typing import Optional
 
 from pyrogram import Client
 from pyrogram.types import CallbackQuery, LinkPreviewOptions
+from .status import compile_conversion_choice_status_text
 
 log = logging.getLogger(__name__)
 
@@ -101,9 +102,7 @@ async def handle_conversion_choice(client: Client, callback_query: CallbackQuery
     await callback_query.answer(f"Selected: {choice_str}")
     try:
         await callback_query.message.edit_text(
-            f"**Job #{job_id} - Media Conversion**\n"
-            f"- **File**: `{filename}`\n\n"
-            f"Choice selected: **{choice_str}**",
+            compile_conversion_choice_status_text(job_id, filename, choice_str),
             link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
     except Exception:

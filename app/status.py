@@ -158,3 +158,95 @@ def compile_status_text(
         )
 
     return status_text
+
+
+def compile_split_prompt_text(job_id: int, url_or_target: str, is_torrent: bool = False, is_unzip: bool = False) -> str:
+    if is_torrent:
+        title = f"**Torrent Job #{job_id} registered**"
+        target_label = "Target"
+    elif is_unzip:
+        title = f"**Job #{job_id} registered**"
+        target_label = "Archive"
+    else:
+        title = f"**Job #{job_id} registered**"
+        target_label = "URL"
+    
+    display = format_url_display(url_or_target) if not (is_torrent or is_unzip) else url_or_target
+    return (
+        f"{title}\n"
+        f"- **{target_label}**: {display}\n\n"
+        "Do you want to split files larger than 2GB for this job?"
+    )
+
+
+def compile_queued_status_text(job_id: int, url: str, args_display: str) -> str:
+    return (
+        f"**Queued (job #{job_id})**\n"
+        f"- **URL**: {format_url_display(url)}{args_display}"
+    )
+
+
+def compile_unzip_download_status_text(job_id: int, filename: str, current: int, total: int) -> str:
+    pct = current * 100.0 / total if total > 0 else 0.0
+    bar = make_progress_bar(pct)
+    return (
+        f"**Job #{job_id} registered**\n"
+        f"- **Archive**: `{filename}`\n\n"
+        f"Downloading archive to VPS: {pct:.1f}%\n"
+        f"  `[{bar}]`\n"
+        f"Downloaded: {format_size(current)} of {format_size(total)}"
+    )
+
+
+def compile_archive_prompt_text(job_id: int, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Archive Detected**\n"
+        f"- **File**: `{filename}`\n\n"
+        "Do you want to upload the archive file only, or extract its contents and upload both?"
+    )
+
+
+def compile_archive_choice_status_text(job_id: int, filename: str, choice_str: str) -> str:
+    return (
+        f"**Job #{job_id} - Archive Choice**\n"
+        f"- **File**: `{filename}`\n"
+        f"- **Selected**: `{choice_str}`\n\n"
+        "Processing choice..."
+    )
+
+
+def compile_conversion_prompt_text(job_id: int, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Incompatible Video Format**\n"
+        f"- **File**: `{filename}`\n\n"
+        "The file format is not natively supported for Telegram inline streaming. "
+        "Do you want to convert it to MP4 first, or upload the original as a document?"
+    )
+
+
+def compile_conversion_choice_status_text(job_id: int, filename: str, choice_str: str) -> str:
+    return (
+        f"**Job #{job_id} - Media Conversion**\n"
+        f"- **File**: `{filename}`\n\n"
+        f"Choice selected: **{choice_str}**"
+    )
+
+
+def compile_extraction_status_text(job_id: int, filename: str) -> str:
+    return f"**Job #{job_id} - Archive Extraction**\nExtracting `{filename}`..."
+
+
+def compile_conversion_running_status_text(job_id: int, filename: str) -> str:
+    return f"**Job #{job_id} - Media Conversion**\nConverting `{filename}` to standard MP4 container..."
+
+
+def compile_conversion_failed_status_text(job_id: int, filename: str) -> str:
+    return f"**Job #{job_id} - Conversion Failed**\nFailed to convert `{filename}`. Uploading original as document."
+
+
+def compile_extraction_failed_status_text(job_id: int, filename: str) -> str:
+    return f"**Job #{job_id} - Extraction Failed**\nFailed to extract `{filename}`."
+
+
+def compile_extraction_success_status_text(job_id: int, filename: str) -> str:
+    return f"**Job #{job_id} - Archive Extracted**\nSuccessfully extracted `{filename}` into download directory."

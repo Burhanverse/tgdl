@@ -24,6 +24,16 @@ from .status import (
     safe_edit,
     format_url_display,
     compile_status_text,
+    compile_split_prompt_text,
+    compile_queued_status_text,
+    compile_unzip_download_status_text,
+    compile_archive_prompt_text,
+    compile_conversion_prompt_text,
+    compile_extraction_status_text,
+    compile_conversion_running_status_text,
+    compile_conversion_failed_status_text,
+    compile_extraction_failed_status_text,
+    compile_extraction_success_status_text,
 )
 from . import status
 from .archive import (
@@ -478,11 +488,7 @@ async def process_job(job: Job) -> None:
                             InlineKeyboardButton("Archive + Extract", callback_data=f"archive_ext:{job.id}:{archive_id}")
                         ]
                     ])
-                    prompt_text = (
-                        f"**Job #{job.id} - Archive Detected**\n"
-                        f"- **File**: `{f.name}`\n\n"
-                        f"Do you want to upload the archive file only, or extract its contents and upload both?"
-                    )
+                    prompt_text = compile_archive_prompt_text(job.id, f.name)
                     prompt_msg = await app.send_message(
                         chat_id,
                         prompt_text,
@@ -508,7 +514,7 @@ async def process_job(job: Job) -> None:
                     log.info("Extracting archive %s for job %s", f.name, job.id)
                     status_msg = await app.send_message(
                         chat_id,
-                        f"**Job #{job.id} - Archive Extraction**\nExtracting `{f.name}`...",
+                        compile_extraction_status_text(job.id, f.name),
                         link_preview_options=LinkPreviewOptions(is_disabled=True)
                     )
 
@@ -532,6 +538,12 @@ async def process_job(job: Job) -> None:
                             except Exception:
                                 pass
 
+                            if job.url.startswith("unzip:"):
+                                try:
+                                    f.unlink(missing_ok=True)
+                                except Exception:
+                                    pass
+
                             if archive_prompt_msg_id:
                                 try:
                                     await app.delete_messages(chat_id, archive_prompt_msg_id)
@@ -544,7 +556,7 @@ async def process_job(job: Job) -> None:
 
                             success_msg = await app.send_message(
                                 chat_id,
-                                f"**Job #{job.id} - Archive Extracted**\nSuccessfully extracted `{f.name}` into download directory.",
+                                compile_extraction_success_status_text(job.id, f.name),
                                 link_preview_options=LinkPreviewOptions(is_disabled=True)
                             )
                             async def delete_success_msg(m):
@@ -565,7 +577,7 @@ async def process_job(job: Job) -> None:
                                 pass
                             fail_msg = await app.send_message(
                                 chat_id,
-                                f"**Job #{job.id} - Extraction Failed**\nFailed to extract `{f.name}`.",
+                                compile_extraction_failed_status_text(job.id, f.name),
                                 link_preview_options=LinkPreviewOptions(is_disabled=True)
                             )
                             if archive_prompt_msg_id:
@@ -617,12 +629,7 @@ async def process_job(job: Job) -> None:
                             InlineKeyboardButton("Original File", callback_data=f"convert_orig:{job.id}:{conv_id}")
                         ]
                     ])
-                    prompt_text = (
-                        f"**Job #{job.id} - Incompatible Video Format**\n"
-                        f"- **File**: `{f.name}`\n\n"
-                        f"The file format is not natively supported for Telegram inline streaming. "
-                        f"Do you want to convert it to MP4 first, or upload the original as a document?"
-                    )
+                    prompt_text = compile_conversion_prompt_text(job.id, f.name)
                     prompt_msg = await app.send_message(
                         chat_id,
                         prompt_text,
@@ -649,7 +656,7 @@ async def process_job(job: Job) -> None:
 
                     status_msg = await app.send_message(
                         chat_id,
-                        f"**Job #{job.id} - Media Conversion**\nConverting `{f.name}` to standard MP4 container...",
+                        compile_conversion_running_status_text(job.id, f.name),
                         link_preview_options=LinkPreviewOptions(is_disabled=True)
                     )
 
@@ -676,7 +683,7 @@ async def process_job(job: Job) -> None:
                                 pass
                             fail_msg = await app.send_message(
                                 chat_id,
-                                f"**Job #{job.id} - Conversion Failed**\nFailed to convert `{f.name}`. Uploading original as document.",
+                                compile_conversion_failed_status_text(job.id, f.name),
                                 link_preview_options=LinkPreviewOptions(is_disabled=True)
                             )
                             if prompt_msg_id:
@@ -1140,12 +1147,7 @@ async def gdl_cmd(_, message: Message) -> None:
         ]
     ])
 
-    url_display = format_url_display(urls_json)
-    prompt_text = (
-        f"**Job #{job.id} registered**\n"
-        f"- **URL**: {url_display}\n\n"
-        "Do you want to split files larger than 2GB for this job?"
-    )
+    prompt_text = compile_split_prompt_text(job.id, urls_json)
     status_msg = await message.reply_text(
         prompt_text,
         reply_markup=keyboard,
@@ -1210,11 +1212,7 @@ async def tor_cmd(_, message: Message) -> None:
     elif target_url.startswith("torrent:"):
         url_display = "local torrent file"
 
-    prompt_text = (
-        f"**Torrent Job #{job.id} registered**\n"
-        f"- **Target**: `{url_display}`\n\n"
-        "Do you want to split files larger than 2GB for this job?"
-    )
+    prompt_text = compile_split_prompt_text(job.id, url_display, is_torrent=True)
     status_msg = await message.reply_text(
         prompt_text,
         reply_markup=keyboard,
@@ -1252,8 +1250,26 @@ async def unzip_cmd(_, message: Message) -> None:
     )
     await store.set_status_message(job.id, status_msg.id)
 
+    last_edit_time = 0.0
+    async def on_download_progress(current, total):
+        nonlocal last_edit_time
+        import time
+        now = time.time()
+        if now - last_edit_time < 3.0 and current != total:
+            return
+        last_edit_time = now
+        try:
+            await status_msg.edit_text(
+                compile_unzip_download_status_text(job.id, filename, current, total)
+            )
+        except Exception:
+            pass
+
     try:
-        await message.reply_to_message.download(file_name=str(dest_dir / filename))
+        await message.reply_to_message.download(
+            file_name=str(dest_dir / filename),
+            progress=on_download_progress
+        )
     except Exception as e:
         log.exception("Failed to download replied archive file")
         await status_msg.edit_text(f"Failed to download archive: {e}")
@@ -1268,11 +1284,7 @@ async def unzip_cmd(_, message: Message) -> None:
         ]
     ])
 
-    prompt_text = (
-        f"**Job #{job.id} registered**\n"
-        f"- **Archive**: `{filename}`\n\n"
-        "Do you want to split files larger than 2GB for this job?"
-    )
+    prompt_text = compile_split_prompt_text(job.id, filename, is_unzip=True)
     await status_msg.edit_text(prompt_text, reply_markup=keyboard)
 
 
@@ -1487,10 +1499,7 @@ async def handle_split_choice(_, callback_query: CallbackQuery) -> None:
         except Exception:
             pass
     args_display = f"\n- **Args**: `{' '.join(parsed_args)}`" if parsed_args else ""
-    status_text = (
-        f"**Queued (job #{job_id})**\n"
-        f"- **URL**: {format_url_display(job.url)}{args_display}"
-    )
+    status_text = compile_queued_status_text(job_id, job.url, args_display)
     await callback_query.message.edit_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
     await callback_query.answer("Choice registered.")
     await job_queue.put(job_id)

@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from pyrogram.types import CallbackQuery, LinkPreviewOptions
+from .status import compile_archive_choice_status_text
 
 log = logging.getLogger(__name__)
 
@@ -118,11 +119,6 @@ async def handle_archive_choice(
 
     # Update message text
     choice_str = "Upload Archive Only" if choice == "only" else "Upload Archive + Extract Contents"
-    status_text = (
-        f"**Job #{job.id} - Archive Choice**\n"
-        f"- **File**: `{filename}`\n"
-        f"- **Selected**: `{choice_str}`\n\n"
-        f"Processing choice..."
-    )
+    status_text = compile_archive_choice_status_text(job.id, filename, choice_str)
     await callback_query.message.edit_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
     await callback_query.answer(f"Selected: {choice_str}")
