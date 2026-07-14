@@ -148,7 +148,6 @@ async def upload_file(
 ) -> None:
     ext = path.suffix.lower()
     converted_png_paths: list[Path] = []
-    converted_attempted = False
     CONVERTIBLE_IMAGE_EXT = {".webp", ".bmp", ".tiff", ".heic", ".heif", ".ico"}
     if ext in CONVERTIBLE_IMAGE_EXT:
         log.info("Converting unsupported image %s to PNG for standard inline photo display", path.name)
@@ -273,20 +272,7 @@ async def upload_file(
                     )
 
                     if is_media_invalid:
-                        if path.suffix.lower() in IMAGE_EXT and not converted_attempted:
-                            log.warning("Image upload failed with MediaInvalid for %s. Attempting to convert using ffmpeg...", path.name)
-                            png_path = path.parent / f"{path.stem}_converted.png"
-                            success = await convert_image_to_png_async(path, png_path)
-                            if success:
-                                converted_png_paths.append(png_path)
-                                path = png_path
-                                ext = ".png"
-                                mode = "photo"
-                                attempt = 0
-                                converted_attempted = True
-                                continue
-                            else:
-                                log.warning("ffmpeg image conversion failed for %s", path.name)
+
 
                         if mode == "group":
                             log.warning("Media group upload failed with MediaInvalid for %s. Falling back to standalone video upload.", path.name)
