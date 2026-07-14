@@ -80,8 +80,8 @@ class QueueManager:
         self.client = client
         self.store = store
         self.is_running = True
-        num_dl = settings.max_concurrent_jobs
-        num_ul = settings.max_concurrent_jobs
+        num_dl = settings.tg_max_concurrent_downloads
+        num_ul = settings.tg_max_concurrent_uploads
         
         for i in range(num_dl):
             self.download_workers.append(asyncio.create_task(self._download_worker_loop(i)))

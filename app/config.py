@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     tg_batch_size: int = 30
     tg_batch_cooldown_s: float = 25.0
     tg_upload_max_retries: int = 3
+    tg_max_concurrent_downloads: int = 1
     tg_max_concurrent_uploads: int = 1  # keep at 1 unless you know Telegram tolerates more
 
     # --- misc ---
