@@ -165,7 +165,7 @@ async def process_job(job: Job) -> None:
     })
     chat_id = job.chat_id
     msg_id = job.status_message_id
-    dest_dir = settings.downloads_dir / job.download_dir
+    dest_dir = (settings.downloads_dir / job.download_dir).resolve()
 
     last_edited_text = ""
     _rotating_status = False
@@ -441,8 +441,8 @@ async def process_job(job: Job) -> None:
 
         pending = [
             f for f in files
-            if f.name not in uploaded_filenames
-            and f.name not in uploading_files
+            if str(f.relative_to(dest_dir)) not in uploaded_filenames
+            and str(f.relative_to(dest_dir)) not in uploading_files
         ]
 
         for f in pending:
@@ -451,6 +451,8 @@ async def process_job(job: Job) -> None:
             db_job = await store.get_job(job.id)
             if db_job and db_job.status == JobStatus.CANCELLED:
                 return
+
+            f_rel = str(f.relative_to(dest_dir))
 
             # Check if this file is an archive
             is_archive = f.suffix.lower() in ARCHIVE_EXT
@@ -461,12 +463,12 @@ async def process_job(job: Job) -> None:
                     _archive_ids[job.id] = {}
                 archive_id = None
                 for aid, fname in _archive_ids[job.id].items():
-                    if fname == f.name:
+                    if fname == f_rel:
                         archive_id = aid
                         break
                 if archive_id is None:
                     archive_id = str(len(_archive_ids[job.id]) + 1)
-                    _archive_ids[job.id][archive_id] = f.name
+                    _archive_ids[job.id][archive_id] = f_rel
 
                 if job.url.startswith("unzip:"):
                     if job.id not in _archive_choices:
@@ -506,10 +508,10 @@ async def process_job(job: Job) -> None:
 
                 # Choice is now set!
                 choice = _archive_choices[job.id][archive_id]
-                if choice == "ext" and f.name not in _extracted_archives.get(job.id, set()):
+                if choice == "ext" and f_rel not in _extracted_archives.get(job.id, set()):
                     if job.id not in _extracted_archives:
                         _extracted_archives[job.id] = set()
-                    _extracted_archives[job.id].add(f.name)
+                    _extracted_archives[job.id].add(f_rel)
 
                     log.info("Extracting archive %s for job %s", f.name, job.id)
                     status_msg = await app.send_message(
@@ -607,18 +609,18 @@ async def process_job(job: Job) -> None:
 
             # Check if this file needs conversion
             is_incompatible = f.suffix.lower() in CONVERSION_EXT
-            if is_incompatible and f.name not in _converted_files.get(job.id, set()):
+            if is_incompatible and f_rel not in _converted_files.get(job.id, set()):
                 prompt_msg_id = None
                 if job.id not in _conversion_ids:
                     _conversion_ids[job.id] = {}
                 conv_id = None
                 for cid, fname in _conversion_ids[job.id].items():
-                    if fname == f.name:
+                    if fname == f_rel:
                         conv_id = cid
                         break
                 if conv_id is None:
                     conv_id = str(len(_conversion_ids[job.id]) + 1)
-                    _conversion_ids[job.id][conv_id] = f.name
+                    _conversion_ids[job.id][conv_id] = f_rel
 
                 job_choices = _conversion_choices.get(job.id, {})
                 if conv_id not in job_choices:
@@ -648,7 +650,7 @@ async def process_job(job: Job) -> None:
                 if choice == "mp4":
                     if job.id not in _converted_files:
                         _converted_files[job.id] = set()
-                    _converted_files[job.id].add(f.name)
+                    _converted_files[job.id].add(f_rel)
 
                     log.info("Converting video %s to MP4 for job %s", f.name, job.id)
                     output_name = f.stem + "_converted.mp4"
@@ -727,7 +729,7 @@ async def process_job(job: Job) -> None:
                         pending.append(part)
                 continue
 
-            uploading_files.add(f.name)
+            uploading_files.add(f_rel)
             try:
                 await store.update_progress(job.id, status=JobStatus.UPLOADING)
 
@@ -742,9 +744,9 @@ async def process_job(job: Job) -> None:
                 trigger_event.set()
 
                 await upload_file(app, chat_id, f, progress=on_upload_progress)
-                await store.mark_uploaded(job.id, f.name)
+                await store.mark_uploaded(job.id, f_rel)
 
-                uploaded_filenames.add(f.name)
+                uploaded_filenames.add(f_rel)
                 sent += 1
                 await log_upload(job.id, f.name)
                 log.info("Successfully uploaded %s for job %s", f.name, job.id)
@@ -769,8 +771,8 @@ async def process_job(job: Job) -> None:
                 status._active_job_metrics["current_upload_file"] = None
                 status._active_job_metrics["current_upload_pct"] = 0.0
                 status._active_job_metrics["upload_speed"] = 0.0
-                if f.name in uploading_files:
-                    uploading_files.remove(f.name)
+                if f_rel in uploading_files:
+                    uploading_files.remove(f_rel)
 
             await store.update_progress(job.id, sent_files=sent, skipped_files=len(skipped))
             trigger_event.set()
@@ -807,8 +809,8 @@ async def process_job(job: Job) -> None:
                             files = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
                             pending = [
                                 f for f in files
-                                if f.name not in uploaded_filenames
-                                and f.name not in uploading_files
+                                if str(f.relative_to(dest_dir)) not in uploaded_filenames
+                                and str(f.relative_to(dest_dir)) not in uploading_files
                             ]
                             if pending:
                                 has_pending = True
@@ -1240,7 +1242,7 @@ async def unzip_cmd(_, message: Message) -> None:
     job = await store.create_job(message.chat.id, f"unzip:{filename}", split_large_files=1, args=None)
     await store.update_progress(job.id, status="waiting")
 
-    dest_dir = settings.downloads_dir / job.download_dir
+    dest_dir = (settings.downloads_dir / job.download_dir).resolve()
     dest_dir.mkdir(parents=True, exist_ok=True)
     
     status_msg = await message.reply_text(
