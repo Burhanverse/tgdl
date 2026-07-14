@@ -1,0 +1,715 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+import time
+import shutil
+from pathlib import Path
+from typing import Callable, Coroutine, Optional
+
+from pyrogram import Client
+from pyrogram.types import LinkPreviewOptions, ForceReply, Message
+
+from .config import settings
+from .db import Job, JobStatus, JobStore
+from .uploader import upload_file, UploadTooLarge
+from .conversion import convert_media_async
+from .archive import extract_archive_async, ARCHIVE_EXT, ArchivePasswordRequired
+from .downloader import GalleryDLNotFound
+
+log = logging.getLogger(__name__)
+
+_password_prompt_events: dict[int, dict[str, tuple[asyncio.Event, dict]]] = {}
+_password_prompt_messages: dict[int, tuple[int, str, int]] = {}
+
+
+class JobState:
+    def __init__(self, job: Job, dest_dir: Path):
+        self.job = job
+        self.job_id = job.id
+        self.dest_dir = dest_dir
+        self.downloader_done = asyncio.Event()
+        self.uploader_done = asyncio.Event()
+        self.trigger_event = asyncio.Event()
+        self.download_speed = 0.0
+        self.total_downloaded_bytes = 0
+        self.download_count = 0
+        self.download_pct = 0.0
+        self.current_download_file = None
+        self.upload_speed = 0.0
+        self.current_upload_pct = 0.0
+        self.current_upload_file = None
+        self.sent = 0
+        self.skipped = []
+        self.uploaded_filenames = set()
+        self.uploading_files = set()
+        self.active_process = None
+        self.msg_id = None
+        self.last_edited_text = ""
+        self.session_uploaded_count = 0
+
+
+class QueueManager:
+    def __init__(self):
+        self.client: Optional[Client] = None
+        self.store: Optional[JobStore] = None
+        self.download_queue: asyncio.Queue[int] = asyncio.Queue()
+        self.upload_queue: asyncio.Queue[int] = asyncio.Queue()
+        self.jobs: dict[int, JobState] = {}
+        self.download_workers: list[asyncio.Task] = []
+        self.upload_workers: list[asyncio.Task] = []
+        self.is_running = False
+
+    async def start(self, client: Client, store: JobStore) -> None:
+        self.client = client
+        self.store = store
+        self.is_running = True
+        num_dl = settings.max_concurrent_jobs
+        num_ul = settings.max_concurrent_jobs
+        
+        for i in range(num_dl):
+            self.download_workers.append(asyncio.create_task(self._download_worker_loop(i)))
+        for i in range(num_ul):
+            self.upload_workers.append(asyncio.create_task(self._upload_worker_loop(i)))
+            
+        log.info("Queue manager started with %s download and %s upload workers", num_dl, num_ul)
+
+    async def stop(self) -> None:
+        self.is_running = False
+        for w in self.download_workers:
+            w.cancel()
+        for w in self.upload_workers:
+            w.cancel()
+        for job_id in list(self.jobs.keys()):
+            await self.cancel_job(job_id)
+        self.download_workers.clear()
+        self.upload_workers.clear()
+        log.info("Queue manager stopped")
+
+    async def add_job(self, job_id: int) -> None:
+        await self.download_queue.put(job_id)
+        log.info("Job #%s added to download queue", job_id)
+
+    async def cancel_job(self, job_id: int) -> bool:
+        job_state = self.jobs.get(job_id)
+        
+        if self.store:
+            await self.store.update_progress(job_id, status=JobStatus.CANCELLED)
+            
+        if not job_state:
+            return False
+            
+        log.info("Cancelling job #%s", job_id)
+        
+        if job_state.active_process:
+            try:
+                job_state.active_process.kill()
+            except Exception:
+                pass
+        job_state.downloader_done.set()
+        job_state.uploader_done.set()
+        job_state.trigger_event.set()
+        shutil.rmtree(job_state.dest_dir, ignore_errors=True)
+        self.jobs.pop(job_id, None)
+        return True
+
+    def get_active_jobs_for_chat(self, chat_id: int) -> list[JobState]:
+        return [js for js in self.jobs.values() if js.job.chat_id == chat_id]
+
+    async def register_process(self, job_id: int, proc: asyncio.subprocess.Process) -> None:
+        job_state = self.jobs.get(job_id)
+        if job_state:
+            job_state.active_process = proc
+
+    async def unregister_process(self, job_id: int) -> None:
+        job_state = self.jobs.get(job_id)
+        if job_state:
+            job_state.active_process = None
+
+    async def _download_worker_loop(self, worker_id: int) -> None:
+        while self.is_running:
+            try:
+                job_id = await self.download_queue.get()
+            except asyncio.CancelledError:
+                break
+                
+            try:
+                job = await self.store.get_job(job_id)
+                if not job:
+                    self.download_queue.task_done()
+                    continue
+                    
+                dest_dir = (settings.downloads_dir / job.download_dir).resolve()
+                job_state = JobState(job, dest_dir)
+                self.jobs[job_id] = job_state
+                await self.upload_queue.put(job_id)
+                await self._process_download(job_state)
+            except Exception:
+                log.exception("Error in download worker %s", worker_id)
+            finally:
+                self.download_queue.task_done()
+
+    async def _upload_worker_loop(self, worker_id: int) -> None:
+        while self.is_running:
+            try:
+                job_id = await self.upload_queue.get()
+            except asyncio.CancelledError:
+                break
+                
+            try:
+                job_state = self.jobs.get(job_id)
+                if not job_state:
+                    self.upload_queue.task_done()
+                    continue
+                    
+                await self._process_upload(job_state)
+            except Exception:
+                log.exception("Error in upload worker %s", worker_id)
+            finally:
+                self.upload_queue.task_done()
+
+    async def _process_download(self, job_state: JobState) -> None:
+        job = job_state.job
+        chat_id = job.chat_id
+        dest_dir = job_state.dest_dir
+        
+        async def report(text: str) -> None:
+            await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+        try:
+            await self.store.update_progress(job.id, status=JobStatus.DOWNLOADING)
+            await report(f"Downloading:\n{job.url}\n(large files or magnet links take a while)")
+
+            is_torrent = (
+                job.url.startswith("magnet:") or
+                job.url.startswith("torrent:") or
+                job.url.endswith(".torrent") or
+                "magnet:?xt=" in job.url
+            )
+            is_unzip = job.url.startswith("unzip:")
+
+            if is_unzip:
+                from .downloader import DownloadResult
+                archive_files = []
+                if dest_dir.exists():
+                    archive_files = [p for p in dest_dir.iterdir() if p.is_file()]
+                result = DownloadResult(ok=True, files=archive_files)
+            elif is_torrent:
+                def on_torrent_progress(pct: float, downloaded_bytes: float, speed_bytes: float) -> None:
+                    job_state.download_pct = pct
+                    job_state.total_downloaded_bytes = downloaded_bytes
+                    job_state.download_speed = speed_bytes
+
+                from .torrent import download_torrent_async
+                result = await download_torrent_async(
+                    job.url, dest_dir, on_progress=on_torrent_progress
+                )
+            else:
+                extra_args = None
+                if job.args:
+                    import json
+                    try:
+                        extra_args = json.loads(job.args)
+                    except Exception:
+                        pass
+
+                def on_download_progress(count: int, filename: Optional[str] = None) -> None:
+                    job_state.download_count = count
+                    if filename:
+                        job_state.current_download_file = filename
+                    job_state.trigger_event.set()
+
+                from .downloader import run_with_progress
+                result = await run_with_progress(
+                    job.url, dest_dir, on_progress=on_download_progress, extra_args=extra_args
+                )
+
+            job_state.downloader_result = result
+            log.info("Download finished for job #%s (ok=%s)", job.id, result.ok)
+        except Exception as e:
+            from .downloader import DownloadResult
+            log.exception("Download failed for job #%s", job.id)
+            job_state.downloader_result = DownloadResult(ok=False, error_tail=str(e))
+        finally:
+            job_state.downloader_done.set()
+            job_state.trigger_event.set()
+
+    async def _process_upload(self, job_state: JobState) -> None:
+        job = job_state.job
+        chat_id = job.chat_id
+        dest_dir = job_state.dest_dir
+        
+        async def report(text: str) -> None:
+            await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+        async def status_updater_loop() -> None:
+            while not job_state.uploader_done.is_set():
+                try:
+                    await asyncio.sleep(4)
+                    if job_state.uploader_done.is_set():
+                        break
+                        
+                    db_job = await self.store.get_job(job.id)
+                    if not db_job or db_job.status == JobStatus.CANCELLED:
+                        break
+                        
+                    if job_state.downloader_done.is_set():
+                        status_str = f"Uploading: {job_state.sent} uploaded"
+                    else:
+                        status_str = f"Downloading & Uploading..."
+                        
+                    if job_state.current_upload_file:
+                        status_str += f"\n- **Uploading**: `{job_state.current_upload_file}` ({job_state.current_upload_pct:.1f}%)"
+                        
+                    if job_state.msg_id:
+                        await safe_edit(self.client, chat_id, job_state.msg_id, f"**Job #{job.id} Status**\n{status_str}")
+                except Exception:
+                    pass
+
+        async def perform_uploads() -> None:
+            if not dest_dir.exists():
+                return
+
+            try:
+                files = sorted(p for p in dest_dir.rglob("*") if p.is_file())
+            except Exception:
+                return
+
+            pending = [
+                f for f in files
+                if str(f.relative_to(dest_dir)) not in job_state.uploaded_filenames
+                and str(f.relative_to(dest_dir)) not in job_state.uploading_files
+            ]
+
+            for f in pending:
+                db_job = await self.store.get_job(job.id)
+                if db_job and db_job.status == JobStatus.CANCELLED:
+                    return
+
+                f_rel = str(f.relative_to(dest_dir))
+
+                is_archive = f.suffix.lower() in ARCHIVE_EXT
+                if is_archive:
+                    archive_prompt_msg_id = None
+                    if job.id not in _archive_ids:
+                        _archive_ids[job.id] = {}
+                    archive_id = f_rel
+                    if archive_id not in _archive_ids[job.id]:
+                        _archive_ids[job.id][archive_id] = f_rel
+
+                    if job.url.startswith("unzip:"):
+                        if job.id not in _archive_choices:
+                            _archive_choices[job.id] = {}
+                        _archive_choices[job.id][archive_id] = "ext"
+                    else:
+                        if job.id not in _archive_choices or archive_id not in _archive_choices[job.id]:
+                            from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                            from .status import compile_archive_prompt_text
+                            prompt_text = compile_archive_prompt_text(job.id, f.name)
+                            kb = InlineKeyboardMarkup([
+                                [
+                                    InlineKeyboardButton("Upload Archive Only", callback_data=f"archive_only:{job.id}:{archive_id}"),
+                                    InlineKeyboardButton("Upload + Extract", callback_data=f"archive_ext:{job.id}:{archive_id}")
+                                ]
+                            ])
+                            prompt_msg = await safe_send(self.client, chat_id, prompt_text, reply_markup=kb)
+                            if prompt_msg:
+                                archive_prompt_msg_id = prompt_msg.id
+
+                            if job.id not in _archive_events:
+                                _archive_events[job.id] = {}
+                            _archive_events[job.id][archive_id] = asyncio.Event()
+
+                            await _archive_events[job.id][archive_id].wait()
+
+                    choice = _archive_choices[job.id][archive_id]
+                    if choice == "ext" and f_rel not in _extracted_archives.get(job.id, set()):
+                        if job.id not in _extracted_archives:
+                            _extracted_archives[job.id] = set()
+                        _extracted_archives[job.id].add(f_rel)
+
+                        from .status import compile_extraction_status_text
+                        status_msg = await safe_send(
+                            self.client,
+                            chat_id,
+                            compile_extraction_status_text(job.id, f.name),
+                            link_preview_options=LinkPreviewOptions(is_disabled=True)
+                        )
+
+                        before_files = set()
+                        try:
+                            before_files = {p.resolve() for p in dest_dir.rglob("*") if p.is_file()}
+                        except Exception:
+                            pass
+
+                        try:
+                            password = None
+                            if job.args:
+                                import json
+                                try:
+                                    parsed = json.loads(job.args)
+                                    if isinstance(parsed, dict):
+                                        password = parsed.get("password")
+                                except Exception:
+                                    pass
+
+                            extracted = await extract_archive_async(f, dest_dir, password=password)
+                            if extracted:
+                                log.info("Successfully extracted archive %s", f.name)
+                                try:
+                                    after_files = {p.resolve() for p in dest_dir.rglob("*") if p.is_file()}
+                                    new_files = after_files - before_files
+                                    if job.id not in _extracted_file_names:
+                                        _extracted_file_names[job.id] = set()
+                                    for new_f in new_files:
+                                        _extracted_file_names[job.id].add(new_f.name)
+                                except Exception:
+                                    pass
+
+                                if job.url.startswith("unzip:"):
+                                    try:
+                                        f.unlink(missing_ok=True)
+                                    except Exception:
+                                        pass
+
+                                if archive_prompt_msg_id:
+                                    try:
+                                        await self.client.delete_messages(chat_id, archive_prompt_msg_id)
+                                    except Exception:
+                                        pass
+                                try:
+                                    if status_msg:
+                                        await self.client.delete_messages(chat_id, status_msg.id)
+                                except Exception:
+                                    pass
+
+                                from .status import compile_extraction_success_status_text
+                                success_msg = await safe_send(
+                                    self.client,
+                                    chat_id,
+                                    compile_extraction_success_status_text(job.id, f.name),
+                                    link_preview_options=LinkPreviewOptions(is_disabled=True)
+                                )
+                                async def delete_success_msg(m):
+                                    await asyncio.sleep(5)
+                                    try:
+                                        await self.client.delete_messages(chat_id, m.id)
+                                    except Exception:
+                                        pass
+                                if success_msg:
+                                    asyncio.create_task(delete_success_msg(success_msg))
+
+                                break
+                            else:
+                                log.error("Failed to extract archive %s", f.name)
+                                try:
+                                    if status_msg:
+                                        await self.client.delete_messages(chat_id, status_msg.id)
+                                except Exception:
+                                    pass
+                                from .status import compile_extraction_failed_status_text
+                                fail_msg = await safe_send(
+                                    self.client,
+                                    chat_id,
+                                    compile_extraction_failed_status_text(job.id, f.name),
+                                    link_preview_options=LinkPreviewOptions(is_disabled=True)
+                                )
+                                if job.url.startswith("unzip:"):
+                                    raise Exception(f"Failed to extract archive {f.name}")
+                                if archive_prompt_msg_id:
+                                    try:
+                                        await self.client.delete_messages(chat_id, archive_prompt_msg_id)
+                                    except Exception:
+                                        pass
+                                async def delete_fail_msg(m):
+                                    await asyncio.sleep(5)
+                                    try:
+                                        await self.client.delete_messages(chat_id, m.id)
+                                    except Exception:
+                                        pass
+                                if fail_msg:
+                                    asyncio.create_task(delete_fail_msg(fail_msg))
+                        except ArchivePasswordRequired:
+                            log.warning("Archive %s requires a password to extract", f.name)
+                            try:
+                                if status_msg:
+                                    await self.client.delete_messages(chat_id, status_msg.id)
+                            except Exception:
+                                pass
+                            
+                            prompt_msg = await safe_send(
+                                self.client,
+                                chat_id,
+                                f"**Password Required**: `{f.name}` is password-protected or password was incorrect.\n\n"
+                                f"Please reply directly to this message with the password to extract it.",
+                                reply_markup=ForceReply(placeholder="Enter archive password")
+                            )
+                            if prompt_msg:
+                                if job.id not in _password_prompt_events:
+                                    _password_prompt_events[job.id] = {}
+                                event = asyncio.Event()
+                                data = {"password": None}
+                                _password_prompt_events[job.id][archive_id] = (event, data)
+                                _password_prompt_messages[prompt_msg.id] = (job.id, archive_id, chat_id)
+                                
+                                try:
+                                    await asyncio.wait_for(event.wait(), timeout=300)
+                                    new_password = data["password"]
+                                    
+                                    import json
+                                    job_args_dict = {}
+                                    if job.args:
+                                        try:
+                                            job_args_dict = json.loads(job.args)
+                                        except Exception:
+                                            pass
+                                    job_args_dict["password"] = new_password
+                                    await self.store.db.execute(
+                                        "UPDATE jobs SET args = ? WHERE id = ?",
+                                        (json.dumps(job_args_dict), job.id)
+                                    )
+                                    await self.store.db.commit()
+                                    
+                                    job_state.job = await self.store.get_job(job.id)
+                                    job = job_state.job
+                                    
+                                    try:
+                                        await self.client.delete_messages(chat_id, prompt_msg.id)
+                                    except Exception:
+                                        pass
+                                    break
+                                except asyncio.TimeoutError:
+                                    try:
+                                        await self.client.delete_messages(chat_id, prompt_msg.id)
+                                    except Exception:
+                                        pass
+                                    await safe_send(
+                                        self.client,
+                                        chat_id,
+                                        f"**Job #{job.id} aborted**: Timeout waiting for password for `{f.name}`."
+                                    )
+                                    raise Exception(f"Timeout waiting for password for {f.name}")
+                                finally:
+                                    _password_prompt_events.get(job.id, {}).pop(archive_id, None)
+                                    _password_prompt_messages.pop(prompt_msg.id, None)
+                            else:
+                                raise
+                        except Exception:
+                            try:
+                                if status_msg:
+                                    await self.client.delete_messages(chat_id, status_msg.id)
+                            except Exception:
+                                pass
+                            raise
+
+                    if choice == "only" and archive_prompt_msg_id:
+                        try:
+                            await self.client.delete_messages(chat_id, archive_prompt_msg_id)
+                        except Exception:
+                            pass
+
+                if job.url.startswith("unzip:") and f.suffix.lower() in ARCHIVE_EXT:
+                    try:
+                        f.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    continue
+
+                job_state.uploading_files.add(f_rel)
+                try:
+                    await self.store.update_progress(job.id, status=JobStatus.UPLOADING)
+                    
+                    last_uploaded_bytes = 0
+                    last_upload_speed_time = time.time()
+                    
+                    async def progress_cb(current, total):
+                        nonlocal last_uploaded_bytes, last_upload_speed_time
+                        job_state.current_upload_pct = (current / total) * 100 if total > 0 else 0.0
+                        now = time.time()
+                        elapsed = now - last_upload_speed_time
+                        if elapsed >= 1.0:
+                            uploaded_since_last = current - last_uploaded_bytes
+                            job_state.upload_speed = uploaded_since_last / elapsed
+                            last_uploaded_bytes = current
+                            last_upload_speed_time = now
+
+                    job_state.current_upload_file = f.name
+                    await upload_file(self.client, chat_id, f, progress=progress_cb)
+                    await self.store.mark_uploaded(job.id, f_rel)
+
+                    job_state.uploaded_filenames.add(f_rel)
+                    job_state.sent += 1
+                    await log_upload(job.id, f.name)
+                    log.info("Successfully uploaded %s for job %s", f.name, job.id)
+
+                    try:
+                        f_size = f.stat().st_size
+                        f.unlink(missing_ok=True)
+                        job_state.deleted_bytes += f_size
+                    except Exception:
+                        log.exception("Failed to delete file after upload: %s", f)
+
+                except UploadTooLarge as e:
+                    job_state.skipped.append((f.name, str(e)))
+                except Exception as e:  
+                    log.exception("Upload failed for %s", f)
+                    job_state.skipped.append((f.name, f"error: {e}"))
+                finally:
+                    job_state.current_upload_file = None
+                    job_state.current_upload_pct = 0.0
+                    job_state.upload_speed = 0.0
+                    if f_rel in job_state.uploading_files:
+                        job_state.uploading_files.remove(f_rel)
+
+                await self.store.update_progress(job.id, sent_files=job_state.sent, skipped_files=len(job_state.skipped))
+                job_state.trigger_event.set()
+
+                job_state.session_uploaded_count += 1
+                if job_state.session_uploaded_count % settings.tg_batch_size == 0:
+                    await asyncio.sleep(settings.tg_batch_cooldown_s)
+                else:
+                    await asyncio.sleep(
+                        random.uniform(settings.tg_upload_delay_min, settings.tg_upload_delay_max)
+                    )
+
+        async def run_uploader() -> None:
+            while True:
+                await perform_uploads()
+
+                if job_state.downloader_done.is_set():
+                    has_pending = False
+                    if dest_dir.exists():
+                        try:
+                            files = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
+                            pending = [
+                                f for f in files
+                                if str(f.relative_to(dest_dir)) not in job_state.uploaded_filenames
+                                and str(f.relative_to(dest_dir)) not in job_state.uploading_files
+                            ]
+                            if pending:
+                                has_pending = True
+                        except Exception:
+                            pass
+                    if not has_pending:
+                        break
+
+                try:
+                    await asyncio.wait_for(job_state.trigger_event.wait(), timeout=5.0)
+                    job_state.trigger_event.clear()
+                except asyncio.TimeoutError:
+                    pass
+
+        updater_task = asyncio.create_task(status_updater_loop())
+        try:
+            await run_uploader()
+            
+            dl_res = getattr(job_state, "downloader_result", None)
+            
+            if dl_res and not dl_res.ok and job_state.sent == 0:
+                await self.store.update_progress(
+                    job.id, status=JobStatus.FAILED, error=dl_res.error_tail[-1500:], url=""
+                )
+                await report(
+                    f"Download failed after {dl_res.attempts} attempt(s) and produced no files.\n"
+                    f"Last output:\n```\n{dl_res.error_tail[-800:]}\n```"
+                )
+                return
+
+            await self.store.update_progress(job.id, status=JobStatus.DONE, sent_files=job_state.sent, skipped_files=len(job_state.skipped), url="")
+
+            summary = f"Done. Uploaded {job_state.sent} file(s) total."
+            if dl_res and not dl_res.ok:
+                summary = (
+                    f"Completed with some errors. Uploaded {job_state.sent} file(s) total.\n\n"
+                    f"**Error tail:**\n"
+                    f"```\n{dl_res.error_tail[-600:]}\n```"
+                )
+            if job_state.skipped:
+                preview = "\n".join(f"- {n} ({info})" for n, info in job_state.skipped[:20])
+                more = f"\n…and {len(job_state.skipped) - 20} more" if len(job_state.skipped) > 20 else ""
+                summary += f"\nSkipped:\n{preview}{more}"
+                
+            await report(summary)
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            
+        except Exception as e:
+            log.exception("Upload process failed for job #%s", job.id)
+            await self.store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
+            await report(f"Job failed with error: {e}")
+            shutil.rmtree(dest_dir, ignore_errors=True)
+        finally:
+            job_state.uploader_done.set()
+            updater_task.cancel()
+            await asyncio.gather(updater_task, return_exceptions=True)
+            
+            from .bot import _archive_ids, _archive_events, _archive_choices, _extracted_archives, _extracted_file_names, _conversion_ids, _conversion_events, _conversion_choices, _converted_files
+            _archive_ids.pop(job.id, None)
+            _archive_events.pop(job.id, None)
+            _archive_choices.pop(job.id, None)
+            _extracted_archives.pop(job.id, None)
+            _extracted_file_names.pop(job.id, None)
+            _conversion_ids.pop(job.id, None)
+            _conversion_events.pop(job.id, None)
+            _conversion_choices.pop(job.id, None)
+            _converted_files.pop(job.id, None)
+            _password_prompt_events.pop(job.id, None)
+            to_remove = [mid for mid, info in _password_prompt_messages.items() if info[0] == job.id]
+            for mid in to_remove:
+                _password_prompt_messages.pop(mid, None)
+            self.jobs.pop(job.id, None)
+
+
+async def safe_send(client: Client, chat_id: int, text: str, **kwargs) -> Message | None:
+    from pyrogram.errors import FloodWait
+    for _ in range(3):
+        try:
+            return await client.send_message(chat_id, text, **kwargs)
+        except FloodWait as e:
+            log.warning("Telegram FloodWait: waiting %s seconds on send", e.value)
+            await asyncio.sleep(e.value + 1)
+        except Exception as e:
+            log.warning("Failed to send message: %s", e)
+            return None
+    return None
+
+
+async def safe_edit(client: Client, chat_id: int, message_id: int, text: str) -> bool:
+    from pyrogram.errors import FloodWait, MessageNotModified
+    try:
+        await client.edit_message_text(chat_id, message_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        return True
+    except MessageNotModified:
+        return True
+    except FloodWait as e:
+        log.warning("Telegram FloodWait: waiting %s seconds", e.value)
+        await asyncio.sleep(e.value + 1)
+        return False
+    except Exception as e:
+        log.warning("Failed to edit status message: %s", e)
+        return False
+
+
+def format_size(size_bytes: float) -> str:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} PB"
+
+
+async def log_upload(job_id: int, filename: str) -> None:
+    log_path = settings.log_dir / "uploads.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def append_to_file():
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Job #{job_id} - Uploaded: {filename}\n")
+
+    await asyncio.to_thread(append_to_file)
+
+
+def is_job_owner(chat_id: int, job: Job) -> bool:
+    return job.chat_id == chat_id or chat_id in settings.tg_admin_ids
+
+queue_manager = QueueManager()

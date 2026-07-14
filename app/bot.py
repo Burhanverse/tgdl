@@ -88,10 +88,8 @@ app = Client(
     bot_token=settings.tg_bot_token,
     workdir=str(settings.data_dir),
 )
-job_queue: asyncio.Queue[int] = asyncio.Queue()
+from .queue_manager import queue_manager, _password_prompt_events, _password_prompt_messages
 _shutdown_event = asyncio.Event()
-_password_prompt_events: dict[int, dict[str, tuple[asyncio.Event, dict]]] = {}
-_password_prompt_messages: dict[int, tuple[int, str, int]] = {}
 
 
 async def log_upload(job_id: int, filename: str) -> None:
@@ -169,900 +167,6 @@ def format_size(size_bytes: float) -> str:
     return f"{size_bytes:.1f} PB"
 
 
-async def process_job(job: Job) -> None:
-    status._current_job_id = job.id
-    status._active_job_metrics.update({
-        "download_speed": 0.0,
-        "upload_speed": 0.0,
-        "current_download_file": None,
-        "current_upload_file": None,
-        "current_upload_pct": 0.0,
-        "total_downloaded_bytes": 0,
-        "download_count": 0,
-    })
-    chat_id = job.chat_id
-    msg_id = job.status_message_id
-    dest_dir = (settings.downloads_dir / job.download_dir).resolve()
-
-    last_edited_text = ""
-    _rotating_status = False
-    is_unzip = job.url.startswith("unzip:")
-    is_torrent = (
-        not is_unzip and (
-            job.url.startswith("magnet:") or
-            job.url.startswith("torrent:") or
-            job.url.endswith(".torrent") or
-            "magnet:?xt=" in job.url
-        )
-    )
-
-    async def rotate_status_message(new_text: str) -> None:
-        nonlocal msg_id, last_edited_text, _rotating_status
-        if _rotating_status:
-            return
-        _rotating_status = True
-        try:
-            if msg_id:
-                try:
-                    await app.delete_messages(chat_id, msg_id)
-                except Exception:
-                    pass
-                msg_id = None
-            try:
-                new_msg = await app.send_message(
-                    chat_id,
-                    new_text,
-                    link_preview_options=LinkPreviewOptions(is_disabled=True)
-                )
-                msg_id = new_msg.id
-                last_edited_text = new_text
-                await store.set_status_message(job.id, msg_id)
-            except Exception:
-                log.exception("Failed to send new status message")
-        finally:
-            _rotating_status = False
-
-    async def report(text: str) -> bool:
-        nonlocal last_edited_text
-        if msg_id:
-            success = await safe_edit(chat_id, msg_id, text)
-            if success:
-                last_edited_text = text
-            return success
-        else:
-            await rotate_status_message(text)
-            return True
-
-    uploading_files: set[str] = set()
-    uploaded_filenames = await store.get_uploaded_filenames(job.id)
-    sent = len(uploaded_filenames)
-    skipped: list[tuple[str, str]] = []
-    session_uploaded_count = 0
-
-    current_upload_file: str | None = None
-    current_upload_pct: float = 0.0
-    upload_speed: float = 0.0
-    last_uploaded_bytes = 0
-    last_upload_speed_time = 0.0
-    last_download_file: str | None = None
-
-    total_downloaded_bytes = 0
-    download_speed = 0.0
-    last_download_size = 0
-    last_download_time = time.time()
-    deleted_bytes = 0
-
-    status_lock = asyncio.Lock()
-    downloader_done = asyncio.Event()
-    uploader_done = asyncio.Event()
-    download_count = 0
-    trigger_event = asyncio.Event()
-
-    async def perform_status_edit() -> bool:
-        async with status_lock:
-            nonlocal msg_id, last_edited_text
-            if downloader_done.is_set():
-                has_extracted = len(_extracted_archives.get(job.id, set())) > 0
-                is_small_file = False
-                if current_upload_file:
-                    try:
-                        f_path = dest_dir / current_upload_file
-                        if f_path.exists() and f_path.stat().st_size < 25 * 1024 * 1024:
-                            is_small_file = True
-                    except Exception:
-                        pass
-
-                if has_extracted or is_small_file:
-                    if msg_id:
-                        try:
-                            await app.delete_messages(chat_id, msg_id)
-                        except Exception:
-                            pass
-                        msg_id = None
-                        last_edited_text = ""
-                        await store.set_status_message(job.id, None)
-                    return True
-
-            status_text = compile_status_text(
-                job=job,
-                downloader_done=downloader_done.is_set(),
-                uploader_done=uploader_done.is_set(),
-                download_count=download_count,
-                sent=sent,
-                skipped_len=len(skipped),
-                current_upload_file=current_upload_file,
-                current_upload_pct=current_upload_pct,
-                upload_speed=upload_speed,
-            )
-
-            if status_text == last_edited_text:
-                return True
-
-            return await report(status_text)
-
-    async def status_updater_loop() -> None:
-        base_cooldown = 20.0
-        current_cooldown = base_cooldown
-        edit_count = 0
-        try:
-            while not (downloader_done.is_set() and uploader_done.is_set()):
-                if _shutdown_event.is_set():
-                    break
-                try:
-                    await asyncio.wait_for(trigger_event.wait(), timeout=current_cooldown)
-                except asyncio.TimeoutError:
-                    pass
-                else:
-                    trigger_event.clear()
-
-                edit_count += 1
-                if edit_count > 60:
-                    current_cooldown = max(current_cooldown, 45.0)
-                elif edit_count > 30:
-                    current_cooldown = max(current_cooldown, 30.0)
-
-                success = await perform_status_edit()
-                if not success:
-                    current_cooldown = min(current_cooldown + 15.0, 90.0)
-                    log.info("Status updater loop backed off to %ss cooldown", current_cooldown)
-                else:
-                    target = 45.0 if edit_count > 60 else (30.0 if edit_count > 30 else base_cooldown)
-                    current_cooldown = max(current_cooldown - 2.0, target)
-
-                await asyncio.sleep(current_cooldown)
-
-            await perform_status_edit()
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            log.exception("Error in status updater loop")
-
-    def on_progress(count: int, filename: Optional[str] = None) -> None:
-        nonlocal download_count
-        download_count = count
-        status._active_job_metrics["download_count"] = count
-
-    async def on_upload_progress(current: int, total: int) -> None:
-        nonlocal current_upload_pct, upload_speed, last_uploaded_bytes, last_upload_speed_time
-        if total == 0:
-            return
-        pct = current * 100.0 / total
-        now = time.time()
-        dt = now - last_upload_speed_time
-        if dt >= 1.0 or last_upload_speed_time == 0.0:
-            bytes_diff = current - last_uploaded_bytes
-            speed = bytes_diff / dt if dt > 0 else 0.0
-            upload_speed = 0.7 * speed + 0.3 * upload_speed if last_uploaded_bytes > 0 else speed
-            last_uploaded_bytes = current
-            last_upload_speed_time = now
-            status._active_job_metrics["upload_speed"] = upload_speed
-
-        current_upload_pct = pct
-        status._active_job_metrics["current_upload_pct"] = pct
-
-    async def run_downloader():
-        try:
-            if is_unzip:
-                from .downloader import DownloadResult
-                archive_files = []
-                if dest_dir.exists():
-                    archive_files = [p for p in dest_dir.iterdir() if p.is_file()]
-                return DownloadResult(ok=True, files=archive_files)
-
-            if is_torrent:
-                def on_torrent_progress(pct: float, downloaded_bytes: float, speed_bytes: float) -> None:
-                    status._active_job_metrics["download_pct"] = pct
-                    status._active_job_metrics["total_downloaded_bytes"] = downloaded_bytes
-                    status._active_job_metrics["download_speed"] = speed_bytes
-
-                from .torrent import download_torrent_async
-                return await download_torrent_async(
-                    job.url, dest_dir, on_progress=on_torrent_progress
-                )
-
-            extra_args = None
-            if job.args:
-                import json
-                try:
-                    extra_args = json.loads(job.args)
-                except Exception:
-                    log.exception("Failed to parse extra args from job: %s", job.args)
-
-            return await run_with_progress(
-                job.url, dest_dir, on_progress=on_progress, extra_args=extra_args
-            )
-        finally:
-            downloader_done.set()
-
-    async def monitor_download_speed():
-        nonlocal total_downloaded_bytes, download_speed, last_download_size, last_download_time
-        try:
-            if is_torrent or is_unzip:
-                while not downloader_done.is_set():
-                    trigger_event.set()
-                    await asyncio.sleep(1)
-                return
-
-            while not downloader_done.is_set():
-                if not dest_dir.exists():
-                    await asyncio.sleep(2)
-                    continue
-
-                try:
-                    on_disk = sum(p.stat().st_size for p in dest_dir.rglob("*") if p.is_file())
-                    current_size = on_disk + deleted_bytes
-                except Exception:
-                    current_size = last_download_size
-
-                now = time.time()
-                dt = now - last_download_time
-                if dt >= 1.0:
-                    speed = (current_size - last_download_size) / dt
-                    download_speed = 0.7 * speed + 0.3 * download_speed if last_download_size > 0 else speed
-                    last_download_size = current_size
-                    last_download_time = now
-                    total_downloaded_bytes = current_size
-                    status._active_job_metrics["download_speed"] = download_speed
-                    status._active_job_metrics["total_downloaded_bytes"] = total_downloaded_bytes
-
-                current_file = None
-                try:
-                    part_files = sorted(p.name for p in dest_dir.rglob("*.part") if p.is_file())
-                    if part_files:
-                        current_file = part_files[0]
-                except Exception:
-                    pass
-
-                if status._active_job_metrics.get("current_download_file") != current_file:
-                    status._active_job_metrics["current_download_file"] = current_file
-                    trigger_event.set()
-
-                await asyncio.sleep(2)
-        except asyncio.CancelledError:
-            pass
-
-    async def perform_uploads() -> None:
-        nonlocal sent, session_uploaded_count, current_upload_file, current_upload_pct
-        nonlocal upload_speed, last_uploaded_bytes, last_upload_speed_time, deleted_bytes
-        nonlocal msg_id, last_edited_text, job
-        if not dest_dir.exists():
-            return
-
-        try:
-            files = sorted(
-                [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
-            )
-        except Exception:
-            log.exception("Failed to scan directory %s", dest_dir)
-            return
-
-        pending = [
-            f for f in files
-            if str(f.relative_to(dest_dir)) not in uploaded_filenames
-            and str(f.relative_to(dest_dir)) not in uploading_files
-        ]
-
-        for f in pending:
-            if _shutdown_event.is_set():
-                return
-            db_job = await store.get_job(job.id)
-            if db_job and db_job.status == JobStatus.CANCELLED:
-                return
-
-            f_rel = str(f.relative_to(dest_dir))
-
-            # Check if this file is an archive
-            is_archive = f.suffix.lower() in ARCHIVE_EXT
-            if is_archive:
-                archive_prompt_msg_id = None
-                # Find or generate archive_id
-                if job.id not in _archive_ids:
-                    _archive_ids[job.id] = {}
-                archive_id = None
-                for aid, fname in _archive_ids[job.id].items():
-                    if fname == f_rel:
-                        archive_id = aid
-                        break
-                if archive_id is None:
-                    archive_id = str(len(_archive_ids[job.id]) + 1)
-                    _archive_ids[job.id][archive_id] = f_rel
-
-                if job.url.startswith("unzip:"):
-                    if job.id not in _archive_choices:
-                        _archive_choices[job.id] = {}
-                    _archive_choices[job.id][archive_id] = "ext"
-                    if job.id not in _archive_events:
-                        _archive_events[job.id] = {}
-                    if archive_id not in _archive_events[job.id]:
-                        _archive_events[job.id][archive_id] = asyncio.Event()
-                    _archive_events[job.id][archive_id].set()
-
-                # Check if choice exists
-                job_choices = _archive_choices.get(job.id, {})
-                if archive_id not in job_choices:
-                    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                    keyboard = InlineKeyboardMarkup([
-                        [
-                            InlineKeyboardButton("Archive Only", callback_data=f"archive_only:{job.id}:{archive_id}"),
-                            InlineKeyboardButton("Archive + Extract", callback_data=f"archive_ext:{job.id}:{archive_id}")
-                        ]
-                    ])
-                    prompt_text = compile_archive_prompt_text(job.id, f.name)
-                    prompt_msg = await app.send_message(
-                        chat_id,
-                        prompt_text,
-                        reply_markup=keyboard,
-                        link_preview_options=LinkPreviewOptions(is_disabled=True)
-                    )
-                    archive_prompt_msg_id = prompt_msg.id
-
-                    if job.id not in _archive_events:
-                        _archive_events[job.id] = {}
-                    _archive_events[job.id][archive_id] = asyncio.Event()
-
-                    # Wait for user input
-                    await _archive_events[job.id][archive_id].wait()
-
-                # Choice is now set!
-                choice = _archive_choices[job.id][archive_id]
-                if choice == "ext" and f_rel not in _extracted_archives.get(job.id, set()):
-                    if job.id not in _extracted_archives:
-                        _extracted_archives[job.id] = set()
-                    _extracted_archives[job.id].add(f_rel)
-
-                    log.info("Extracting archive %s for job %s", f.name, job.id)
-                    status_msg = await safe_send(
-                        chat_id,
-                        compile_extraction_status_text(job.id, f.name),
-                        link_preview_options=LinkPreviewOptions(is_disabled=True)
-                    )
-
-                    before_files = set()
-                    try:
-                        before_files = {p.resolve() for p in dest_dir.rglob("*") if p.is_file()}
-                    except Exception:
-                        pass
-
-                    try:
-                        password = None
-                        if job.args:
-                            import json
-                            try:
-                                parsed = json.loads(job.args)
-                                if isinstance(parsed, dict):
-                                    password = parsed.get("password")
-                            except Exception:
-                                pass
-
-                        extracted = await extract_archive_async(f, dest_dir, password=password)
-                        if extracted:
-                            log.info("Successfully extracted archive %s", f.name)
-                            try:
-                                after_files = {p.resolve() for p in dest_dir.rglob("*") if p.is_file()}
-                                new_files = after_files - before_files
-                                if job.id not in _extracted_file_names:
-                                    _extracted_file_names[job.id] = set()
-                                for new_f in new_files:
-                                    _extracted_file_names[job.id].add(new_f.name)
-                            except Exception:
-                                pass
-
-                            if job.url.startswith("unzip:"):
-                                try:
-                                    f.unlink(missing_ok=True)
-                                except Exception:
-                                    pass
-
-                            if archive_prompt_msg_id:
-                                try:
-                                    await app.delete_messages(chat_id, archive_prompt_msg_id)
-                                except Exception:
-                                    pass
-                            try:
-                                if status_msg:
-                                    await app.delete_messages(chat_id, status_msg.id)
-                            except Exception:
-                                pass
-
-                            success_msg = await safe_send(
-                                chat_id,
-                                compile_extraction_success_status_text(job.id, f.name),
-                                link_preview_options=LinkPreviewOptions(is_disabled=True)
-                            )
-                            async def delete_success_msg(m):
-                                await asyncio.sleep(5)
-                                try:
-                                    await app.delete_messages(chat_id, m.id)
-                                except Exception:
-                                    pass
-                            asyncio.create_task(delete_success_msg(success_msg))
-
-                            # Break loop to force re-scanning of extracted files
-                            break
-                        else:
-                            log.error("Failed to extract archive %s", f.name)
-                            try:
-                                if status_msg:
-                                    await app.delete_messages(chat_id, status_msg.id)
-                            except Exception:
-                                pass
-                            fail_msg = await safe_send(
-                                chat_id,
-                                compile_extraction_failed_status_text(job.id, f.name),
-                                link_preview_options=LinkPreviewOptions(is_disabled=True)
-                            )
-                            if job.url.startswith("unzip:"):
-                                raise Exception(f"Failed to extract archive {f.name}")
-                            if archive_prompt_msg_id:
-                                try:
-                                    await app.delete_messages(chat_id, archive_prompt_msg_id)
-                                except Exception:
-                                    pass
-                            async def delete_fail_msg(m):
-                                await asyncio.sleep(5)
-                                try:
-                                    await app.delete_messages(chat_id, m.id)
-                                except Exception:
-                                    pass
-                            asyncio.create_task(delete_fail_msg(fail_msg))
-                    except ArchivePasswordRequired:
-                        log.warning("Archive %s requires a password to extract", f.name)
-                        try:
-                            if status_msg:
-                                await app.delete_messages(chat_id, status_msg.id)
-                        except Exception:
-                            pass
-                        
-                        prompt_msg = await safe_send(
-                            chat_id,
-                            f"**Password Required**: `{f.name}` is password-protected or password was incorrect.\n\n"
-                            f"Please reply directly to this message with the password to extract it.",
-                            reply_markup=ForceReply(placeholder="Enter archive password")
-                        )
-                        if prompt_msg:
-                            if job.id not in _password_prompt_events:
-                                _password_prompt_events[job.id] = {}
-                            event = asyncio.Event()
-                            data = {"password": None}
-                            _password_prompt_events[job.id][archive_id] = (event, data)
-                            _password_prompt_messages[prompt_msg.id] = (job.id, archive_id, chat_id)
-                            
-                            try:
-                                await asyncio.wait_for(event.wait(), timeout=300) # 5 mins timeout
-                                new_password = data["password"]
-                                
-                                import json
-                                job_args_dict = {}
-                                if job.args:
-                                    try:
-                                        job_args_dict = json.loads(job.args)
-                                    except Exception:
-                                        pass
-                                job_args_dict["password"] = new_password
-                                await store.db.execute(
-                                    "UPDATE jobs SET args = ? WHERE id = ?",
-                                    (json.dumps(job_args_dict), job.id)
-                                )
-                                await store.db.commit()
-                                
-                                job = await store.get_job(job.id)
-                                
-                                try:
-                                    await app.delete_messages(chat_id, prompt_msg.id)
-                                except Exception:
-                                    pass
-                                
-                                # Break out to retry extraction
-                                break
-                            except asyncio.TimeoutError:
-                                try:
-                                    await app.delete_messages(chat_id, prompt_msg.id)
-                                except Exception:
-                                    pass
-                                await safe_send(
-                                    chat_id,
-                                    f"❌ **Job #{job.id} aborted**: Timeout waiting for password for `{f.name}`."
-                                )
-                                raise Exception(f"Timeout waiting for password for {f.name}")
-                            finally:
-                                _password_prompt_events.get(job.id, {}).pop(archive_id, None)
-                                _password_prompt_messages.pop(prompt_msg.id, None)
-                        else:
-                            raise
-                    except Exception:
-                        try:
-                            await app.delete_messages(chat_id, status_msg.id)
-                        except Exception:
-                            pass
-                        raise
-
-                if choice == "only" and archive_prompt_msg_id:
-                    try:
-                        await app.delete_messages(chat_id, archive_prompt_msg_id)
-                    except Exception:
-                        pass
-
-            # Check if this file needs conversion
-            is_incompatible = f.suffix.lower() in CONVERSION_EXT
-            if is_incompatible and f_rel not in _converted_files.get(job.id, set()):
-                prompt_msg_id = None
-                if job.id not in _conversion_ids:
-                    _conversion_ids[job.id] = {}
-                conv_id = None
-                for cid, fname in _conversion_ids[job.id].items():
-                    if fname == f_rel:
-                        conv_id = cid
-                        break
-                if conv_id is None:
-                    conv_id = str(len(_conversion_ids[job.id]) + 1)
-                    _conversion_ids[job.id][conv_id] = f_rel
-
-                job_choices = _conversion_choices.get(job.id, {})
-                if conv_id not in job_choices:
-                    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                    keyboard = InlineKeyboardMarkup([
-                        [
-                            InlineKeyboardButton("Convert to MP4", callback_data=f"convert_mp4:{job.id}:{conv_id}"),
-                            InlineKeyboardButton("Original File", callback_data=f"convert_orig:{job.id}:{conv_id}")
-                        ]
-                    ])
-                    prompt_text = compile_conversion_prompt_text(job.id, f.name)
-                    prompt_msg = await app.send_message(
-                        chat_id,
-                        prompt_text,
-                        reply_markup=keyboard,
-                        link_preview_options=LinkPreviewOptions(is_disabled=True)
-                    )
-                    prompt_msg_id = prompt_msg.id
-
-                    if job.id not in _conversion_events:
-                        _conversion_events[job.id] = {}
-                    _conversion_events[job.id][conv_id] = asyncio.Event()
-
-                    await _conversion_events[job.id][conv_id].wait()
-
-                choice = _conversion_choices[job.id][conv_id]
-                if choice == "mp4":
-                    if job.id not in _converted_files:
-                        _converted_files[job.id] = set()
-                    _converted_files[job.id].add(f_rel)
-
-                    log.info("Converting video %s to MP4 for job %s", f.name, job.id)
-                    output_name = f.stem + "_converted.mp4"
-                    output_path = f.parent / output_name
-
-                    status_msg = await app.send_message(
-                        chat_id,
-                        compile_conversion_running_status_text(job.id, f.name),
-                        link_preview_options=LinkPreviewOptions(is_disabled=True)
-                    )
-
-                    try:
-                        success = await convert_media_async(f, output_path)
-                        if success:
-                            log.info("Successfully converted video %s to %s", f.name, output_name)
-                            f.unlink(missing_ok=True)
-                            if prompt_msg_id:
-                                try:
-                                    await app.delete_messages(chat_id, prompt_msg_id)
-                                except Exception:
-                                    pass
-                            try:
-                                await app.delete_messages(chat_id, status_msg.id)
-                            except Exception:
-                                pass
-                            break
-                        else:
-                            log.error("Failed to convert video %s", f.name)
-                            try:
-                                await app.delete_messages(chat_id, status_msg.id)
-                            except Exception:
-                                pass
-                            fail_msg = await app.send_message(
-                                chat_id,
-                                compile_conversion_failed_status_text(job.id, f.name),
-                                link_preview_options=LinkPreviewOptions(is_disabled=True)
-                            )
-                            if prompt_msg_id:
-                                try:
-                                    await app.delete_messages(chat_id, prompt_msg_id)
-                                except Exception:
-                                    pass
-                            async def delete_fail_msg(msg_to_del):
-                                await asyncio.sleep(5)
-                                try:
-                                    await app.delete_messages(chat_id, msg_to_del.id)
-                                except Exception:
-                                    pass
-                            asyncio.create_task(delete_fail_msg(fail_msg))
-
-                            _conversion_choices[job.id][conv_id] = "orig"
-                    except Exception:
-                        try:
-                            await app.delete_messages(chat_id, status_msg.id)
-                        except Exception:
-                            pass
-                        raise
-
-                if choice == "orig" and prompt_msg_id:
-                    try:
-                        await app.delete_messages(chat_id, prompt_msg_id)
-                    except Exception:
-                        pass
-
-            max_limit = int(1.95 * 1024 * 1024 * 1024)
-            if f.exists() and f.stat().st_size > max_limit:
-                from .uploader import handle_large_file
-                split_parts = await handle_large_file(f, bool(db_job.split_large_files))
-                if not split_parts:
-                    skipped.append((f.name, "File exceeds 1.95GB limit and was skipped"))
-                    await store.update_progress(job.id, sent_files=sent, skipped_files=len(skipped))
-                    trigger_event.set()
-                    continue
-                for part in split_parts:
-                    if part not in pending:
-                        pending.append(part)
-                continue
-
-            if job.url.startswith("unzip:") and f.suffix.lower() in ARCHIVE_EXT:
-                log.info("Safety check: skipping and removing archive file %s for unzip job", f.name)
-                try:
-                    f.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                continue
-
-            uploading_files.add(f_rel)
-            try:
-                await store.update_progress(job.id, status=JobStatus.UPLOADING)
-
-                current_upload_file = f.name
-                current_upload_pct = 0.0
-                upload_speed = 0.0
-                last_uploaded_bytes = 0
-                last_upload_speed_time = time.time()
-                status._active_job_metrics["current_upload_file"] = f.name
-                status._active_job_metrics["current_upload_pct"] = 0.0
-                status._active_job_metrics["upload_speed"] = 0.0
-                trigger_event.set()
-
-                await upload_file(app, chat_id, f, progress=on_upload_progress)
-                await store.mark_uploaded(job.id, f_rel)
-
-                uploaded_filenames.add(f_rel)
-                sent += 1
-                await log_upload(job.id, f.name)
-                log.info("Successfully uploaded %s for job %s", f.name, job.id)
-
-                try:
-                    f_size = f.stat().st_size
-                    f.unlink(missing_ok=True)
-                    deleted_bytes += f_size
-                except Exception:
-                    log.exception("Failed to delete file after upload: %s", f)
-
-            except UploadTooLarge as e:
-                skipped.append((f.name, str(e)))
-                log.warning("File too large to upload: %s", f.name)
-            except Exception as e:  
-                log.exception("Upload failed for %s", f)
-                skipped.append((f.name, f"error: {e}"))
-            finally:
-                current_upload_file = None
-                current_upload_pct = 0.0
-                upload_speed = 0.0
-                status._active_job_metrics["current_upload_file"] = None
-                status._active_job_metrics["current_upload_pct"] = 0.0
-                status._active_job_metrics["upload_speed"] = 0.0
-                if f_rel in uploading_files:
-                    uploading_files.remove(f_rel)
-
-            await store.update_progress(job.id, sent_files=sent, skipped_files=len(skipped))
-            trigger_event.set()
-
-            if msg_id:
-                try:
-                    await app.delete_messages(chat_id, msg_id)
-                except Exception:
-                    pass
-                msg_id = None
-                last_edited_text = ""
-                await store.set_status_message(job.id, None)
-
-            session_uploaded_count += 1
-            if session_uploaded_count % settings.tg_batch_size == 0:
-                await asyncio.sleep(settings.tg_batch_cooldown_s)
-            else:
-                await asyncio.sleep(
-                    random.uniform(settings.tg_upload_delay_min, settings.tg_upload_delay_max)
-                )
-
-    async def run_uploader() -> None:
-        try:
-            while True:
-                if _shutdown_event.is_set():
-                    return
-                await perform_uploads()
-
-                # Check if we can stop
-                if downloader_done.is_set():
-                    has_pending = False
-                    if dest_dir.exists():
-                        try:
-                            files = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
-                            pending = [
-                                f for f in files
-                                if str(f.relative_to(dest_dir)) not in uploaded_filenames
-                                and str(f.relative_to(dest_dir)) not in uploading_files
-                            ]
-                            if pending:
-                                has_pending = True
-                        except Exception:
-                            pass
-                    if not has_pending:
-                        break
-
-                try:
-                    await asyncio.wait_for(trigger_event.wait(), timeout=5.0)
-                    trigger_event.clear()
-                except asyncio.TimeoutError:
-                    pass
-        finally:
-            uploader_done.set()
-
-    async def check_cancellation() -> None:
-        try:
-            while not (downloader_done.is_set() and uploader_done.is_set()):
-                if _shutdown_event.is_set():
-                    downloader_task.cancel()
-                    uploader_task.cancel()
-                    monitor_task.cancel()
-                    break
-                db_job = await store.get_job(job.id)
-                if db_job and db_job.status == JobStatus.CANCELLED:
-                    downloader_task.cancel()
-                    uploader_task.cancel()
-                    monitor_task.cancel()
-                    break
-                await asyncio.sleep(2)
-        except asyncio.CancelledError:
-            pass
-
-    downloader_task = asyncio.create_task(run_downloader())
-    uploader_task = asyncio.create_task(run_uploader())
-    monitor_task = asyncio.create_task(monitor_download_speed())
-    cancellation_task = asyncio.create_task(check_cancellation())
-    updater_task = asyncio.create_task(status_updater_loop())
-
-    try:
-        await store.update_progress(job.id, status=JobStatus.DOWNLOADING)
-        await report(f"Downloading:\n{job.url}\n(rate-limited, large albums take a while)")
-
-        result = await downloader_task
-        trigger_event.set()
-        await uploader_task
-    except asyncio.CancelledError:
-        log.info("Job %s was cancelled/aborted", job.id)
-        downloader_task.cancel()
-        uploader_task.cancel()
-        monitor_task.cancel()
-        updater_task.cancel()
-        await asyncio.gather(downloader_task, uploader_task, monitor_task, updater_task, return_exceptions=True)
-
-        db_job = await store.get_job(job.id)
-        if _shutdown_event.is_set() or (db_job and db_job.status == JobStatus.QUEUED):
-            await store.update_progress(job.id, status=JobStatus.QUEUED)
-            await report("Paused for shutdown — will resume on next start.")
-        else:
-            await store.update_progress(job.id, status=JobStatus.CANCELLED, url="")
-            await report("Job cancelled.")
-            shutil.rmtree(dest_dir, ignore_errors=True)
-        return
-    except ArchivePasswordRequired:
-        await store.update_progress(job.id, status=JobStatus.FAILED, error="Password required or incorrect", url="")
-        return
-    except GalleryDLNotFound as e:
-        await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
-        await report(str(e))
-        return
-    except Exception as e:  
-        log.exception("job %s failed", job.id)
-        await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
-        await report(f"Job failed with an unexpected error: {e}")
-        return
-    finally:
-        monitor_task.cancel()
-        cancellation_task.cancel()
-        updater_task.cancel()
-        await asyncio.gather(monitor_task, cancellation_task, updater_task, return_exceptions=True)
-        if msg_id:
-            try:
-                await app.delete_messages(chat_id, msg_id)
-            except Exception:
-                pass
-        _archive_ids.pop(job.id, None)
-        _archive_events.pop(job.id, None)
-        _archive_choices.pop(job.id, None)
-        _extracted_archives.pop(job.id, None)
-        _extracted_file_names.pop(job.id, None)
-        _conversion_ids.pop(job.id, None)
-        _conversion_events.pop(job.id, None)
-        _conversion_choices.pop(job.id, None)
-        _converted_files.pop(job.id, None)
-        _password_prompt_events.pop(job.id, None)
-        to_remove = [mid for mid, info in _password_prompt_messages.items() if info[0] == job.id]
-        for mid in to_remove:
-            _password_prompt_messages.pop(mid, None)
-        status._current_job_id = None
-
-    if not result.ok and sent == 0:
-        await store.update_progress(
-            job.id, status=JobStatus.FAILED, error=result.error_tail[-1500:], url=""
-        )
-        await report(
-            f"gallery-dl failed after {result.attempts} attempt(s) and produced no files.\n"
-            f"Last output:\n```\n{result.error_tail[-800:]}\n```"
-        )
-        return
-
-    files_remaining = []
-    if dest_dir.exists():
-        files_remaining = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part")]
-
-    await store.update_progress(job.id, status=JobStatus.DONE, sent_files=sent, skipped_files=len(skipped), url="")
-    
-    if not result.ok:
-        summary = (
-            f"Completed with some errors. Uploaded {sent} file(s) total.\n\n"
-            f"**Error tail:**\n"
-            f"```\n{result.error_tail[-600:]}\n```"
-        )
-    else:
-        summary = f"Done. Uploaded {sent} file(s) total."
-
-    if skipped:
-        preview = "\n".join(f"- {n} ({info})" for n, info in skipped[:20])
-        more = f"\n…and {len(skipped) - 20} more" if len(skipped) > 20 else ""
-        summary += f"\nSkipped:\n{preview}{more}"
-    await app.send_message(chat_id, summary, link_preview_options=LinkPreviewOptions(is_disabled=True))
-
-    shutil.rmtree(dest_dir, ignore_errors=True)
-
-
-async def worker_loop() -> None:
-    while not _shutdown_event.is_set():
-        try:
-            job_id = await asyncio.wait_for(job_queue.get(), timeout=1.0)
-        except asyncio.TimeoutError:
-            continue
-        job = await store.get_job(job_id)
-        if job is None:
-            continue
-        try:
-            await process_job(job)
-        finally:
-            status._current_job_id = None
-
 
 @app.on_message(filters.command("start"))
 async def start_cmd(_, message: Message) -> None:
@@ -1087,9 +191,14 @@ async def status_cmd(_, message: Message) -> None:
     import json
     chat_id = message.chat.id
 
-    if status._current_job_id is not None:
-        job = await store.get_job(status._current_job_id)
-        if job and is_job_owner(chat_id, job):
+    active_jobs = queue_manager.get_active_jobs_for_chat(chat_id)
+    response = ""
+    
+    if active_jobs:
+        for job_state in active_jobs:
+            job = await store.get_job(job_state.job_id)
+            if not job:
+                continue
             parsed_args = []
             if job.args:
                 try:
@@ -1099,49 +208,63 @@ async def status_cmd(_, message: Message) -> None:
             args_str = " ".join(parsed_args) if parsed_args else "None"
             split_str = "Yes" if job.split_large_files else "No"
 
-            dl_speed = status._active_job_metrics["download_speed"]
-            ul_speed = status._active_job_metrics["upload_speed"]
-            dl_bytes = status._active_job_metrics["total_downloaded_bytes"]
-            dl_count = status._active_job_metrics["download_count"]
-            dl_file = status._active_job_metrics["current_download_file"]
-            ul_pct = status._active_job_metrics["current_upload_pct"]
-            ul_file = status._active_job_metrics["current_upload_file"]
-
-            dl_speed_str = format_size(dl_speed)
-            ul_speed_str = format_size(ul_speed)
-            dl_bytes_str = format_size(dl_bytes)
-
-            bar = make_progress_bar(ul_pct)
-
-            status_text = (
-                f"**Active Job Status**\n"
-                f"- **Job ID**: #{job.id}\n"
+            job_text = (
+                f"**Active Job #{job.id}**\n"
                 f"- **Status**: `{job.status}`\n"
                 f"- **URL**: {format_url_display(job.url)}\n"
                 f"- **Args**: `{args_str}`\n"
-                f"- **Split > 2GB**: {split_str}\n\n"
-                f"**Downloader Metrics**\n"
+                f"- **Split > 2GB**: {split_str}\n"
             )
-            if job.status == JobStatus.DOWNLOADING and dl_file:
-                status_text += f"- **Current File**: `{dl_file}`\n"
-            status_text += (
-                f"- **Files Downloaded**: {dl_count}\n"
-                f"- **Downloaded Data**: {dl_bytes_str}\n"
-                f"- **Download Speed**: {dl_speed_str}/s\n\n"
-                f"**Uploader Metrics**\n"
-                f"- **Files Sent**: {job.sent_files} / {job.total_files if job.total_files > 0 else 'Calculating'}\n"
-                f"- **Files Skipped**: {job.skipped_files}\n"
-            )
-            if ul_file:
-                status_text += (
-                    f"- **Current File**: `{ul_file}`\n"
-                    f"- **Upload Progress**: {ul_pct:.1f}%\n"
-                    f"  `[{bar}]`\n"
-                    f"- **Upload Speed**: {ul_speed_str}/s\n"
-                )
 
-            await message.reply_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
-            return
+            if job.status == JobStatus.DOWNLOADING or not job_state.downloader_done.is_set():
+                dl_speed_str = format_size(job_state.download_speed)
+                dl_bytes_str = format_size(job_state.total_downloaded_bytes)
+                
+                is_torrent = (
+                    job.url.startswith("magnet:") or
+                    job.url.startswith("torrent:") or
+                    job.url.endswith(".torrent") or
+                    "magnet:?xt=" in job.url
+                )
+                
+                job_text += "**Downloader Metrics**\n"
+                if is_torrent:
+                    bar = make_progress_bar(job_state.download_pct)
+                    job_text += (
+                        f"  - **Progress**: {job_state.download_pct:.1f}%\n"
+                        f"    `[{bar}]`\n"
+                        f"  - **Downloaded**: {dl_bytes_str}\n"
+                        f"  - **Speed**: {dl_speed_str}/s\n"
+                    )
+                else:
+                    if job_state.current_download_file:
+                        job_text += f"  - **Current File**: `{job_state.current_download_file}`\n"
+                    job_text += (
+                        f"  - **Files Downloaded**: {job_state.download_count}\n"
+                        f"  - **Downloaded**: {dl_bytes_str}\n"
+                        f"  - **Speed**: {dl_speed_str}/s\n"
+                    )
+            
+            if job.status == JobStatus.UPLOADING or job_state.sent > 0 or job_state.current_upload_file:
+                ul_speed_str = format_size(job_state.upload_speed)
+                bar = make_progress_bar(job_state.current_upload_pct)
+                
+                job_text += (
+                    f"**Uploader Metrics**\n"
+                    f"  - **Files Sent**: {job_state.sent} / {job.total_files if job.total_files > 0 else 'Calculating'}\n"
+                    f"  - **Files Skipped**: {len(job_state.skipped)}\n"
+                )
+                if job_state.current_upload_file:
+                    job_text += (
+                        f"  - **Current File**: `{job_state.current_upload_file}`\n"
+                        f"  - **Progress**: {job_state.current_upload_pct:.1f}%\n"
+                        f"    `[{bar}]`\n"
+                        f"  - **Speed**: {ul_speed_str}/s\n"
+                    )
+            
+            response += job_text + "\n"
+    else:
+        response = "**Bot Status: Idle**\nNo active download/upload task is currently running.\n"
 
     queued = [q for q in await store.queued_jobs() if is_job_owner(chat_id, q)]
 
@@ -1149,10 +272,8 @@ async def status_cmd(_, message: Message) -> None:
     waiting_rows = await cur.fetchall()
     waiting = [store._row_to_job(r) for r in waiting_rows]
 
-    response = "**Bot Status: Idle**\nNo active download/upload task is currently running."
-
     if queued:
-        response += f"\n\n**Queued Jobs ({len(queued)})**:"
+        response += f"\n**Queued Jobs ({len(queued)})**:"
         for i, q_job in enumerate(queued[:5], 1):
             q_parsed = []
             if q_job.args:
@@ -1203,18 +324,14 @@ async def cancel_cmd(_, message: Message) -> None:
             await message.reply_text(f"Job #{job_id} is already in `{job.status}` state.")
             return
 
-        await store.update_progress(job.id, status=JobStatus.CANCELLED)
-        
-        if status._current_job_id == job.id and status._active_process is not None:
-            try:
-                status._active_process.kill()
-                await message.reply_text(f"Instantly aborted and cancelled active job #{job.id}.")
-            except Exception as e:
-                log.warning("Failed to kill active process: %s", e)
-                await message.reply_text(f"Marked active job #{job.id} as cancelled.")
+        cancelled = await queue_manager.cancel_job(job.id)
+        if cancelled:
+            await message.reply_text(f"Instantly aborted and cancelled active job #{job.id}.")
         else:
+            await store.update_progress(job.id, status=JobStatus.CANCELLED)
             await message.reply_text(f"Job #{job.id} has been cancelled successfully.")
         return
+
     cur = await store.db.execute(
         "SELECT id, url, status FROM jobs WHERE chat_id = ? AND status IN ('queued', 'waiting', 'downloading', 'uploading')",
         (chat_id,)
@@ -1227,16 +344,10 @@ async def cancel_cmd(_, message: Message) -> None:
     if len(rows) == 1:
         job_id = rows[0]["id"]
         job_status = rows[0]["status"]
-        await store.update_progress(job_id, status=JobStatus.CANCELLED)
-        if status._current_job_id == job_id and status._active_process is not None:
-            try:
-                status._active_process.kill()
-                await message.reply_text(f"Instantly aborted and cancelled active job #{job_id}.")
-            except Exception as e:
-                log.warning("Failed to kill active process: %s", e)
-                await message.reply_text(f"Marked active job #{job_id} as cancelled.")
-        else:
-            await message.reply_text(f"Job #{job_id} ({job_status}) has been cancelled.")
+        cancelled = await queue_manager.cancel_job(job_id)
+        if not cancelled:
+            await store.update_progress(job_id, status=JobStatus.CANCELLED)
+        await message.reply_text(f"Job #{job_id} ({job_status}) has been cancelled.")
         return
 
     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -1452,7 +563,7 @@ async def unzip_cmd(_, message: Message) -> None:
         await status_msg.edit_text(
             compile_queued_status_text(job.id, f"unzip:{filename}", "")
         )
-        await job_queue.put(job.id)
+        await queue_manager.add_job(job.id)
         return
 
     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -1714,7 +825,7 @@ async def handle_split_choice(_, callback_query: CallbackQuery) -> None:
     status_text = compile_queued_status_text(job_id, job.url, args_display)
     await callback_query.message.edit_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
     await callback_query.answer("Choice registered.")
-    await job_queue.put(job_id)
+    await queue_manager.add_job(job_id)
 
 
 @app.on_callback_query(filters.regex(r"^archive_(only|ext):(\d+):(\d+)$"))
@@ -1750,13 +861,9 @@ async def handle_cancel_job_cb(_, callback_query: CallbackQuery) -> None:
             pass
         return
 
-    await store.update_progress(job_id, status=JobStatus.CANCELLED)
-    
-    if status._current_job_id == job_id and status._active_process is not None:
-        try:
-            status._active_process.kill()
-        except Exception:
-            pass
+    cancelled = await queue_manager.cancel_job(job_id)
+    if not cancelled:
+        await store.update_progress(job_id, status=JobStatus.CANCELLED)
 
     await callback_query.answer(f"Job #{job_id} cancelled.")
     try:
@@ -1773,12 +880,13 @@ async def requeue_incomplete_jobs() -> None:
     interrupted runs resume instead of silently vanishing."""
     for job in [*await store.resumable_jobs(), *await store.queued_jobs()]:
         log.info("Resuming job #%s (%s)", job.id, job.status)
-        await job_queue.put(job.id)
+        await queue_manager.add_job(job.id)
 
 
 async def _startup() -> None:
     await store.open()
     await cleanup_orphaned_directories()
+    await queue_manager.start(app, store)
 
 
 async def main() -> None:
@@ -1799,7 +907,6 @@ async def main() -> None:
     await _startup()
 
     try:
-        worker_task = None
         async with app:
             log.info("Bot started.")
             try:
@@ -1816,16 +923,10 @@ async def main() -> None:
             except Exception as e:
                 log.warning("Failed to set bot commands: %s", e)
             await requeue_incomplete_jobs()
-            worker_task = asyncio.create_task(worker_loop())
             await idle()
 
-        log.info("Shutting down, finishing current file then stopping…")
-        _shutdown_event.set()
-        if worker_task:
-            try:
-                await asyncio.wait_for(worker_task, timeout=35)
-            except asyncio.TimeoutError:
-                worker_task.cancel()
+        log.info("Shutting down queue manager and workers…")
+        await queue_manager.stop()
     finally:
         await store.close()
         log.info("Shutdown complete.")
