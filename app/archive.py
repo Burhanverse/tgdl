@@ -40,6 +40,32 @@ async def extract_archive_async(archive_path: Path, extract_dir: Path) -> bool:
         except Exception:
             pass
 
+    if ext == ".rar" and shutil.which("unrar"):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "unrar", "x", "-y", str(archive_path), str(extract_dir),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.wait()
+            if proc.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    if ext in (".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2", ".txz") and shutil.which("tar"):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "tar", "-xf", str(archive_path), "-C", str(extract_dir),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.wait()
+            if proc.returncode == 0:
+                return True
+        except Exception:
+            pass
+
     if shutil.which("7z"):
         try:
             proc = await asyncio.create_subprocess_exec(

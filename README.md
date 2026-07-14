@@ -23,6 +23,7 @@ A minimal Telegram bot that downloads media albums, videos, and torrents via `ga
 - `/start` — Display welcome message and instructions.
 - `/gdl` — Process replied `.txt` links files.
 - `/tor` — Download magnet/torrent links or reply to a `.torrent` file.
+- `/unzip` — Reply to a compressed archive file to extract and upload its contents.
 - `/status` — View active job status or queue state.
 - `/cancel` — Instantly abort the active job or cancel queued jobs.
 
@@ -32,6 +33,7 @@ A minimal Telegram bot that downloads media albums, videos, and torrents via `ga
 - **Multiple URLs**: `https://example.com/album1 https://example.com/album2`
 - **Links File (.txt)**: Reply to a `.txt` file containing URLs (one per line) with `/gdl`.
 - **Torrents**: `/tor magnet:?xt=urn:...` or reply to a `.torrent` file with `/tor`.
+- **Archive Extract**: Reply to any `.zip`, `.rar`, `.7z`, etc., file with `/unzip`.
 
 ---
 
@@ -41,6 +43,7 @@ A minimal Telegram bot that downloads media albums, videos, and torrents via `ga
 - Python 3.12+
 - `ffmpeg` & `ffprobe` (for video transcoding, screenshots, and metadata probing)
 - `aria2c` (for torrent and magnet link downloads)
+- `unzip`, `unrar`, `7z` (for archive extraction)
 
 ### Getting Started
 1. Copy `.env.example` to `.env` and fill in `TG_API_ID`, `TG_API_HASH`, and `TG_BOT_TOKEN`.

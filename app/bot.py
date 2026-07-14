@@ -159,11 +159,14 @@ async def process_job(job: Job) -> None:
 
     last_edited_text = ""
     _rotating_status = False
+    is_unzip = job.url.startswith("unzip:")
     is_torrent = (
-        job.url.startswith("magnet:") or
-        job.url.startswith("torrent:") or
-        job.url.endswith(".torrent") or
-        "magnet:?xt=" in job.url
+        not is_unzip and (
+            job.url.startswith("magnet:") or
+            job.url.startswith("torrent:") or
+            job.url.endswith(".torrent") or
+            "magnet:?xt=" in job.url
+        )
     )
 
     async def rotate_status_message(new_text: str) -> None:
@@ -332,6 +335,13 @@ async def process_job(job: Job) -> None:
 
     async def run_downloader():
         try:
+            if is_unzip:
+                from .downloader import DownloadResult
+                archive_files = []
+                if dest_dir.exists():
+                    archive_files = [p for p in dest_dir.iterdir() if p.is_file()]
+                return DownloadResult(ok=True, files=archive_files)
+
             if is_torrent:
                 def on_torrent_progress(pct: float, downloaded_bytes: float, speed_bytes: float) -> None:
                     status._active_job_metrics["download_pct"] = pct
@@ -360,7 +370,7 @@ async def process_job(job: Job) -> None:
     async def monitor_download_speed():
         nonlocal total_downloaded_bytes, download_speed, last_download_size, last_download_time
         try:
-            if is_torrent:
+            if is_torrent or is_unzip:
                 while not downloader_done.is_set():
                     trigger_event.set()
                     await asyncio.sleep(1)
@@ -447,6 +457,16 @@ async def process_job(job: Job) -> None:
                 if archive_id is None:
                     archive_id = str(len(_archive_ids[job.id]) + 1)
                     _archive_ids[job.id][archive_id] = f.name
+
+                if job.url.startswith("unzip:"):
+                    if job.id not in _archive_choices:
+                        _archive_choices[job.id] = {}
+                    _archive_choices[job.id][archive_id] = "ext"
+                    if job.id not in _archive_events:
+                        _archive_events[job.id] = {}
+                    if archive_id not in _archive_events[job.id]:
+                        _archive_events[job.id][archive_id] = asyncio.Event()
+                    _archive_events[job.id][archive_id].set()
 
                 # Check if choice exists
                 job_choices = _archive_choices.get(job.id, {})
@@ -1203,6 +1223,59 @@ async def tor_cmd(_, message: Message) -> None:
     await store.set_status_message(job.id, status_msg.id)
 
 
+@app.on_message(filters.command("unzip"))
+async def unzip_cmd(_, message: Message) -> None:
+    if not message.reply_to_message or not message.reply_to_message.document:
+        await message.reply_text("Please reply to an archive file (.zip, .rar, .7z, etc.) with `/unzip`.")
+        return
+
+    doc = message.reply_to_message.document
+    filename = doc.file_name or "archive.zip"
+    ext = Path(filename).suffix.lower()
+    
+    from .archive import ARCHIVE_EXT
+    if ext not in ARCHIVE_EXT:
+        supported_list = ", ".join(sorted(ARCHIVE_EXT))
+        await message.reply_text(f"Unsupported archive format. Supported formats: {supported_list}")
+        return
+
+    job = await store.create_job(message.chat.id, f"unzip:{filename}", split_large_files=1, args=None)
+    await store.update_progress(job.id, status="waiting")
+
+    dest_dir = settings.downloads_dir / job.download_dir
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    
+    status_msg = await message.reply_text(
+        f"**Job #{job.id} registered**\n"
+        f"- **Archive**: `{filename}`\n\n"
+        "Downloading archive to VPS..."
+    )
+    await store.set_status_message(job.id, status_msg.id)
+
+    try:
+        await message.reply_to_message.download(file_name=str(dest_dir / filename))
+    except Exception as e:
+        log.exception("Failed to download replied archive file")
+        await status_msg.edit_text(f"Failed to download archive: {e}")
+        await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
+        return
+
+    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
+            InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+        ]
+    ])
+
+    prompt_text = (
+        f"**Job #{job.id} registered**\n"
+        f"- **Archive**: `{filename}`\n\n"
+        "Do you want to split files larger than 2GB for this job?"
+    )
+    await status_msg.edit_text(prompt_text, reply_markup=keyboard)
+
+
 def extract_domain_name(url: str) -> str:
     from urllib.parse import urlparse
     try:
@@ -1321,7 +1394,7 @@ def sanitize_gdl_args(args: list[str], url: Optional[str | list[str]] = None) ->
     return sanitized
 
 
-@app.on_message(filters.text & ~filters.command(["start", "status", "cancel", "gdl", "tor"]))
+@app.on_message(filters.text & ~filters.command(["start", "status", "cancel", "gdl", "tor", "unzip"]))
 async def handle_link(_, message: Message) -> None:
     text = (message.text or "").strip()
     is_private = message.chat.type == ChatType.PRIVATE
@@ -1473,6 +1546,7 @@ async def main() -> None:
                     BotCommand("start", "Start the bot and see instructions"),
                     BotCommand("gdl", "Process replied .txt links file with optional arguments"),
                     BotCommand("tor", "Download torrent/magnet link or replied .torrent file"),
+                    BotCommand("unzip", "Extract archive (.zip, .rar, .7z) and upload contents"),
                     BotCommand("status", "Check current active job details or queue status"),
                     BotCommand("cancel", "Instantly abort the active download/upload task"),
                 ])
