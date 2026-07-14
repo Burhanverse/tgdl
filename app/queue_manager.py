@@ -14,8 +14,23 @@ from pyrogram.types import LinkPreviewOptions, ForceReply, Message
 from .config import settings
 from .db import Job, JobStatus, JobStore
 from .uploader import upload_file, UploadTooLarge
-from .conversion import convert_media_async
-from .archive import extract_archive_async, ARCHIVE_EXT, ArchivePasswordRequired
+from .conversion import (
+    convert_media_async,
+    _conversion_ids,
+    _conversion_events,
+    _conversion_choices,
+    _converted_files
+)
+from .archive import (
+    extract_archive_async,
+    ARCHIVE_EXT,
+    ArchivePasswordRequired,
+    _archive_ids,
+    _archive_events,
+    _archive_choices,
+    _extracted_archives,
+    _extracted_file_names
+)
 from .downloader import GalleryDLNotFound
 
 log = logging.getLogger(__name__)
@@ -643,7 +658,6 @@ class QueueManager:
             updater_task.cancel()
             await asyncio.gather(updater_task, return_exceptions=True)
             
-            from .bot import _archive_ids, _archive_events, _archive_choices, _extracted_archives, _extracted_file_names, _conversion_ids, _conversion_events, _conversion_choices, _converted_files
             _archive_ids.pop(job.id, None)
             _archive_events.pop(job.id, None)
             _archive_choices.pop(job.id, None)
