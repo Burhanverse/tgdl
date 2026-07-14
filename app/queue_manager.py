@@ -64,6 +64,7 @@ class JobState:
         self.last_edited_text = ""
         self.session_uploaded_count = 0
         self.deleted_bytes = 0
+        self.initial_download_msg = None
 
 
 class QueueManager:
@@ -195,7 +196,12 @@ class QueueManager:
 
         try:
             await self.store.update_progress(job.id, status=JobStatus.DOWNLOADING)
-            await report(f"Downloading:\n{job.url}\n(large files or magnet links take a while)")
+            job_state.initial_download_msg = await safe_send(
+                self.client,
+                chat_id,
+                f"Downloading:\n{job.url}\n(large files or magnet links take a while)",
+                link_preview_options=LinkPreviewOptions(is_disabled=True)
+            )
 
             is_torrent = (
                 job.url.startswith("magnet:") or
@@ -313,7 +319,13 @@ class QueueManager:
                     if job_state.msg_id:
                         from .status import compile_job_status_text
                         status_text = compile_job_status_text(db_job, job_state)
-                        await safe_edit(self.client, chat_id, job_state.msg_id, status_text)
+                        if await safe_edit(self.client, chat_id, job_state.msg_id, status_text):
+                            if getattr(job_state, "initial_download_msg", None):
+                                try:
+                                    await self.client.delete_messages(chat_id, job_state.initial_download_msg.id)
+                                    job_state.initial_download_msg = None
+                                except Exception:
+                                    pass
                 except Exception:
                     pass
 
