@@ -445,17 +445,21 @@ class QueueManager:
                             if prompt_msg:
                                 archive_prompt_msg_id = prompt_msg.id
 
-                            if job.id not in _archive_events:
-                                _archive_events[job.id] = {}
-                            _archive_events[job.id][archive_id] = asyncio.Event()
+                                if job.id not in _archive_events:
+                                    _archive_events[job.id] = {}
+                                _archive_events[job.id][archive_id] = asyncio.Event()
 
-                            while not job_state.uploader_done.is_set() and not _archive_events[job.id][archive_id].is_set():
-                                try:
-                                    await asyncio.wait_for(_archive_events[job.id][archive_id].wait(), timeout=2.0)
-                                except asyncio.TimeoutError:
-                                    pass
-                            if job_state.uploader_done.is_set():
-                                return
+                                while not job_state.uploader_done.is_set() and not _archive_events[job.id][archive_id].is_set():
+                                    try:
+                                        await asyncio.wait_for(_archive_events[job.id][archive_id].wait(), timeout=2.0)
+                                    except asyncio.TimeoutError:
+                                        pass
+                                if job_state.uploader_done.is_set():
+                                    return
+                            else:
+                                if job.id not in _archive_choices:
+                                    _archive_choices[job.id] = {}
+                                _archive_choices[job.id][archive_id] = "only"
 
                     choice = _archive_choices[job.id][archive_id]
                     if choice == "ext" and f_rel not in _extracted_archives.get(job.id, set()):
@@ -489,6 +493,7 @@ class QueueManager:
                             extracted = await extract_archive_async(f, dest_dir, password=password)
                             if extracted:
                                 log.info("Successfully extracted archive %s", f.name)
+                                job_state.trigger_event.set()
                                 try:
                                     after_files = {p.resolve() for p in dest_dir.rglob("*") if p.is_file()}
                                     new_files = after_files - before_files
@@ -504,6 +509,7 @@ class QueueManager:
                                         f.unlink(missing_ok=True)
                                     except Exception:
                                         pass
+                                    job_state.uploaded_filenames.add(f_rel)
 
                                 if archive_prompt_msg_id:
                                     try:
@@ -652,6 +658,7 @@ class QueueManager:
                         f.unlink(missing_ok=True)
                     except Exception:
                         pass
+                    job_state.uploaded_filenames.add(f_rel)
                     continue
 
                 is_incompatible = f.suffix.lower() in CONVERSION_EXT
@@ -682,17 +689,21 @@ class QueueManager:
                              if prompt_msg:
                                  conversion_prompt_msg_id = prompt_msg.id
 
-                             if job.id not in _conversion_events:
-                                 _conversion_events[job.id] = {}
-                             _conversion_events[job.id][conv_id] = asyncio.Event()
+                                 if job.id not in _conversion_events:
+                                     _conversion_events[job.id] = {}
+                                 _conversion_events[job.id][conv_id] = asyncio.Event()
 
-                             while not job_state.uploader_done.is_set() and not _conversion_events[job.id][conv_id].is_set():
-                                 try:
-                                     await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
-                                 except asyncio.TimeoutError:
-                                     pass
-                             if job_state.uploader_done.is_set():
-                                 return
+                                 while not job_state.uploader_done.is_set() and not _conversion_events[job.id][conv_id].is_set():
+                                     try:
+                                         await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
+                                     except asyncio.TimeoutError:
+                                         pass
+                                 if job_state.uploader_done.is_set():
+                                     return
+                             else:
+                                 if job.id not in _conversion_choices:
+                                     _conversion_choices[job.id] = {}
+                                 _conversion_choices[job.id][conv_id] = "orig"
                              choice = _conversion_choices.get(job.id, {}).get(conv_id)
 
                          if choice == "mp4":
