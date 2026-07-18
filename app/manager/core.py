@@ -229,7 +229,7 @@ class QueueManager:
                         now = time.time()
                         dt = now - last_download_time
                         if dt >= 1.0:
-                            speed = (current_size - last_download_size) / dt
+                            speed = max(0.0, (current_size - last_download_size) / dt)
                             job_state.download_speed = 0.7 * speed + 0.3 * job_state.download_speed if last_download_size > 0 else speed
                             last_download_size = current_size
                             last_download_time = now
@@ -911,7 +911,7 @@ class QueueManager:
                         elapsed = now - last_upload_speed_time
                         if elapsed >= 1.0:
                             uploaded_since_last = current - last_uploaded_bytes
-                            job_state.upload_speed = uploaded_since_last / elapsed
+                            job_state.upload_speed = max(0.0, uploaded_since_last / elapsed)
                             last_uploaded_bytes = current
                             last_upload_speed_time = now
 
@@ -1028,6 +1028,8 @@ class QueueManager:
                     job_state.trigger_event.set()
             else:
                 while not job_state.downloader_done.is_set():
+                    if job_state.uploader_done.is_set():
+                        break
                     has_completed_file = False
                     if dest_dir.exists():
                         try:
@@ -1046,6 +1048,8 @@ class QueueManager:
                     await asyncio.sleep(2.0)
 
             while True:
+                if job_state.uploader_done.is_set():
+                    break
                 await perform_uploads()
 
                 if job_state.downloader_done.is_set():
