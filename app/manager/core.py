@@ -186,6 +186,7 @@ class QueueManager:
         async def report(text: str) -> None:
             await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
+        monitor_task = None
         try:
             is_torrent = (
                 job.url.startswith("magnet:") or
@@ -211,7 +212,6 @@ class QueueManager:
             def reg(proc):
                 job_state.active_process = proc
 
-            monitor_task = None
             if not is_torrent and not is_unzip:
                 async def monitor_download_speed():
                     last_download_size = 0
@@ -396,6 +396,7 @@ class QueueManager:
                 f for f in files
                 if str(f.relative_to(dest_dir)) not in job_state.uploaded_filenames
                 and str(f.relative_to(dest_dir)) not in job_state.uploading_files
+                and str(f.relative_to(dest_dir)) not in job_state.failed_uploads
             ]
 
             for f in pending:
@@ -932,9 +933,11 @@ class QueueManager:
 
                 except UploadTooLarge as e:
                     job_state.skipped.append((f.name, str(e)))
+                    job_state.failed_uploads.add(f_rel)
                 except Exception as e:  
                     log.exception("Upload failed for %s", f)
                     job_state.skipped.append((f.name, f"error: {e}"))
+                    job_state.failed_uploads.add(f_rel)
                 finally:
                     job_state.current_upload_file = None
                     job_state.current_upload_pct = 0.0
@@ -1054,6 +1057,7 @@ class QueueManager:
                                 f for f in files
                                 if str(f.relative_to(dest_dir)) not in job_state.uploaded_filenames
                                 and str(f.relative_to(dest_dir)) not in job_state.uploading_files
+                                and str(f.relative_to(dest_dir)) not in job_state.failed_uploads
                             ]
                             if pending:
                                 has_pending = True

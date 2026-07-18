@@ -24,6 +24,7 @@ class JobState:
         self.skipped = []
         self.uploaded_filenames = set()
         self.uploading_files = set()
+        self.failed_uploads = set()
         self.active_process = None
         self.msg_id = job.status_message_id
         self.last_edited_text = ""
