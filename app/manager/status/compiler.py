@@ -38,15 +38,25 @@ def compile_split_prompt_text(job_id: int, url_or_target: str, is_torrent: bool 
 
 
 def compile_queued_status_text(job_id: int, url: str, args_display: str) -> str:
+    cleaned_url = url
+    if url.startswith("[") and url.endswith("]"):
+        try:
+            import json
+            parsed = json.loads(url)
+            if parsed and isinstance(parsed, list):
+                cleaned_url = parsed[0]
+        except Exception:
+            pass
+
     is_torrent = (
-        url.startswith("magnet:") or
-        url.startswith("torrent:") or
-        url.endswith(".torrent") or
-        "magnet:?xt=" in url
+        cleaned_url.startswith("magnet:") or
+        cleaned_url.startswith("torrent:") or
+        cleaned_url.endswith(".torrent") or
+        "magnet:?xt=" in cleaned_url
     )
     if is_torrent:
-        if url.startswith("torrent:"):
-            torrent_path = url[len("torrent:"):]
+        if cleaned_url.startswith("torrent:"):
+            torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
             return (
                 f"**Queued (job #{job_id})**\n"
@@ -54,7 +64,7 @@ def compile_queued_status_text(job_id: int, url: str, args_display: str) -> str:
                 f"- **Tool**: `aria2c`"
             )
         else:
-            magnet_disp = url[:60] + "..." if len(url) > 60 else url
+            magnet_disp = cleaned_url[:60] + "..." if len(cleaned_url) > 60 else cleaned_url
             return (
                 f"**Queued (job #{job_id})**\n"
                 f"- **Link**: `{magnet_disp}`\n"
@@ -73,7 +83,7 @@ def compile_unzip_download_status_text(job_id: int, filename: str, current: int,
     return (
         f"**Job #{job_id} registered**\n"
         f"- **Archive**: `{filename}`\n\n"
-        f"Downloading archive to VPS: {pct:.1f}%\n"
+        f"Downloading: {pct:.1f}%\n"
         f"  `[{bar}]`\n"
         f"Downloaded: {format_size(current)} of {format_size(total)}"
     )
@@ -151,11 +161,21 @@ def compile_extraction_success_status_text(job_id: int, filename: str) -> str:
 
 
 def compile_job_status_text(job, job_state) -> str:
+    cleaned_url = job.url
+    if job.url.startswith("[") and job.url.endswith("]"):
+        try:
+            import json
+            parsed = json.loads(job.url)
+            if parsed and isinstance(parsed, list):
+                cleaned_url = parsed[0]
+        except Exception:
+            pass
+
     is_torrent = (
-        job.url.startswith("magnet:") or
-        job.url.startswith("torrent:") or
-        job.url.endswith(".torrent") or
-        "magnet:?xt=" in job.url
+        cleaned_url.startswith("magnet:") or
+        cleaned_url.startswith("torrent:") or
+        cleaned_url.endswith(".torrent") or
+        "magnet:?xt=" in cleaned_url
     )
 
     if is_torrent:
@@ -165,12 +185,12 @@ def compile_job_status_text(job, job_state) -> str:
         torrent_name = getattr(job_state, "torrent_name", None)
         if torrent_name:
             job_text += f"- **Name**: `{torrent_name}`\n"
-        elif job.url.startswith("torrent:"):
-            torrent_path = job.url[len("torrent:"):]
+        elif cleaned_url.startswith("torrent:"):
+            torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
             job_text += f"- **File**: `{name}`\n"
         else:
-            magnet_disp = job.url[:60] + "..." if len(job.url) > 60 else job.url
+            magnet_disp = cleaned_url[:60] + "..." if len(cleaned_url) > 60 else cleaned_url
             job_text += f"- **Link**: `{magnet_disp}`\n"
             
         job_text += (

@@ -175,8 +175,11 @@ async def start_cmd(_, message: Message) -> None:
         "• **Single URL**: `https://example.com/album1`\n"
         "• **Shorthand options**: `https://example.com/album1 pages=1-16`\n"
         "• **Multiple URLs**: `https://example.com/album1 https://example.com/album2`\n"
+        "• **Direct Torrent / Magnet**: Send a `magnet:` link or `.torrent` link directly to download it.\n"
         "• **Links File (.txt)**: Send a `.txt` file containing URLs (one per line) and **reply to it** with `/gdl` to process them.\n\n"
         "**Commands:**\n"
+        "• /tor — Download a magnet link or `.torrent` file (e.g., `/tor magnet:?xt=...` or reply to a `.torrent` file with `/tor`).\n"
+        "• /unzip — Reply to a zip/rar/7z archive with `/unzip [password]` to extract and upload its contents.\n"
         "• /status — View active download/upload metrics or queued jobs.\n"
         "• /cancel — Cancel the active task and clean up temporary storage.\n\n"
         "**Large Files:**\n"
@@ -392,12 +395,12 @@ async def tor_cmd(_, message: Message) -> None:
                 return
 
     if not target_url:
-        cmd_args = message.command
-        if len(cmd_args) < 2:
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
             await message.reply_text("Send a magnet link or reply to a `.torrent` file with `/tor <magnet/url>`.")
             return
         
-        input_url = cmd_args[1].strip()
+        input_url = parts[1].strip()
         if input_url.startswith("magnet:") or input_url.startswith(("http://", "https://")):
             target_url = input_url
         else:
@@ -687,7 +690,7 @@ async def handle_link(_, message: Message) -> None:
     urls = []
     raw_args = []
     for token in tokens:
-        if token.startswith(("http://", "https://")):
+        if token.startswith(("http://", "https://", "magnet:")):
             urls.append(token)
         else:
             raw_args.append(token)
@@ -696,6 +699,11 @@ async def handle_link(_, message: Message) -> None:
         if is_private:
             await message.reply_text("Send an actual URL.")
         return
+
+    is_torrent_job = False
+    first_url = urls[0]
+    if first_url.startswith("magnet:") or first_url.endswith(".torrent") or "magnet:?xt=" in first_url:
+        is_torrent_job = True
 
     sanitized_args = sanitize_gdl_args(raw_args, urls)
     args_json = json.dumps(sanitized_args) if sanitized_args else None
@@ -712,13 +720,19 @@ async def handle_link(_, message: Message) -> None:
         ]
     ])
 
-    args_display = f"\n- **Args**: `{' '.join(sanitized_args)}`" if sanitized_args else ""
-    url_display = format_url_display(urls_json)
-    prompt_text = (
-        f"**Job #{job.id} registered**\n"
-        f"- **URL**: {url_display}{args_display}\n\n"
-        "Do you want to split files larger than 2GB for this job?"
-    )
+    if is_torrent_job:
+        url_display = first_url
+        if first_url.startswith("magnet:"):
+            url_display = first_url[:60] + "..." if len(first_url) > 60 else first_url
+        prompt_text = compile_split_prompt_text(job.id, url_display, is_torrent=True)
+    else:
+        args_display = f"\n- **Args**: `{' '.join(sanitized_args)}`" if sanitized_args else ""
+        url_display = format_url_display(urls_json)
+        prompt_text = (
+            f"**Job #{job.id} registered**\n"
+            f"- **URL**: {url_display}{args_display}\n\n"
+            "Do you want to split files larger than 2GB for this job?"
+        )
     status_msg = await message.reply_text(
         prompt_text,
         reply_markup=keyboard,

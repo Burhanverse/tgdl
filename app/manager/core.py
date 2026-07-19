@@ -189,18 +189,27 @@ class QueueManager:
 
         monitor_task = None
         try:
+            cleaned_url = job.url
+            if job.url.startswith("[") and job.url.endswith("]"):
+                try:
+                    parsed = json.loads(job.url)
+                    if parsed and isinstance(parsed, list):
+                        cleaned_url = parsed[0]
+                except Exception:
+                    pass
+
             is_torrent = (
-                job.url.startswith("magnet:") or
-                job.url.startswith("torrent:") or
-                job.url.endswith(".torrent") or
-                "magnet:?xt=" in job.url
+                cleaned_url.startswith("magnet:") or
+                cleaned_url.startswith("torrent:") or
+                cleaned_url.endswith(".torrent") or
+                "magnet:?xt=" in cleaned_url
             )
-            is_unzip = job.url.startswith("unzip:")
+            is_unzip = cleaned_url.startswith("unzip:")
 
             if is_torrent:
                 initial_text = "Starting torrent download..."
             else:
-                initial_text = f"Downloading:\n{job.url}\n(large files or magnet links take a while)"
+                initial_text = f"Downloading:\n{cleaned_url}\n(large files or magnet links take a while)"
 
             await self.store.update_progress(job.id, status=JobStatus.DOWNLOADING)
             job_state.initial_download_msg = await safe_send(
@@ -271,7 +280,7 @@ class QueueManager:
 
                 from ..downloader import download_torrent_async
                 result = await download_torrent_async(
-                    job.url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
+                    cleaned_url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
                 )
 
             else:
@@ -332,11 +341,20 @@ class QueueManager:
         chat_id = job.chat_id
         dest_dir = job_state.dest_dir
         extract_dir = dest_dir.parent / f"{dest_dir.name}_extracted"
+        cleaned_url = job.url
+        if job.url.startswith("[") and job.url.endswith("]"):
+            try:
+                parsed = json.loads(job.url)
+                if parsed and isinstance(parsed, list):
+                    cleaned_url = parsed[0]
+            except Exception:
+                pass
+
         is_torrent = (
-            job.url.startswith("magnet:") or
-            job.url.startswith("torrent:") or
-            job.url.endswith(".torrent") or
-            "magnet:?xt=" in job.url
+            cleaned_url.startswith("magnet:") or
+            cleaned_url.startswith("torrent:") or
+            cleaned_url.endswith(".torrent") or
+            "magnet:?xt=" in cleaned_url
         )
         
         async def report(text: str) -> None:
