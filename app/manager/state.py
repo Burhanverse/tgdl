@@ -26,6 +26,7 @@ class JobState:
         self.uploading_files = set()
         self.failed_uploads = set()
         self.active_process = None
+        self.active_task = None
         self.msg_id = job.status_message_id
         self.last_edited_text = ""
         self.session_uploaded_count = 0

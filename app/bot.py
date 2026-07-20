@@ -355,7 +355,7 @@ async def gdl_cmd(_, message: Message) -> None:
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
         ],
         [
-            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
+            InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -417,7 +417,7 @@ async def tor_cmd(_, message: Message) -> None:
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
         ],
         [
-            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
+            InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -600,7 +600,7 @@ async def unzip_cmd(_, message: Message) -> None:
         await store.db.commit()
         from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")]
+            [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
         ])
         await status_msg.edit_text(
             compile_queued_status_text(job.id, f"unzip:{filename}", ""),
@@ -616,7 +616,7 @@ async def unzip_cmd(_, message: Message) -> None:
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
         ],
         [
-            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
+            InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -1088,7 +1088,7 @@ async def handle_link(_, message: Message) -> None:
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
         ],
         [
-            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
+            InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -1220,7 +1220,7 @@ async def run_split_archive_download_and_extract(session: dict, status_msg: Mess
         await store.db.commit()
         from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")]
+            [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
         ])
         await status_msg.edit_text(
             compile_queued_status_text(job.id, f"unzip:{filename}", ""),
@@ -1236,7 +1236,7 @@ async def run_split_archive_download_and_extract(session: dict, status_msg: Mess
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
         ],
         [
-            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
+            InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 

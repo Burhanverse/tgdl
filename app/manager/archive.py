@@ -71,7 +71,31 @@ class ArchivePasswordRequired(Exception):
     pass
 
 
-async def extract_archive_async(archive_path: Path, extract_dir: Path, password: Optional[str] = None) -> bool:
+async def _run_subprocess_with_kill(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE) -> tuple[int, bytes, bytes]:
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=stdout,
+        stderr=stderr
+    )
+    try:
+        stdout_data, stderr_data = await proc.communicate()
+        return proc.returncode or 0, stdout_data or b"", stderr_data or b""
+    except asyncio.CancelledError:
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        raise
+
+
+async def extract_archive_async(
+    archive_path: Path,
+    extract_dir: Path,
+    password: Optional[str] = None
+) -> bool:
+    """Extract files from archive using unzip, unrar, tar, or 7z commands."""
     ext = archive_path.suffix.lower()
 
     if ext == ".zip" and shutil.which("unzip"):
@@ -82,17 +106,11 @@ async def extract_archive_async(archive_path: Path, extract_dir: Path, password:
                 args.extend(["-P", password])
             args.extend([str(archive_path), "-d", str(extract_dir)])
             
-            proc = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
+            code, stdout, stderr = await _run_subprocess_with_kill(*args)
             output = (stdout.decode(errors="ignore") + stderr.decode(errors="ignore")).lower()
-            if proc.returncode == 0:
+            if code == 0:
                 return True
-            log.warning("unzip command returned non-zero code: %s", proc.returncode)
+            log.warning("unzip command returned non-zero code: %s", code)
             if "password" in output or "incorrect password" in output or "encrypted" in output:
                 raise ArchivePasswordRequired()
         except ArchivePasswordRequired:
@@ -110,17 +128,11 @@ async def extract_archive_async(archive_path: Path, extract_dir: Path, password:
                 args.append("-p-")
             args.extend([str(archive_path), str(extract_dir)])
             
-            proc = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
+            code, stdout, stderr = await _run_subprocess_with_kill(*args)
             output = (stdout.decode(errors="ignore") + stderr.decode(errors="ignore")).lower()
-            if proc.returncode == 0:
+            if code == 0:
                 return True
-            log.warning("unrar command returned non-zero code: %s", proc.returncode)
+            log.warning("unrar command returned non-zero code: %s", code)
             if "password" in output or "encrypted" in output:
                 raise ArchivePasswordRequired()
         except ArchivePasswordRequired:
@@ -131,16 +143,14 @@ async def extract_archive_async(archive_path: Path, extract_dir: Path, password:
     if ext in (".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2", ".txz") and shutil.which("tar"):
         try:
             log.info("Extracting %s using tar command line tool", archive_path.name)
-            proc = await asyncio.create_subprocess_exec(
+            code, _, _ = await _run_subprocess_with_kill(
                 "tar", "-xf", str(archive_path), "-C", str(extract_dir),
-                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL
             )
-            await proc.wait()
-            if proc.returncode == 0:
+            if code == 0:
                 return True
-            log.warning("tar command returned non-zero code: %s", proc.returncode)
+            log.warning("tar command returned non-zero code: %s", code)
         except Exception:
             log.exception("tar command failed")
 
@@ -152,17 +162,11 @@ async def extract_archive_async(archive_path: Path, extract_dir: Path, password:
                 args.append(f"-p{password}")
             args.append(str(archive_path))
             
-            proc = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
+            code, stdout, stderr = await _run_subprocess_with_kill(*args)
             output = (stdout.decode(errors="ignore") + stderr.decode(errors="ignore")).lower()
-            if proc.returncode == 0:
+            if code == 0:
                 return True
-            log.warning("7z command returned non-zero code: %s", proc.returncode)
+            log.warning("7z command returned non-zero code: %s", code)
             if "password" in output or "encrypted" in output:
                 raise ArchivePasswordRequired()
         except ArchivePasswordRequired:

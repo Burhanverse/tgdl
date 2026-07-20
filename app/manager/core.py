@@ -116,6 +116,13 @@ class QueueManager:
                 job_state.active_process.kill()
             except Exception:
                 pass
+
+        if job_state.active_task:
+            try:
+                job_state.active_task.cancel()
+            except Exception:
+                pass
+
         job_state.downloader_done.set()
         job_state.uploader_done.set()
         job_state.trigger_event.set()
@@ -155,6 +162,10 @@ class QueueManager:
                 self.jobs[job_id] = job_state
                 await self.upload_queue.put(job_id)
                 await self._process_download(job_state)
+            except asyncio.CancelledError:
+                if not self.is_running:
+                    break
+                log.info("Job execution cancelled in download worker %s", worker_id)
             except Exception:
                 log.exception("Error in download worker %s", worker_id)
             finally:
@@ -174,12 +185,17 @@ class QueueManager:
                     continue
                     
                 await self._process_upload(job_state)
+            except asyncio.CancelledError:
+                if not self.is_running:
+                    break
+                log.info("Job execution cancelled in upload worker %s", worker_id)
             except Exception:
                 log.exception("Error in upload worker %s", worker_id)
             finally:
                 self.upload_queue.task_done()
 
     async def _process_download(self, job_state: JobState) -> None:
+        job_state.active_task = asyncio.current_task()
         job = job_state.job
         chat_id = job.chat_id
         dest_dir = job_state.dest_dir
@@ -316,6 +332,7 @@ class QueueManager:
                 await asyncio.gather(monitor_task, return_exceptions=True)
 
     async def _process_upload(self, job_state: JobState) -> None:
+        job_state.active_task = asyncio.current_task()
         from ..conversion import (
             convert_media_async,
             convert_audio_async,
@@ -377,7 +394,7 @@ class QueueManager:
                         if status_text != job_state.last_edited_text:
                             from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                             keyboard = InlineKeyboardMarkup([
-                                [InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")]
+                                [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
                             ])
                             if await safe_edit(self.client, chat_id, job_state.msg_id, status_text, reply_markup=keyboard):
                                 job_state.last_edited_text = status_text
@@ -489,6 +506,9 @@ class QueueManager:
                                 [
                                     InlineKeyboardButton("Upload Archive Only", callback_data=f"archive_only:{job.id}:{archive_id}"),
                                     InlineKeyboardButton("Upload + Extract", callback_data=f"archive_ext:{job.id}:{archive_id}")
+                                ],
+                                [
+                                    InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
                                 ]
                             ])
                             prompt_msg = await safe_send(self.client, chat_id, prompt_text, reply_markup=kb)
@@ -535,6 +555,9 @@ class QueueManager:
                             self.client,
                             chat_id,
                             compile_extraction_status_text(job.id, f.name),
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+                            ]),
                             link_preview_options=LinkPreviewOptions(is_disabled=True)
                         )
 
@@ -815,47 +838,50 @@ class QueueManager:
                     if choice != "orig" and f.name not in _converted_files.get(job.id, set()):
                          conversion_prompt_msg_id = None
                          if choice is None:
-                             keyboard = InlineKeyboardMarkup([
-                                 [
-                                     InlineKeyboardButton("Convert to MP4", callback_data=f"convert_mp4:{job.id}:{conv_id}"),
-                                     InlineKeyboardButton("Original File", callback_data=f"convert_orig:{job.id}:{conv_id}")
-                                 ]
-                             ])
-                             prompt_text = compile_conversion_prompt_text(job.id, f.name)
-                             prompt_msg = await safe_send(self.client, chat_id, prompt_text, reply_markup=keyboard)
-                             if prompt_msg:
-                                 conversion_prompt_msg_id = prompt_msg.id
+                              keyboard = InlineKeyboardMarkup([
+                                  [
+                                      InlineKeyboardButton("Convert to MP4", callback_data=f"convert_mp4:{job.id}:{conv_id}"),
+                                      InlineKeyboardButton("Original File", callback_data=f"convert_orig:{job.id}:{conv_id}")
+                                  ],
+                                  [
+                                      InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
+                                  ]
+                              ])
+                              prompt_text = compile_conversion_prompt_text(job.id, f.name)
+                              prompt_msg = await safe_send(self.client, chat_id, prompt_text, reply_markup=keyboard)
+                              if prompt_msg:
+                                   conversion_prompt_msg_id = prompt_msg.id
 
-                                 if job.id not in _conversion_events:
-                                     _conversion_events[job.id] = {}
-                                 _conversion_events[job.id][conv_id] = asyncio.Event()
+                                   if job.id not in _conversion_events:
+                                        _conversion_events[job.id] = {}
+                                   _conversion_events[job.id][conv_id] = asyncio.Event()
 
-                                 start_t = time.time()
-                                 while not job_state.uploader_done.is_set() and not _conversion_events[job.id][conv_id].is_set():
-                                     if time.time() - start_t >= 15.0:
-                                         break
-                                     try:
-                                         await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
-                                     except asyncio.TimeoutError:
-                                         pass
-                                 if job_state.uploader_done.is_set():
-                                     return
+                                   start_t = time.time()
+                                   while not job_state.uploader_done.is_set() and not _conversion_events[job.id][conv_id].is_set():
+                                        if time.time() - start_t >= 15.0:
+                                            break
+                                        try:
+                                            await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
+                                        except asyncio.TimeoutError:
+                                            pass
+                                   if job_state.uploader_done.is_set():
+                                        return
 
-                                 if not _conversion_events[job.id][conv_id].is_set():
-                                     if conversion_prompt_msg_id:
-                                         try:
-                                             await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
-                                         except Exception:
-                                             pass
-                                         conversion_prompt_msg_id = None
-                                     if job.id not in _conversion_choices:
-                                         _conversion_choices[job.id] = {}
-                                     _conversion_choices[job.id][conv_id] = "orig"
-                             else:
-                                 if job.id not in _conversion_choices:
-                                     _conversion_choices[job.id] = {}
-                                 _conversion_choices[job.id][conv_id] = "orig"
-                             choice = _conversion_choices.get(job.id, {}).get(conv_id)
+                                   if not _conversion_events[job.id][conv_id].is_set():
+                                        if conversion_prompt_msg_id:
+                                            try:
+                                                await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
+                                            except Exception:
+                                                pass
+                                            conversion_prompt_msg_id = None
+                                        if job.id not in _conversion_choices:
+                                            _conversion_choices[job.id] = {}
+                                        _conversion_choices[job.id][conv_id] = "orig"
+                              else:
+                                   if job.id not in _conversion_choices:
+                                        _conversion_choices[job.id] = {}
+                                   _conversion_choices[job.id][conv_id] = "orig"
+                              choice = _conversion_choices.get(job.id, {}).get(conv_id)
 
                          if choice == "mp4":
                              if job.id not in _converted_files:
@@ -869,7 +895,10 @@ class QueueManager:
                              conv_msg = await safe_send(
                                  self.client,
                                  chat_id,
-                                 compile_conversion_running_status_text(job.id, f.name)
+                                 compile_conversion_running_status_text(job.id, f.name),
+                                 reply_markup=InlineKeyboardMarkup([
+                                     [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+                                 ])
                              )
 
                              job_state.is_converting = True
@@ -950,6 +979,9 @@ class QueueManager:
                                 [
                                     InlineKeyboardButton("Convert to MP3", callback_data=f"convert_mp3:{job.id}:{conv_id}"),
                                     InlineKeyboardButton("Original File", callback_data=f"convert_orig:{job.id}:{conv_id}")
+                                ],
+                                [
+                                    InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
                                 ]
                             ])
                             prompt_text = compile_audio_conversion_prompt_text(job.id, f.name)
@@ -1000,7 +1032,10 @@ class QueueManager:
                             conv_msg = await safe_send(
                                 self.client,
                                 chat_id,
-                                compile_audio_conversion_running_status_text(job.id, f.name)
+                                compile_audio_conversion_running_status_text(job.id, f.name),
+                                reply_markup=InlineKeyboardMarkup([
+                                    [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+                                ])
                             )
 
                             job_state.is_converting = True
