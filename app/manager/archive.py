@@ -12,11 +12,11 @@ from .status import compile_archive_choice_status_text
 
 log = logging.getLogger(__name__)
 
-_archive_ids: dict[int, dict[str, str]] = {}
-_archive_events: dict[int, dict[str, asyncio.Event]] = {}
-_archive_choices: dict[int, dict[str, str]] = {}
-_extracted_archives: dict[int, set[str]] = {}
-_extracted_file_names: dict[int, set[str]] = {}
+_archive_ids: dict[str, dict[str, str]] = {}
+_archive_events: dict[str, dict[str, asyncio.Event]] = {}
+_archive_choices: dict[str, dict[str, str]] = {}
+_extracted_archives: dict[str, set[str]] = {}
+_extracted_file_names: dict[str, set[str]] = {}
 ARCHIVE_EXT = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
 
 
@@ -181,7 +181,7 @@ async def handle_archive_choice(
     data = callback_query.data
     parts = data.split(":", 2)
     choice = parts[0].split("_")[1]  
-    job_id = int(parts[1])
+    job_id = parts[1]
     archive_id = parts[2]
 
     job = await store.get_job(job_id)

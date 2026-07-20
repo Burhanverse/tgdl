@@ -211,7 +211,7 @@ async def status_cmd(_, message: Message) -> None:
 
     queued = [q for q in await store.queued_jobs() if is_job_owner(chat_id, q)]
 
-    cur = await store.db.execute("SELECT * FROM jobs WHERE status = 'waiting' AND chat_id = ? ORDER BY id", (chat_id,))
+    cur = await store.db.execute("SELECT * FROM jobs WHERE status = 'waiting' AND chat_id = ? ORDER BY created_at", (chat_id,))
     waiting_rows = await cur.fetchall()
     waiting = [store._row_to_job(r) for r in waiting_rows]
 
@@ -252,11 +252,7 @@ async def cancel_cmd(_, message: Message) -> None:
     
     cmd_parts = message.text.split()
     if len(cmd_parts) > 1:
-        try:
-            job_id = int(cmd_parts[1])
-        except ValueError:
-            await message.reply_text("Invalid job ID format. Please use `/cancel <job_id>` or just `/cancel`.")
-            return
+        job_id = cmd_parts[1].strip()
 
         job = await store.get_job(job_id)
         if not job or not is_job_owner(chat_id, job):
@@ -265,7 +261,6 @@ async def cancel_cmd(_, message: Message) -> None:
 
         if job.status in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED):
             await message.reply_text(f"Job #{job_id} is already in `{job.status}` state.")
-
             return
 
         cancelled = await queue_manager.cancel_job(job.id)
@@ -358,6 +353,9 @@ async def gdl_cmd(_, message: Message) -> None:
         [
             InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+        ],
+        [
+            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -417,6 +415,9 @@ async def tor_cmd(_, message: Message) -> None:
         [
             InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+        ],
+        [
+            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -597,8 +598,13 @@ async def unzip_cmd(_, message: Message) -> None:
             (JobStatus.QUEUED, 1, job.id)
         )
         await store.db.commit()
+        from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")]
+        ])
         await status_msg.edit_text(
-            compile_queued_status_text(job.id, f"unzip:{filename}", "")
+            compile_queued_status_text(job.id, f"unzip:{filename}", ""),
+            reply_markup=keyboard
         )
         await queue_manager.add_job(job.id)
         return
@@ -608,6 +614,9 @@ async def unzip_cmd(_, message: Message) -> None:
         [
             InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+        ],
+        [
+            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -1077,6 +1086,9 @@ async def handle_link(_, message: Message) -> None:
         [
             InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+        ],
+        [
+            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -1101,11 +1113,10 @@ async def handle_link(_, message: Message) -> None:
     await store.set_status_message(job.id, status_msg.id)
 
 
-@app.on_callback_query(filters.regex(r"^split_(yes|no):(\d+)$"))
+@app.on_callback_query(filters.regex(r"^split_(yes|no):(\w+)$"))
 async def handle_split_choice(_, callback_query: CallbackQuery) -> None:
     data = callback_query.data
-    choice, job_id_str = data.split(":")
-    job_id = int(job_id_str)
+    choice, job_id = data.split(":")
     split_choice = 1 if choice == "split_yes" else 0
 
     job = await store.get_job(job_id)
@@ -1207,8 +1218,13 @@ async def run_split_archive_download_and_extract(session: dict, status_msg: Mess
             (JobStatus.QUEUED, 1, job.id)
         )
         await store.db.commit()
+        from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")]
+        ])
         await status_msg.edit_text(
-            compile_queued_status_text(job.id, f"unzip:{filename}", "")
+            compile_queued_status_text(job.id, f"unzip:{filename}", ""),
+            reply_markup=keyboard
         )
         await queue_manager.add_job(job.id)
         return
@@ -1218,6 +1234,9 @@ async def run_split_archive_download_and_extract(session: dict, status_msg: Mess
         [
             InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
             InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+        ],
+        [
+            InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")
         ]
     ])
 
@@ -1299,20 +1318,20 @@ async def handle_split_start_cb(_, callback_query: CallbackQuery) -> None:
     asyncio.create_task(run_split_archive_download_and_extract(session, callback_query.message))
 
 
-@app.on_callback_query(filters.regex(r"^archive_(only|ext):(\d+):(.+)$"))
+@app.on_callback_query(filters.regex(r"^archive_(only|ext):(\w+):(.+)$"))
 async def handle_archive_choice_cb(_, callback_query: CallbackQuery) -> None:
     await handle_archive_choice(callback_query, store, is_job_owner)
 
 
-@app.on_callback_query(filters.regex(r"^convert_(mp4|mp3|orig):(\d+):(.+)$"))
+@app.on_callback_query(filters.regex(r"^convert_(mp4|mp3|orig):(\w+):(.+)$"))
 async def handle_conversion_choice_cb(client: Client, callback_query: CallbackQuery) -> None:
     await handle_conversion_choice(client, callback_query, store, is_job_owner)
 
 
-@app.on_callback_query(filters.regex(r"^cancel_job:(\d+)$"))
+@app.on_callback_query(filters.regex(r"^cancel_job:(\w+)$"))
 async def handle_cancel_job_cb(_, callback_query: CallbackQuery) -> None:
     data = callback_query.data
-    job_id = int(data.split(":")[1])
+    job_id = data.split(":")[1]
     chat_id = callback_query.message.chat.id
 
     job = await store.get_job(job_id)
@@ -1348,9 +1367,19 @@ async def handle_cancel_job_cb(_, callback_query: CallbackQuery) -> None:
 
 
 async def requeue_incomplete_jobs() -> None:
-    """On startup, put back-in-progress and queued jobs onto the queue so
-    interrupted runs resume instead of silently vanishing."""
-    for job in [*await store.resumable_jobs(), *await store.queued_jobs()]:
+    """On startup, mark active jobs as failed and put queued jobs onto the queue."""
+    try:
+        cur = await store.db.execute(
+            "SELECT id FROM jobs WHERE status IN ('downloading', 'uploading')"
+        )
+        rows = await cur.fetchall()
+        for r in rows:
+            job_id = r["id"]
+            await store.update_progress(job_id, status=JobStatus.FAILED, error="Aborted due to bot restart")
+    except Exception as e:
+        log.warning("Failed to clean up incomplete active jobs on startup: %s", e)
+
+    for job in await store.queued_jobs():
         log.info("Resuming job #%s (%s)", job.id, job.status)
         await queue_manager.add_job(job.id)
 

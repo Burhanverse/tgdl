@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import time
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -8,9 +7,11 @@ from typing import Optional
 
 import aiosqlite
 
+log = logging.getLogger(__name__)
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     chat_id INTEGER NOT NULL,
     status_message_id INTEGER,
     url TEXT NOT NULL,
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE TABLE IF NOT EXISTS uploaded_files (
-    job_id INTEGER NOT NULL,
+    job_id TEXT NOT NULL,
     filename TEXT NOT NULL,
     PRIMARY KEY (job_id, filename)
 );
@@ -46,7 +47,7 @@ class JobStatus(StrEnum):
 
 @dataclass
 class Job:
-    id: int
+    id: str
     chat_id: int
     status_message_id: Optional[int]
     url: str
@@ -73,6 +74,45 @@ class JobStore:
     async def open(self) -> None:
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
+
+        # Check if table jobs exists and check its 'id' column type to see if we should migrate.
+        try:
+            cursor = await self._db.execute("PRAGMA table_info(jobs)")
+            columns = await cursor.fetchall()
+            if columns:
+                id_column = next((c for c in columns if c["name"] == "id"), None)
+                if id_column and "INT" in str(id_column["type"]).upper():
+                    log.info("Migrating database: jobs table has INTEGER id, converting to TEXT.")
+                    # Rename the existing tables
+                    await self._db.execute("ALTER TABLE jobs RENAME TO jobs_old")
+                    try:
+                        await self._db.execute("ALTER TABLE uploaded_files RENAME TO uploaded_files_old")
+                        has_uploaded_files = True
+                    except Exception:
+                        has_uploaded_files = False
+                    
+                    # Create the new tables using the updated SCHEMA
+                    await self._db.executescript(SCHEMA)
+                    
+                    # Migrate records by converting id/job_id to string
+                    await self._db.execute(
+                        "INSERT INTO jobs (id, chat_id, status_message_id, url, status, total_files, sent_files, "
+                        "skipped_files, error, split_large_files, args, created_at, updated_at) "
+                        "SELECT CAST(id AS TEXT), chat_id, status_message_id, url, status, total_files, sent_files, "
+                        "skipped_files, error, split_large_files, args, created_at, updated_at FROM jobs_old"
+                    )
+                    if has_uploaded_files:
+                        await self._db.execute(
+                            "INSERT INTO uploaded_files (job_id, filename) "
+                            "SELECT CAST(job_id AS TEXT), filename FROM uploaded_files_old"
+                        )
+                        await self._db.execute("DROP TABLE uploaded_files_old")
+                    
+                    await self._db.execute("DROP TABLE jobs_old")
+                    await self._db.commit()
+        except Exception as migration_err:
+            log.exception("Error migrating database columns: %s", migration_err)
+
         await self._db.executescript(SCHEMA)
         # Automatic column migration if jobs table already exists
         try:
@@ -95,22 +135,30 @@ class JobStore:
         return self._db
 
     async def create_job(self, chat_id: int, url: str, split_large_files: int = 1, args: Optional[str] = None) -> Job:
+        import secrets
+        while True:
+            job_id = secrets.token_hex(4)
+            cur_check = await self.db.execute("SELECT 1 FROM jobs WHERE id = ?", (job_id,))
+            row = await cur_check.fetchone()
+            if not row:
+                break
+
         now = time.time()
-        cur = await self.db.execute(
-            "INSERT INTO jobs (chat_id, url, status, split_large_files, args, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (chat_id, url, JobStatus.QUEUED, split_large_files, args, now, now),
+        await self.db.execute(
+            "INSERT INTO jobs (id, chat_id, url, status, split_large_files, args, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (job_id, chat_id, url, JobStatus.QUEUED, split_large_files, args, now, now),
         )
         await self.db.commit()
-        job = await self.get_job(cur.lastrowid)
+        job = await self.get_job(job_id)
         assert job is not None
         return job
 
-    async def get_job(self, job_id: int) -> Optional[Job]:
+    async def get_job(self, job_id: str) -> Optional[Job]:
         cur = await self.db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = await cur.fetchone()
         return self._row_to_job(row) if row else None
 
-    async def set_status_message(self, job_id: int, message_id: int) -> None:
+    async def set_status_message(self, job_id: str, message_id: int) -> None:
         await self.db.execute(
             "UPDATE jobs SET status_message_id = ?, updated_at = ? WHERE id = ?",
             (message_id, time.time(), job_id),
@@ -119,7 +167,7 @@ class JobStore:
 
     async def update_progress(
         self,
-        job_id: int,
+        job_id: str,
         *,
         status: Optional[str] = None,
         total_files: Optional[int] = None,
@@ -148,29 +196,20 @@ class JobStore:
         await self.db.execute(f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?", values)
         await self.db.commit()
 
-    async def mark_uploaded(self, job_id: int, filename: str) -> None:
+    async def mark_uploaded(self, job_id: str, filename: str) -> None:
         await self.db.execute(
             "INSERT OR IGNORE INTO uploaded_files (job_id, filename) VALUES (?, ?)",
             (job_id, filename),
         )
         await self.db.commit()
 
-    async def get_uploaded_filenames(self, job_id: int) -> set[str]:
+    async def get_uploaded_filenames(self, job_id: str) -> set[str]:
         cur = await self.db.execute("SELECT filename FROM uploaded_files WHERE job_id = ?", (job_id,))
         rows = await cur.fetchall()
         return {r["filename"] for r in rows}
 
-    async def resumable_jobs(self) -> list[Job]:
-        """Jobs that were mid-flight when the process last stopped."""
-        cur = await self.db.execute(
-            "SELECT * FROM jobs WHERE status IN (?, ?) ORDER BY id",
-            (JobStatus.DOWNLOADING, JobStatus.UPLOADING),
-        )
-        rows = await cur.fetchall()
-        return [self._row_to_job(r) for r in rows]
-
     async def queued_jobs(self) -> list[Job]:
-        cur = await self.db.execute("SELECT * FROM jobs WHERE status = ? ORDER BY id", (JobStatus.QUEUED,))
+        cur = await self.db.execute("SELECT * FROM jobs WHERE status = ? ORDER BY created_at", (JobStatus.QUEUED,))
         rows = await cur.fetchall()
         return [self._row_to_job(r) for r in rows]
 

@@ -22,13 +22,14 @@ def make_progress_bar(pct: float) -> str:
     return bar
 
 
-async def safe_edit(client: Client, chat_id: int, message_id: int, text: str) -> bool:
+async def safe_edit(client: Client, chat_id: int, message_id: int, text: str, reply_markup=None) -> bool:
     from pyrogram.errors import FloodWait, MessageNotModified
     try:
         await client.edit_message_text(
             chat_id,
             message_id,
             text,
+            reply_markup=reply_markup,
             link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
         return True

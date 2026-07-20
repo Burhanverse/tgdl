@@ -35,17 +35,17 @@ from .status import (
 
 log = logging.getLogger(__name__)
 
-_password_prompt_events: dict[int, dict[str, tuple[asyncio.Event, dict]]] = {}
-_password_prompt_messages: dict[int, tuple[int, str, int]] = {}
+_password_prompt_events: dict[str, dict[str, tuple[asyncio.Event, dict]]] = {}
+_password_prompt_messages: dict[int, tuple[str, str, int]] = {}
 
 
 class QueueManager:
     def __init__(self):
         self.client: Optional[Client] = None
         self.store: Optional[JobStore] = None
-        self.download_queue: asyncio.Queue[int] = asyncio.Queue()
-        self.upload_queue: asyncio.Queue[int] = asyncio.Queue()
-        self.jobs: dict[int, JobState] = {}
+        self.download_queue: asyncio.Queue[str] = asyncio.Queue()
+        self.upload_queue: asyncio.Queue[str] = asyncio.Queue()
+        self.jobs: dict[str, JobState] = {}
         self.download_workers: list[asyncio.Task] = []
         self.upload_workers: list[asyncio.Task] = []
         self.is_running = False
@@ -96,11 +96,11 @@ class QueueManager:
 
         log.info("Queue manager stopped")
 
-    async def add_job(self, job_id: int) -> None:
+    async def add_job(self, job_id: str) -> None:
         await self.download_queue.put(job_id)
         log.info("Job #%s added to download queue", job_id)
 
-    async def cancel_job(self, job_id: int) -> bool:
+    async def cancel_job(self, job_id: str) -> bool:
         job_state = self.jobs.get(job_id)
         
         if self.store:
@@ -127,12 +127,12 @@ class QueueManager:
     def get_active_jobs_for_chat(self, chat_id: int) -> list[JobState]:
         return [js for js in self.jobs.values() if js.job.chat_id == chat_id]
 
-    async def register_process(self, job_id: int, proc: asyncio.subprocess.Process) -> None:
+    async def register_process(self, job_id: str, proc: asyncio.subprocess.Process) -> None:
         job_state = self.jobs.get(job_id)
         if job_state:
             job_state.active_process = proc
 
-    async def unregister_process(self, job_id: int) -> None:
+    async def unregister_process(self, job_id: str) -> None:
         job_state = self.jobs.get(job_id)
         if job_state:
             job_state.active_process = None
@@ -375,7 +375,11 @@ class QueueManager:
                     if job_state.msg_id:
                         status_text = compile_job_status_text(db_job, job_state)
                         if status_text != job_state.last_edited_text:
-                            if await safe_edit(self.client, chat_id, job_state.msg_id, status_text):
+                            from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                            keyboard = InlineKeyboardMarkup([
+                                [InlineKeyboardButton("Cancel Job", callback_data=f"cancel_job:{job.id}")]
+                            ])
+                            if await safe_edit(self.client, chat_id, job_state.msg_id, status_text, reply_markup=keyboard):
                                 job_state.last_edited_text = status_text
                                 if getattr(job_state, "initial_download_msg", None):
                                     try:
@@ -1274,6 +1278,19 @@ class QueueManager:
             updater_task.cancel()
             await asyncio.gather(updater_task, return_exceptions=True)
             
+            # Edit the status message one final time to remove buttons and show final state
+            db_job = await self.store.get_job(job.id)
+            if db_job and job_state.msg_id:
+                if db_job.status == JobStatus.DONE:
+                    final_text = f"**Job #{job.id} Completed Successfully**\n------------------------------------\nUploaded {job_state.sent} file(s) total."
+                elif db_job.status == JobStatus.FAILED:
+                    final_text = f"**Job #{job.id} Failed**\n------------------------------------\nError: {db_job.error}"
+                elif db_job.status == JobStatus.CANCELLED:
+                    final_text = f"**Job #{job.id} Cancelled**\n------------------------------------\nCancelled successfully by owner."
+                else:
+                    final_text = compile_job_status_text(db_job, job_state)
+                await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None)
+
             from .archive import _archive_ids, _archive_events, _archive_choices, _extracted_archives, _extracted_file_names
             from ..conversion import _conversion_ids, _conversion_events, _conversion_choices, _converted_files
 
@@ -1307,7 +1324,7 @@ async def safe_send(client: Client, chat_id: int, text: str, **kwargs) -> Messag
     return None
 
 
-async def log_upload(job_id: int, filename: str) -> None:
+async def log_upload(job_id: str, filename: str) -> None:
     log_path = settings.log_dir / "uploads.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Optional
@@ -18,26 +16,27 @@ def format_url_display(url_json: str) -> str:
     return f"`{url_json}`"
 
 
-def compile_split_prompt_text(job_id: int, url_or_target: str, is_torrent: bool = False, is_unzip: bool = False) -> str:
+def compile_split_prompt_text(job_id: str, url_or_target: str, is_torrent: bool = False, is_unzip: bool = False) -> str:
     if is_torrent:
-        title = f"**Torrent Job #{job_id} registered**"
+        title = f"**Torrent Job #{job_id} Registered**"
         target_label = "Target"
     elif is_unzip:
-        title = f"**Job #{job_id} registered**"
+        title = f"**Job #{job_id} Registered**"
         target_label = "Archive"
     else:
-        title = f"**Job #{job_id} registered**"
+        title = f"**Job #{job_id} Registered**"
         target_label = "URL"
     
     display = format_url_display(url_or_target) if not (is_torrent or is_unzip) else url_or_target
     return (
         f"{title}\n"
+        f"------------------------------------\n"
         f"- **{target_label}**: {display}\n\n"
         "Do you want to split files larger than 2GB for this job?"
     )
 
 
-def compile_queued_status_text(job_id: int, url: str, args_display: str) -> str:
+def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
     cleaned_url = url
     if url.startswith("[") and url.endswith("]"):
         try:
@@ -60,6 +59,7 @@ def compile_queued_status_text(job_id: int, url: str, args_display: str) -> str:
             name = Path(torrent_path).name
             return (
                 f"**Queued (job #{job_id})**\n"
+                f"------------------------------------\n"
                 f"- **File**: `{name}`\n"
                 f"- **Tool**: `aria2c`"
             )
@@ -67,21 +67,24 @@ def compile_queued_status_text(job_id: int, url: str, args_display: str) -> str:
             magnet_disp = cleaned_url[:60] + "..." if len(cleaned_url) > 60 else cleaned_url
             return (
                 f"**Queued (job #{job_id})**\n"
+                f"------------------------------------\n"
                 f"- **Link**: `{magnet_disp}`\n"
                 f"- **Tool**: `aria2c`"
             )
 
     return (
         f"**Queued (job #{job_id})**\n"
+        f"------------------------------------\n"
         f"- **URL**: {format_url_display(url)}{args_display}"
     )
 
 
-def compile_unzip_download_status_text(job_id: int, filename: str, current: int, total: int) -> str:
+def compile_unzip_download_status_text(job_id: str, filename: str, current: int, total: int) -> str:
     pct = current * 100.0 / total if total > 0 else 0.0
     bar = make_progress_bar(pct)
     return (
-        f"**Job #{job_id} registered**\n"
+        f"**Job #{job_id} Registered**\n"
+        f"------------------------------------\n"
         f"- **Archive**: `{filename}`\n\n"
         f"Downloading: {pct:.1f}%\n"
         f"  `[{bar}]`\n"
@@ -89,75 +92,108 @@ def compile_unzip_download_status_text(job_id: int, filename: str, current: int,
     )
 
 
-def compile_archive_prompt_text(job_id: int, filename: str) -> str:
+def compile_archive_prompt_text(job_id: str, filename: str) -> str:
     return (
         f"**Job #{job_id} - Archive Detected**\n"
+        f"------------------------------------\n"
         f"- **File**: `{filename}`\n\n"
         "Do you want to upload the archive file only, or extract its contents and upload both?"
     )
 
 
-def compile_archive_choice_status_text(job_id: int, filename: str, choice_str: str) -> str:
+def compile_archive_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
         f"**Job #{job_id} - Archive Choice**\n"
+        f"------------------------------------\n"
         f"- **File**: `{filename}`\n"
         f"- **Selected**: `{choice_str}`\n\n"
         "Processing choice..."
     )
 
 
-def compile_conversion_prompt_text(job_id: int, filename: str) -> str:
+def compile_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
         f"**Job #{job_id} - Incompatible Video Format**\n"
+        f"------------------------------------\n"
         f"- **File**: `{filename}`\n\n"
         "The file format is not natively supported for Telegram inline streaming. "
         "Do you want to convert it to MP4 first, or upload the original as a document?"
     )
 
 
-def compile_audio_conversion_prompt_text(job_id: int, filename: str) -> str:
+def compile_audio_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
         f"**Job #{job_id} - High Quality Audio Format**\n"
+        f"------------------------------------\n"
         f"- **File**: `{filename}`\n\n"
         "The file is in a lossless or uncompressed audio format. "
         "Do you want to convert it to MP3 (optimized & mastered using Pedalboard) first, or upload the original?"
     )
 
 
-def compile_conversion_choice_status_text(job_id: int, filename: str, choice_str: str) -> str:
+def compile_conversion_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
         f"**Job #{job_id} - Media Conversion**\n"
+        f"------------------------------------\n"
         f"- **File**: `{filename}`\n\n"
         f"Choice selected: **{choice_str}**"
     )
 
 
-def compile_extraction_status_text(job_id: int, filename: str) -> str:
-    return f"**Job #{job_id} - Archive Extraction**\nExtracting `{filename}`..."
+def compile_extraction_status_text(job_id: str, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Archive Extraction**\n"
+        f"------------------------------------\n"
+        f"Extracting `{filename}`..."
+    )
 
 
-def compile_conversion_running_status_text(job_id: int, filename: str) -> str:
-    return f"**Job #{job_id} - Media Conversion**\nConverting `{filename}` to standard MP4 container..."
+def compile_conversion_running_status_text(job_id: str, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Media Conversion**\n"
+        f"------------------------------------\n"
+        f"Converting `{filename}` to standard MP4 container..."
+    )
 
 
-def compile_audio_conversion_running_status_text(job_id: int, filename: str) -> str:
-    return f"**Job #{job_id} - Audio Processing & Conversion**\nApplying Pedalboard mastering chain and converting `{filename}` to MP3..."
+def compile_audio_conversion_running_status_text(job_id: str, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Audio Processing & Conversion**\n"
+        f"------------------------------------\n"
+        f"Applying Pedalboard mastering chain and converting `{filename}` to MP3..."
+    )
 
 
-def compile_conversion_failed_status_text(job_id: int, filename: str) -> str:
-    return f"**Job #{job_id} - Conversion Failed**\nFailed to convert `{filename}`. Uploading original as document."
+def compile_conversion_failed_status_text(job_id: str, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Conversion Failed**\n"
+        f"------------------------------------\n"
+        f"Failed to convert `{filename}`. Uploading original as document."
+    )
 
 
-def compile_audio_conversion_failed_status_text(job_id: int, filename: str) -> str:
-    return f"**Job #{job_id} - Audio Processing Failed**\nFailed to process `{filename}`. Uploading original file."
+def compile_audio_conversion_failed_status_text(job_id: str, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Audio Processing Failed**\n"
+        f"------------------------------------\n"
+        f"Failed to process `{filename}`. Uploading original file."
+    )
 
 
-def compile_extraction_failed_status_text(job_id: int, filename: str) -> str:
-    return f"**Job #{job_id} - Extraction Failed**\nFailed to extract `{filename}`."
+def compile_extraction_failed_status_text(job_id: str, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Extraction Failed**\n"
+        f"------------------------------------\n"
+        f"Failed to extract `{filename}`."
+    )
 
 
-def compile_extraction_success_status_text(job_id: int, filename: str) -> str:
-    return f"**Job #{job_id} - Archive Extracted**\nSuccessfully extracted `{filename}` into download directory."
+def compile_extraction_success_status_text(job_id: str, filename: str) -> str:
+    return (
+        f"**Job #{job_id} - Archive Extracted**\n"
+        f"------------------------------------\n"
+        f"Successfully extracted `{filename}` into download directory."
+    )
 
 
 def compile_job_status_text(job, job_state) -> str:
@@ -178,118 +214,82 @@ def compile_job_status_text(job, job_state) -> str:
         "magnet:?xt=" in cleaned_url
     )
 
+    split_str = "Enabled" if job.split_large_files else "Disabled"
+    
+    text = (
+        f"**Active Task Details**\n"
+        f"------------------------------------\n"
+        f"**Job ID:** `{job.id}`\n"
+        f"**Status:** `{job.status.upper()}`\n"
+    )
+
     if is_torrent:
-        split_str = "Yes" if job.split_large_files else "No"
-        job_text = f"**Torrent Job #{job.id}**\n"
-        
         torrent_name = getattr(job_state, "torrent_name", None)
         if torrent_name:
-            job_text += f"- **Name**: `{torrent_name}`\n"
+            text += f"**Name:** `{torrent_name}`\n"
         elif cleaned_url.startswith("torrent:"):
             torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
-            job_text += f"- **File**: `{name}`\n"
+            text += f"**Torrent File:** `{name}`\n"
         else:
-            magnet_disp = cleaned_url[:60] + "..." if len(cleaned_url) > 60 else cleaned_url
-            job_text += f"- **Link**: `{magnet_disp}`\n"
+            magnet_disp = cleaned_url[:50] + "..." if len(cleaned_url) > 50 else cleaned_url
+            text += f"**Magnet Link:** `{magnet_disp}`\n"
+        text += f"**Tool:** `aria2c`\n"
+    else:
+        text += f"**URL:** {format_url_display(job.url)}\n"
+        parsed_args = []
+        if job.args:
+            try:
+                parsed_args = json.loads(job.args)
+            except Exception:
+                pass
+        if parsed_args:
+            text += f"**Args:** `{' '.join(parsed_args)}`\n"
             
-        job_text += (
-            f"- **Tool**: `aria2c`\n"
-            f"- **Split > 2GB**: {split_str}\n"
-        )
+    text += f"**Split > 2GB:** `{split_str}`\n"
+    text += f"------------------------------------\n"
 
-        if not job_state.downloader_done.is_set():
-            dl_speed_str = format_size(job_state.download_speed)
-            dl_bytes_str = format_size(job_state.total_downloaded_bytes)
-            bar = make_progress_bar(job_state.download_pct)
-            
-            peers_info = ""
-            if is_torrent:
-                seeders = getattr(job_state, "torrent_seeders", 0)
-                peers = getattr(job_state, "torrent_peers", 0)
-                peers_info = f"- **Peers**: `Seeders: {seeders} | Leechers/Peers: {peers}`\n"
-
-            job_text += (
-                f"- **Status**: `Downloading`\n"
-                f"- **Progress**: {job_state.download_pct:.1f}%\n"
-                f"  `[{bar}]`\n"
-                f"- **Downloaded**: {dl_bytes_str}\n"
-                f"- **Speed**: {dl_speed_str}/s\n"
-                f"{peers_info}"
-            )
-
-        elif getattr(job_state, "is_converting", False):
-            conv_file = getattr(job_state, "conversion_file", "media file")
-            job_text += (
-                f"- **Status**: `Converting`\n"
-                f"- **Converting File**: `{conv_file}`\n"
-                f"  (Converting incompatible format to standard MP4)\n"
-            )
-        elif job.status == "uploading" or job_state.sent > 0 or job_state.current_upload_file:
-            ul_speed_str = format_size(job_state.upload_speed)
-            job_text += (
-                f"- **Status**: `Uploading`\n"
-                f"- **Files Sent**: {job_state.sent} / {job.total_files if job.total_files > 0 else 'Calculating'}\n"
-                f"- **Files Skipped**: {len(job_state.skipped)}\n"
-            )
-            if job_state.current_upload_file:
-                bar = make_progress_bar(job_state.current_upload_pct)
-                job_text += (
-                    f"- **Current File**: `{job_state.current_upload_file}`\n"
-                    f"- **Upload Progress**: {job_state.current_upload_pct:.1f}%\n"
-                    f"  `[{bar}]`\n"
-                    f"- **Upload Speed**: {ul_speed_str}/s\n"
-                )
-        else:
-            job_text += f"- **Status**: `{job.status}`\n"
-            
-        return job_text
-
-    parsed_args = []
-    if job.args:
-        try:
-            parsed_args = json.loads(job.args)
-        except Exception:
-            pass
-    args_str = " ".join(parsed_args) if parsed_args else "None"
-    split_str = "Yes" if job.split_large_files else "No"
-
-    job_text = (
-        f"**Active Job #{job.id}**\n"
-        f"- **Status**: `{job.status}`\n"
-        f"- **URL**: {format_url_display(job.url)}\n"
-        f"- **Args**: `{args_str}`\n"
-        f"- **Split > 2GB**: {split_str}\n"
-    )
-
-    if job.status == "downloading" or not job_state.downloader_done.is_set():
+    if not job_state.downloader_done.is_set():
         dl_speed_str = format_size(job_state.download_speed)
         dl_bytes_str = format_size(job_state.total_downloaded_bytes)
-
-        if job_state.current_download_file:
-            job_text += f"  - **Current File**: `{job_state.current_download_file}`\n"
-        job_text += (
+        bar = make_progress_bar(job_state.download_pct)
+        
+        text += (
             f"**Downloader Metrics**\n"
-            f"  - **Files Downloaded**: {job_state.download_count}\n"
-            f"  - **Downloaded**: {dl_bytes_str}\n"
-            f"  - **Speed**: {dl_speed_str}/s\n"
+            f"| Progress: `{job_state.download_pct:.1f}%`\n"
+            f"| `[{bar}]`\n"
+            f"| Downloaded: `{dl_bytes_str}`\n"
+            f"| Speed: `{dl_speed_str}/s`\n"
         )
-
-    if job.status == "uploading" or job_state.sent > 0 or job_state.current_upload_file:
+        if is_torrent:
+            seeders = getattr(job_state, "torrent_seeders", 0)
+            peers = getattr(job_state, "torrent_peers", 0)
+            text += f"| Peers: `Seeders: {seeders} | Leechers/Peers: {peers}`\n"
+        elif job_state.current_download_file:
+            text += f"| Current File: `{job_state.current_download_file}`\n"
+    elif getattr(job_state, "is_converting", False):
+        conv_file = getattr(job_state, "conversion_file", "media file")
+        text += (
+            f"**Media Conversion**\n"
+            f"| Converting File: `{conv_file}`\n"
+            f"| *(Converting format to standard MP4 container)*\n"
+        )
+    elif job.status == "uploading" or job_state.sent > 0 or job_state.current_upload_file:
         ul_speed_str = format_size(job_state.upload_speed)
-        bar = make_progress_bar(job_state.current_upload_pct)
-
-        job_text += (
+        text += (
             f"**Uploader Metrics**\n"
-            f"  - **Files Sent**: {job_state.sent} / {job.total_files if job.total_files > 0 else 'Calculating'}\n"
-            f"  - **Files Skipped**: {len(job_state.skipped)}\n"
+            f"| Files Sent: `{job_state.sent} / {job.total_files if job.total_files > 0 else 'Calculating'}`\n"
+            f"| Files Skipped: `{len(job_state.skipped)}`\n"
         )
         if job_state.current_upload_file:
-            job_text += (
-                f"  - **Current File**: `{job_state.current_upload_file}`\n"
-                f"  - **Progress**: {job_state.current_upload_pct:.1f}%\n"
-                f"    `[{bar}]`\n"
-                f"  - **Speed**: {ul_speed_str}/s\n"
+            bar = make_progress_bar(job_state.current_upload_pct)
+            text += (
+                f"| Current File: `{job_state.current_upload_file}`\n"
+                f"| Progress: `{job_state.current_upload_pct:.1f}%`\n"
+                f"| `[{bar}]`\n"
+                f"| Speed: `{ul_speed_str}/s`\n"
             )
+    else:
+        text += f"**Status:** `{job.status.upper()}`\n"
 
-    return job_text
+    return text
