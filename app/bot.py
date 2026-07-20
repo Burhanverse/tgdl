@@ -574,7 +574,7 @@ async def pdup_cmd(_, message: Message) -> None:
     status_msg = await message.reply_text(
         f"**Pixeldrain Upload:** `{filename}`\n"
         f"- **Size**: `{format_size(file_size)}`\n"
-        f"- **Status**: `Downloading from Telegram...`"
+        f"- **Status**: `Downloading...`"
     )
 
     import tempfile
@@ -599,7 +599,7 @@ async def pdup_cmd(_, message: Message) -> None:
             await status_msg.edit_text(
                 f"**Pixeldrain Upload:** `{filename}`\n"
                 f"- **Size**: `{format_size(total)}`\n"
-                f"- **Status**: `Downloading from Telegram ({pct:.1f}%)...`\n"
+                f"- **Status**: `Downloading ({pct:.1f}%)...`\n"
                 f"{bar}\n"
                 f"Downloaded: `{format_size(current)}` of `{format_size(total)}`"
             )
@@ -651,10 +651,12 @@ async def pdup_cmd(_, message: Message) -> None:
             pass
 
     try:
+        domain = settings.pixeldrain_domain or "pixeldrain.com"
         response_data, upload_logs = await upload_to_pixeldrain(
             download_path,
             api_key=api_key,
-            progress_callback=on_upload_progress
+            progress_callback=on_upload_progress,
+            domain=domain
         )
 
         if "error" in response_data:
@@ -679,13 +681,13 @@ async def pdup_cmd(_, message: Message) -> None:
             reply_markup = InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton(text="Open Link", url=f"https://pixeldrain.com/u/{file_id}"),
-                        InlineKeyboardButton(text="Direct Link", url=f"https://pixeldrain.com/api/file/{file_id}"),
+                        InlineKeyboardButton(text="Open Link", url=f"https://{domain}/u/{file_id}"),
+                        InlineKeyboardButton(text="Direct Link", url=f"https://{domain}/api/file/{file_id}"),
                     ],
                     [
                         InlineKeyboardButton(
                             text="Share Link",
-                            url=f"https://telegram.me/share/url?url=https://pixeldrain.com/u/{file_id}",
+                            url=f"https://telegram.me/share/url?url=https://{domain}/u/{file_id}",
                         )
                     ]
                 ]

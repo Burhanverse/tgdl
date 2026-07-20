@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     tg_api_hash: str = Field(..., min_length=1)
     tg_bot_token: str = Field(..., min_length=1)
     pixeldrain_api_key: str | None = Field(default=None, description="API key for Pixeldrain uploads")
+    pixeldrain_domain: str = Field(default="pixeldrain.com", description="Domain to use for Pixeldrain uploads and links (pixeldrain.com or pixeldra.in)")
 
 
     # --- Storage locations ---
@@ -51,6 +52,14 @@ class Settings(BaseSettings):
     def _ensure_dir(cls, v: Path) -> Path:
         v.mkdir(parents=True, exist_ok=True)
         return v
+
+    @field_validator("pixeldrain_domain")
+    @classmethod
+    def _validate_pixeldrain_domain(cls, v: str) -> str:
+        v_clean = v.strip().lower()
+        if v_clean in ("pixeldrain.com", "pixeldra.in"):
+            return v_clean
+        return "pixeldrain.com"
 
     @property
     def db_path(self) -> Path:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import base64
 import json
 import logging
@@ -14,7 +15,7 @@ import aiohttp
 log = logging.getLogger(__name__)
 
 
-class ProgressReader:
+class ProgressReader(io.IOBase):
     """
     A file-like object wrapper that reports read progress to an async callback.
     """
@@ -23,6 +24,7 @@ class ProgressReader:
         file_path: Path, 
         callback: Callable[[int, int], Coroutine[None, None, None]] | None = None
     ):
+        super().__init__()
         self.file_path = file_path
         self.total_size = file_path.stat().st_size
         self.callback = callback
@@ -55,6 +57,13 @@ class ProgressReader:
 
     def close(self) -> None:
         self.file.close()
+        super().close()
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
 
     def __len__(self) -> int:
         return self.total_size
@@ -63,7 +72,8 @@ class ProgressReader:
 async def upload_to_pixeldrain(
     file_path: Path | str,
     api_key: str | None = None,
-    progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None
+    progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
+    domain: str = "pixeldrain.com"
 ) -> Tuple[dict[str, Any], list[str]]:
     """
     Upload a file to Pixeldrain using streaming.
@@ -72,6 +82,7 @@ async def upload_to_pixeldrain(
         file_path: Path to the local file to upload
         api_key: Optional Pixeldrain API Key for authenticated uploads
         progress_callback: Optional async function called with (current_bytes, total_bytes)
+        domain: Domain to use for upload API
 
     Returns:
         A tuple of (response_json_dict, log_messages_list)
@@ -106,7 +117,7 @@ async def upload_to_pixeldrain(
                 )
 
                 async with session.post(
-                    "https://pixeldrain.com/api/file",
+                    f"https://{domain}/api/file",
                     data=data,
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=None)
