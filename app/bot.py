@@ -943,13 +943,29 @@ def sanitize_gdl_args(args: list[str], url: Optional[str | list[str]] = None) ->
     return sanitized
 
 
-@app.on_message(filters.reply & filters.text, group=-1)
+@app.on_message(filters.text, group=-1)
 async def handle_password_reply(_, message: Message) -> None:
-    reply_to_message_id = message.reply_to_message_id
-    if not reply_to_message_id:
+    chat_id = message.chat.id
+    text = (message.text or "").strip()
+    if not text or text.startswith("/"):
         return
-    
-    prompt_info = _password_prompt_messages.get(reply_to_message_id)
+
+    reply_to_message_id = message.reply_to_message_id
+    prompt_msg_id = None
+    prompt_info = None
+
+    if reply_to_message_id:
+        prompt_info = _password_prompt_messages.get(reply_to_message_id)
+        if prompt_info:
+            prompt_msg_id = reply_to_message_id
+
+    if not prompt_info:
+        for mid, info in list(_password_prompt_messages.items()):
+            if info[2] == chat_id:
+                prompt_info = info
+                prompt_msg_id = mid
+                break
+
     if not prompt_info:
         return
         
@@ -961,7 +977,7 @@ async def handle_password_reply(_, message: Message) -> None:
     if not job or not is_job_owner(message.chat.id, job):
         return
 
-    password = message.text.strip()
+    password = text
     
     if job_id in _password_prompt_events and archive_id in _password_prompt_events[job_id]:
         event, data = _password_prompt_events[job_id][archive_id]
@@ -973,7 +989,8 @@ async def handle_password_reply(_, message: Message) -> None:
     except Exception:
         pass
     
-    _password_prompt_messages.pop(reply_to_message_id, None)
+    if prompt_msg_id:
+        _password_prompt_messages.pop(prompt_msg_id, None)
 
 
 @app.on_message(group=-2)
