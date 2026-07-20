@@ -7,3 +7,5 @@ aiosqlite
 av
 pillow
 pedalboard
+aiohttp
+pixeldrain

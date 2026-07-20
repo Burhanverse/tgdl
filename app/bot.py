@@ -16,7 +16,7 @@ from pyrogram.types import Message, CallbackQuery, LinkPreviewOptions, ForceRepl
 from .config import settings
 from .db import Job, JobStatus, JobStore
 from .downloader import GalleryDLNotFound, run_with_progress
-from .uploader import UploadTooLarge, upload_file
+from .uploader import UploadTooLarge, upload_file, upload_to_pixeldrain
 from .middleware import is_job_owner
 from .manager import (
     format_size,
@@ -180,6 +180,7 @@ async def start_cmd(_, message: Message) -> None:
         "**Commands:**\n"
         "• /tor — Download a magnet link or `.torrent` file (e.g., `/tor magnet:?xt=...` or reply to a `.torrent` file with `/tor`).\n"
         "• /unzip — Reply to a zip/rar/7z archive with `/unzip [password]` to extract and upload its contents.\n"
+        "• /pdup — Reply to a media file to upload it directly to Pixeldrain.\n"
         "• /status — View active download/upload metrics or queued jobs.\n"
         "• /cancel — Cancel the active task and clean up temporary storage.\n\n"
         "**Large Files:**\n"
@@ -518,6 +519,189 @@ async def unzip_cmd(_, message: Message) -> None:
 
     prompt_text = compile_split_prompt_text(job.id, filename, is_unzip=True)
     await status_msg.edit_text(prompt_text, reply_markup=keyboard)
+
+
+@app.on_message(filters.command("pdup"))
+async def pdup_cmd(_, message: Message) -> None:
+    replied = message.reply_to_message
+    if not replied:
+        await message.reply_text("Please reply to a media message (file, video, photo, audio, etc.) with `/pdup` to upload it to Pixeldrain.")
+        return
+
+    media = (
+        replied.document
+        or replied.video
+        or replied.audio
+        or replied.photo
+        or replied.voice
+        or replied.animation
+        or replied.video_note
+    )
+
+    if not media:
+        await message.reply_text("The replied message does not contain any valid media file.")
+        return
+
+    api_key = settings.pixeldrain_api_key
+    if not api_key:
+        await message.reply_text("Pixeldrain API key is not configured. Please add `PIXELDRAIN_API_KEY` to your environment or `.env` file.")
+        return
+
+    filename = "file"
+    file_size = 0
+    if replied.document:
+        filename = replied.document.file_name or "file.bin"
+        file_size = replied.document.file_size
+    elif replied.video:
+        filename = replied.video.file_name or "video.mp4"
+        file_size = replied.video.file_size
+    elif replied.audio:
+        filename = replied.audio.file_name or "audio.mp3"
+        file_size = replied.audio.file_size
+    elif replied.photo:
+        filename = "photo.jpg"
+        file_size = replied.photo.file_size
+    elif replied.voice:
+        filename = "voice.ogg"
+        file_size = replied.voice.file_size
+    elif replied.animation:
+        filename = replied.animation.file_name or "animation.mp4"
+        file_size = replied.animation.file_size
+    elif replied.video_note:
+        filename = "video_note.mp4"
+        file_size = replied.video_note.file_size
+
+    status_msg = await message.reply_text(
+        f"**Pixeldrain Upload:** `{filename}`\n"
+        f"- **Size**: `{format_size(file_size)}`\n"
+        f"- **Status**: `Downloading from Telegram...`"
+    )
+
+    import tempfile
+    import shutil
+    from pathlib import Path
+    
+    temp_dir = Path(tempfile.mkdtemp(dir=str(settings.downloads_dir)))
+    download_path = temp_dir / filename
+
+    last_edit_time = 0.0
+    
+    async def on_download_progress(current, total):
+        nonlocal last_edit_time
+        import time
+        now = time.time()
+        if now - last_edit_time < 3.0 and current != total:
+            return
+        last_edit_time = now
+        pct = (current / total) * 100.0 if total else 0.0
+        bar = make_progress_bar(pct)
+        try:
+            await status_msg.edit_text(
+                f"**Pixeldrain Upload:** `{filename}`\n"
+                f"- **Size**: `{format_size(total)}`\n"
+                f"- **Status**: `Downloading from Telegram ({pct:.1f}%)...`\n"
+                f"{bar}\n"
+                f"Downloaded: `{format_size(current)}` of `{format_size(total)}`"
+            )
+        except Exception:
+            pass
+
+    try:
+        await replied.download(
+            file_name=str(download_path),
+            progress=on_download_progress
+        )
+    except Exception as e:
+        log.exception("Failed to download replied media")
+        await status_msg.edit_text(f"Failed to download media: {e}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return
+
+    if not download_path.exists():
+        await status_msg.edit_text("Error: Downloaded file not found.")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return
+
+    await status_msg.edit_text(
+        f"**Pixeldrain Upload:** `{filename}`\n"
+        f"- **Size**: `{format_size(file_size)}`\n"
+        f"- **Status**: `Uploading to Pixeldrain...`"
+    )
+
+    last_edit_time = 0.0
+
+    async def on_upload_progress(current, total):
+        nonlocal last_edit_time
+        import time
+        now = time.time()
+        if now - last_edit_time < 3.0 and current != total:
+            return
+        last_edit_time = now
+        pct = (current / total) * 100.0 if total else 0.0
+        bar = make_progress_bar(pct)
+        try:
+            await status_msg.edit_text(
+                f"**Pixeldrain Upload:** `{filename}`\n"
+                f"- **Size**: `{format_size(total)}`\n"
+                f"- **Status**: `Uploading to Pixeldrain ({pct:.1f}%)...`\n"
+                f"{bar}\n"
+                f"Uploaded: `{format_size(current)}` of `{format_size(total)}`"
+            )
+        except Exception:
+            pass
+
+    try:
+        response_data, upload_logs = await upload_to_pixeldrain(
+            download_path,
+            api_key=api_key,
+            progress_callback=on_upload_progress
+        )
+
+        if "error" in response_data:
+            err_msg = response_data["error"]
+            await status_msg.edit_text(f"Upload failed: {err_msg}\n\nLogs:\n" + "\n".join(upload_logs))
+        else:
+            file_id = response_data.get("id")
+            if not file_id:
+                await status_msg.edit_text("Uploaded successfully but no file ID returned from Pixeldrain.")
+                return
+
+            from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            
+            file_size_formatted = format_size(download_path.stat().st_size)
+            
+            text = (
+                f"**File Name:** `{filename}`\n"
+                f"**File Size:** `{file_size_formatted}`\n"
+                f"**Status:** `Uploaded Successfully!`"
+            )
+            
+            reply_markup = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(text="Open Link", url=f"https://pixeldrain.com/u/{file_id}"),
+                        InlineKeyboardButton(text="Direct Link", url=f"https://pixeldrain.com/api/file/{file_id}"),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="Share Link",
+                            url=f"https://telegram.me/share/url?url=https://pixeldrain.com/u/{file_id}",
+                        )
+                    ]
+                ]
+            )
+            
+            await status_msg.edit_text(
+                text=text,
+                reply_markup=reply_markup,
+                link_preview_options=LinkPreviewOptions(is_disabled=True)
+            )
+
+    except Exception as e:
+        log.exception("Unexpected error in pdup command")
+        await status_msg.edit_text(f"Unexpected error: {e}")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def extract_domain_name(url: str) -> str:
@@ -870,6 +1054,7 @@ async def main() -> None:
                     BotCommand("gdl", "Process replied .txt links file with optional arguments"),
                     BotCommand("tor", "Download torrent/magnet link or replied .torrent file"),
                     BotCommand("unzip", "Extract archive (.zip, .rar, .7z) and upload contents"),
+                    BotCommand("pdup", "Upload replied media directly to Pixeldrain"),
                     BotCommand("status", "Check current active job details or queue status"),
                     BotCommand("cancel", "Instantly abort the active download/upload task"),
                 ])

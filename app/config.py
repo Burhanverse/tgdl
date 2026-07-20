@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     tg_api_id: int = Field(..., description="From https://my.telegram.org")
     tg_api_hash: str = Field(..., min_length=1)
     tg_bot_token: str = Field(..., min_length=1)
+    pixeldrain_api_key: str | None = Field(default=None, description="API key for Pixeldrain uploads")
 
 
     # --- Storage locations ---
