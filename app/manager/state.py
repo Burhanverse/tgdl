@@ -35,3 +35,6 @@ class JobState:
         self.initial_download_msg = None
         self.is_converting = False
         self.conversion_file = None
+        self.is_archiving = False
+        self.archive_format = None
+

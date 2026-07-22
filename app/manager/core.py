@@ -233,9 +233,17 @@ class QueueManager:
                 "magnet:?xt=" in cleaned_url
             )
             is_unzip = cleaned_url.startswith("unzip:")
+            is_gdrive = (
+                cleaned_url.startswith("gdrive:") or
+                cleaned_url.startswith("gd2tg:") or
+                "drive.google.com" in cleaned_url or
+                "docs.google.com" in cleaned_url
+            )
 
             if is_torrent:
                 initial_text = "Starting torrent download..."
+            elif is_gdrive:
+                initial_text = f"Downloading from Google Drive:\n{cleaned_url}"
             else:
                 initial_text = f"Downloading:\n{cleaned_url}\n(large files or magnet links take a while)"
 
@@ -250,7 +258,7 @@ class QueueManager:
             def reg(proc):
                 job_state.active_process = proc
 
-            if not is_torrent and not is_unzip:
+            if not is_torrent and not is_unzip and not is_gdrive:
                 async def monitor_download_speed():
                     last_download_size = 0
                     last_download_time = time.time()
@@ -289,6 +297,48 @@ class QueueManager:
                 if dest_dir.exists():
                     archive_files = [p for p in dest_dir.iterdir() if p.is_file()]
                 result = DownloadResult(ok=True, files=archive_files)
+            elif is_gdrive:
+                from ..gdrive import GoogleDriveDownloader, archive_all_folders_in_dir
+                from ..downloader import DownloadResult
+
+                gdrive_link = cleaned_url
+                for prefix in ("gdrive:", "gd2tg:"):
+                    if gdrive_link.startswith(prefix):
+                        gdrive_link = gdrive_link[len(prefix):]
+
+                def on_gdrive_progress(downloaded: int, speed: float, filename: str) -> None:
+                    job_state.total_downloaded_bytes = downloaded
+                    job_state.download_speed = speed
+                    job_state.current_download_file = filename
+                    job_state.trigger_event.set()
+
+                downloader = GoogleDriveDownloader(user_id=chat_id, progress_callback=on_gdrive_progress)
+
+                await downloader.download_link(gdrive_link, dest_dir)
+
+                archive_fmt = None
+                if job.args:
+                    try:
+                        args_dict = json.loads(job.args)
+                        if isinstance(args_dict, dict):
+                            archive_fmt = args_dict.get("archive_format")
+                    except Exception:
+                        pass
+
+                if archive_fmt:
+                    log.info("Archiving downloaded GDrive folders in %s format for job #%s", archive_fmt, job.id)
+                    job_state.is_archiving = True
+                    job_state.archive_format = archive_fmt
+                    job_state.trigger_event.set()
+                    try:
+                        await archive_all_folders_in_dir(dest_dir, archive_format=archive_fmt)
+                    finally:
+                        job_state.is_archiving = False
+                        job_state.trigger_event.set()
+
+
+                final_files = [p for p in dest_dir.rglob("*") if p.is_file()]
+                result = DownloadResult(ok=True, files=final_files)
             elif is_torrent:
                 def on_torrent_progress(
                     pct: float,
@@ -330,6 +380,7 @@ class QueueManager:
                 result = await run_with_progress(
                     job.url, dest_dir, on_progress=on_download_progress, extra_args=extra_args, register_proc=reg
                 )
+
 
             job_state.downloader_result = result
             log.info("Download finished for job #%s (ok=%s)", job.id, result.ok)

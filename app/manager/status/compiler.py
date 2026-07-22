@@ -81,6 +81,25 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
                 f"- **Tool**: `aria2c`"
             )
 
+    is_gdrive = (
+        cleaned_url.startswith("gdrive:") or
+        cleaned_url.startswith("gd2tg:") or
+        "drive.google.com" in cleaned_url or
+        "docs.google.com" in cleaned_url
+    )
+    if is_gdrive:
+        gdrive_disp = cleaned_url
+        for prefix in ("gdrive:", "gd2tg:"):
+            if gdrive_disp.startswith(prefix):
+                gdrive_disp = gdrive_disp[len(prefix):]
+        gdrive_disp = gdrive_disp[:55] + "..." if len(gdrive_disp) > 55 else gdrive_disp
+        return (
+            f"**Queued (job #{job_id})**\n"
+            f"------------------------------------\n"
+            f"- **Type**: `GDrive Download`\n"
+            f"- **Link**: `{gdrive_disp}`{args_display}"
+        )
+
     return (
         f"**Queued (job #{job_id})**\n"
         f"------------------------------------\n"
@@ -258,16 +277,33 @@ def compile_job_status_text(job, job_state) -> str:
     text += f"**Split > 2GB:** `{split_str}`\n"
     text += f"------------------------------------\n"
 
+    is_gdrive = (
+        cleaned_url.startswith("gdrive:") or
+        cleaned_url.startswith("gd2tg:") or
+        "drive.google.com" in cleaned_url or
+        "docs.google.com" in cleaned_url
+    )
+
     if not job_state.downloader_done.is_set():
         dl_speed_str = format_size(job_state.download_speed)
         dl_bytes_str = format_size(job_state.total_downloaded_bytes)
         
-        text += "**Downloader Metrics**\n"
-        if is_torrent:
+        if is_gdrive:
+            marquee = make_marquee_bar()
+            text += (
+                f"**GDrive Downloader Metrics**\n"
+                f"| `[{marquee}]`\n"
+                f"| Downloaded: `{dl_bytes_str}`\n"
+                f"| Speed: `{dl_speed_str}/s`\n"
+            )
+            if job_state.current_download_file:
+                text += f"| Current File: `{job_state.current_download_file}`\n"
+        elif is_torrent:
             bar = make_progress_bar(job_state.download_pct)
             seeders = getattr(job_state, "torrent_seeders", 0)
             peers = getattr(job_state, "torrent_peers", 0)
             text += (
+                f"**Downloader Metrics**\n"
                 f"| Progress: `{job_state.download_pct:.1f}%`\n"
                 f"| `[{bar}]`\n"
                 f"| Downloaded: `{dl_bytes_str}`\n"
@@ -277,6 +313,7 @@ def compile_job_status_text(job, job_state) -> str:
         else:
             marquee = make_marquee_bar()
             text += (
+                f"**Downloader Metrics**\n"
                 f"| Files Downloaded: `{job_state.download_count}`\n"
                 f"| `[{marquee}]`\n"
                 f"| Downloaded: `{dl_bytes_str}`\n"
@@ -284,6 +321,13 @@ def compile_job_status_text(job, job_state) -> str:
             )
             if job_state.current_download_file:
                 text += f"| Current File: `{job_state.current_download_file}`\n"
+    elif getattr(job_state, "is_archiving", False):
+        fmt = getattr(job_state, "archive_format", "ZIP") or "ZIP"
+        text += (
+            f"**Folder Compression & Archiving**\n"
+            f"| Format: `{fmt.upper()}`\n"
+            f"| Status: `Compressing downloaded folders...`\n"
+        )
     elif getattr(job_state, "is_converting", False):
         conv_file = getattr(job_state, "conversion_file", "media file")
         text += (

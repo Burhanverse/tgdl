@@ -1,4 +1,5 @@
 data/
+auth/
 logs/
 scratch/
 .venv
@@ -6,3 +7,4 @@ scratch/
 **/__pycache__/
 *.py[cod]
 *.zip
+*.pickle

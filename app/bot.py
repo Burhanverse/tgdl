@@ -168,26 +168,29 @@ def format_size(size_bytes: float) -> str:
 
 
 
-@app.on_message(filters.command("start"))
+@app.on_message(filters.command(["start", "help"]))
 async def start_cmd(_, message: Message) -> None:
     text = (
         "Send me links to download media files (e.g., videos, photo albums) and upload them to Telegram.\n\n"
         "**Usage:**\n"
+        "• **Google Drive**: `/gd2tg <gdrive_link> [-zip|-7z]` (downloads GDrive link & archives folders individually).\n"
         "• **Single URL**: `https://example.com/album1`\n"
         "• **Shorthand options**: `https://example.com/album1 pages=1-16`\n"
         "• **Multiple URLs**: `https://example.com/album1 https://example.com/album2`\n"
         "• **Direct Torrent / Magnet**: Send a `magnet:` link or `.torrent` link directly to download it.\n"
         "• **Links File (.txt)**: Send a `.txt` file containing URLs (one per line) and **reply to it** with `/gdl` to process them.\n\n"
         "**Commands:**\n"
+        "• /gd2tg — Download Google Drive link & upload to Telegram. To setup credentials, reply to any Service Account `.json` file with `/gd2tg` (0-browser setup).\n"
         "• /tor — Download a magnet link or `.torrent` file (e.g., `/tor magnet:?xt=...` or reply to a `.torrent` file with `/tor`).\n"
         "• /unzip — Reply to a zip/rar/7z archive with `/unzip [password]` to extract and upload its contents.\n"
         "• /pdup — Reply to a media file to upload it directly to Pixeldrain.\n"
         "• /status — View active download/upload metrics or queued jobs.\n"
         "• /cancel — Cancel the active task and clean up temporary storage.\n\n"
         "**Large Files:**\n"
-        "• If a file exceeds 1.95GB, you will be prompted to either split it into sub-2GB playable segment files or skip it."
+        "• If a file exceeds 1.95GB, it will automatically split into sub-2GB segment files to satisfy Telegram limits."
     )
     await message.reply_text(text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+
 
 
 @app.on_message(filters.command("status"))
@@ -1073,10 +1076,34 @@ async def handle_document_part(_, message: Message) -> None:
 
 
 
-@app.on_message(filters.text & ~filters.command(["start", "status", "cancel", "gdl", "tor", "unzip"]))
+@app.on_message(filters.text & ~filters.command(["start", "help", "status", "cancel", "gdl", "tor", "unzip", "gd2tg"]))
 async def handle_link(_, message: Message) -> None:
+    chat_id = message.chat.id
+    if chat_id in _pending_oauth_flows:
+        code = (message.text or "").strip()
+        flow, prompt_msg_id = _pending_oauth_flows.pop(chat_id)
+        status_msg = await message.reply_text("Verifying authorization code...")
+        try:
+            from .gdrive import finish_oauth_flow_and_save
+            finish_oauth_flow_and_save(flow, code, user_id=chat_id)
+            await status_msg.edit_text(
+                "**Google Drive Authentication Complete!**\n\n"
+                f"Token saved to `auth/{chat_id}/token.pickle`. You can now download Google Drive links using:\n"
+                "`/gd2tg <gdrive_link> [-zip|-7z]`"
+            )
+
+            return
+        except Exception as e:
+            log.exception("Failed to complete GDrive OAuth flow")
+            await status_msg.edit_text(
+                f"**Authentication Failed:** {e}\n\n"
+                "Please reply to your `credentials.json` file with `/gd2tg` to try again."
+            )
+            return
+
     text = (message.text or "").strip()
     is_private = message.chat.type == ChatType.PRIVATE
+
 
     import shlex
     import json
@@ -1417,6 +1444,147 @@ async def requeue_incomplete_jobs() -> None:
         await queue_manager.add_job(job.id)
 
 
+_pending_oauth_flows: dict[int, tuple[Any, int]] = {}
+
+
+@app.on_message(filters.command(["gd2tg"]))
+async def gd2tg_handler(_, message: Message) -> None:
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    user_auth_dir = settings.auth_dir / str(user_id)
+
+    # Check if user replied to any .json file
+    reply_msg = message.reply_to_message
+    if reply_msg and reply_msg.document and reply_msg.document.file_name and reply_msg.document.file_name.lower().endswith(".json"):
+        user_auth_dir.mkdir(parents=True, exist_ok=True)
+        orig_filename = reply_msg.document.file_name
+        temp_download_path = (user_auth_dir / f"temp_{orig_filename}").resolve()
+
+        status_msg = await message.reply_text("Downloading JSON credentials file...")
+        try:
+            downloaded_str = await app.download_media(reply_msg, file_name=str(temp_download_path))
+            downloaded_path = Path(downloaded_str) if downloaded_str else temp_download_path
+
+            with open(downloaded_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if isinstance(data, dict) and data.get("type") == "service_account":
+
+                accounts_dir = user_auth_dir / "accounts"
+                accounts_dir.mkdir(parents=True, exist_ok=True)
+                sa_path = accounts_dir / orig_filename
+                downloaded_path.replace(sa_path)
+                await status_msg.edit_text(
+                    f"**Service Account Added Successfully!**\n\n"
+                    f"Saved `{orig_filename}` to `auth/{user_id}/accounts/`.\n"
+                    f"You can now download Google Drive links directly using `/gd2tg <gdrive_link> [-zip|-7z]`."
+                )
+                return
+            elif isinstance(data, dict) and ("installed" in data or "web" in data):
+                creds_json_path = user_auth_dir / "credentials.json"
+                downloaded_path.replace(creds_json_path)
+                await status_msg.edit_text(
+                    f"**Client Secrets JSON Saved!**\n\n"
+                    f"Saved credentials to `auth/{user_id}/credentials.json`.\n\n"
+                    f"To generate your token (since Google retired OOB authorization), run the following command:\n"
+                    f"`python3 -m app.gdrive.setup auth/{user_id}/credentials.json {user_id}`\n\n"
+                    f"*Tip:* You can also upload Service Account `.json` keys directly to this chat for zero-browser setup!"
+                )
+                return
+            else:
+                downloaded_path.unlink(missing_ok=True)
+                await status_msg.edit_text(
+                    "**Invalid JSON File:** The uploaded file is neither a Google OAuth client secret file nor a Service Account key."
+                )
+                return
+        except Exception as e:
+            if 'downloaded_path' in locals() and downloaded_path.exists():
+                downloaded_path.unlink(missing_ok=True)
+            elif temp_download_path.exists():
+                temp_download_path.unlink(missing_ok=True)
+            log.exception("Failed to process GDrive JSON file")
+            await status_msg.edit_text(f"**Failed to process JSON file:** {e}")
+            return
+
+    # Check if user replied to a .pickle token file
+    if reply_msg and reply_msg.document and reply_msg.document.file_name and reply_msg.document.file_name.lower().endswith(".pickle"):
+        user_auth_dir.mkdir(parents=True, exist_ok=True)
+        token_path = (user_auth_dir / "token.pickle").resolve()
+
+        status_msg = await message.reply_text("Downloading token.pickle file...")
+        try:
+            downloaded_str = await app.download_media(reply_msg, file_name=str(token_path))
+            await status_msg.edit_text(
+                f"**OAuth Token Saved Successfully!**\n\n"
+                f"Saved to `auth/{user_id}/token.pickle`.\n"
+                f"You can now download Google Drive links directly using `/gd2tg <gdrive_link> [-zip|-7z]`."
+            )
+            return
+        except Exception as e:
+            log.exception("Failed to save token.pickle file")
+            await status_msg.edit_text(f"**Failed to save token file:** {e}")
+            return
+
+    # Check if credentials exist before attempting a download
+    from .gdrive import GoogleDriveAuthManager
+    auth_mgr = GoogleDriveAuthManager(user_id=user_id)
+    if not auth_mgr.has_credentials():
+        await message.reply_text(
+            "**Google Drive credentials not found!**\n\n"
+            "**Option 1: Service Account (Recommended - Zero Browser Steps):**\n"
+            "1. Upload your Service Account `.json` key file to this chat.\n"
+            f"2. **Reply to the `.json` file** with `/gd2tg` to activate it.\n\n"
+            "**Option 2: OAuth Token Pickle File:**\n"
+            "1. Upload your `token.pickle` file to this chat.\n"
+            f"2. **Reply to the `token.pickle` file** with `/gd2tg` to activate it.\n\n"
+            "*(Note: Bot owner can also set up global credentials in `auth/` for all users).*",
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+        return
+
+    text = message.text or ""
+
+    parts = text.split()
+    if len(parts) < 2:
+        await message.reply_text(
+            "**Usage:** `/gd2tg <gdrive_link> [-zip|-7z]`\n"
+            "Downloads a Google Drive link, archives each folder individually, and uploads to Telegram.",
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+        return
+
+    link = parts[1]
+    archive_fmt = "zip"
+    if len(parts) > 2:
+        flag = parts[2].lower().lstrip("-")
+        if flag in ("7z", "zip"):
+            archive_fmt = flag
+
+    try:
+        from .gdrive import get_id_from_url
+        get_id_from_url(link)
+    except Exception as e:
+        await message.reply_text(
+            f"**Invalid Google Drive Link:** {e}",
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+        return
+
+    args_json = json.dumps({"gdrive": True, "archive_format": archive_fmt})
+    urls_json = json.dumps([f"gd2tg:{link}"])
+
+    job = await store.create_job(message.chat.id, urls_json, split_large_files=1, args=args_json)
+    await queue_manager.add_job(job.id)
+
+    status_msg = await message.reply_text(
+        f"**GDrive to Telegram Job #{job.id} Queued**\n"
+        f"- **Link**: `{link}`\n"
+        f"- **Archive Format**: `{archive_fmt.upper()}`",
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
+    )
+    await store.set_status_message(job.id, status_msg.id)
+
+
+
 async def _startup() -> None:
     await store.open()
     await cleanup_orphaned_directories()
@@ -1447,6 +1615,7 @@ async def main() -> None:
                 from pyrogram.types import BotCommand
                 await app.set_bot_commands([
                     BotCommand("start", "Start the bot and see instructions"),
+                    BotCommand("gd2tg", "Download GDrive link, archive folders, upload to Telegram"),
                     BotCommand("gdl", "Process replied .txt links file with optional arguments"),
                     BotCommand("tor", "Download torrent/magnet link or replied .torrent file"),
                     BotCommand("unzip", "Extract archive (.zip, .rar, .7z) and upload contents"),
@@ -1455,6 +1624,7 @@ async def main() -> None:
                     BotCommand("cancel", "Instantly abort the active download/upload task"),
                 ])
                 log.info("Bot commands set successfully.")
+
             except Exception as e:
                 log.warning("Failed to set bot commands: %s", e)
             await requeue_incomplete_jobs()

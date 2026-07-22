@@ -19,6 +19,13 @@ class Settings(BaseSettings):
 
     # --- Storage locations ---
     data_dir: Path = Field(default=Path("./data"))
+    auth_dir: Path = Field(default=Path("./auth"))
+
+    # --- Google Drive settings ---
+    gdrive_token_path: Path = Field(default=Path("./auth/token.pickle"))
+    gdrive_accounts_dir: Path = Field(default=Path("./auth/accounts"))
+    use_service_accounts: bool = Field(default=True)
+
 
     # --- gallery-dl pacing ---
     gdl_sleep_min: float = 1.5
@@ -47,11 +54,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: Path = Field(default=Path("./logs"))
 
-    @field_validator("data_dir", "log_dir")
+    @field_validator("data_dir", "auth_dir", "log_dir")
     @classmethod
     def _ensure_dir(cls, v: Path) -> Path:
         v.mkdir(parents=True, exist_ok=True)
         return v
+
 
     @field_validator("pixeldrain_domain")
     @classmethod
