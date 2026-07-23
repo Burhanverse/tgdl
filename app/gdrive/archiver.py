@@ -95,8 +95,10 @@ async def archive_folder_async(
 
     archive_size = output_archive.stat().st_size
     pixeldrain_max_bytes = 10 * 1024 * 1024 * 1024  # 10 GB limit for free accounts
-    upload_unsplit_to_pd = mirror_pixeldrain and archive_size <= pixeldrain_max_bytes
-    upload_parts_to_pd = mirror_pixeldrain and archive_size > pixeldrain_max_bytes
+    limit_bytes = max_part_size_mb * 1024 * 1024
+    is_split = archive_size > limit_bytes
+    upload_unsplit_to_pd = mirror_pixeldrain and not is_split and archive_size <= pixeldrain_max_bytes
+    upload_parts_to_pd = mirror_pixeldrain and is_split
 
     # 1. Upload original unsplit archive to Pixeldrain if requested and size <= 10GB
     if upload_unsplit_to_pd:
@@ -147,10 +149,10 @@ async def archive_folder_async(
     if not telegram_archives:
         telegram_archives = [output_archive]
 
-    # 3. Fallback Pixeldrain upload for split volume parts if unsplit archive exceeded 10 GB
+    # 3. Pixeldrain upload for split volume parts
     if upload_parts_to_pd and telegram_archives:
         log.info(
-            "Unsplit archive '%s' (%.2f GB) exceeded 10 GB limit. Mirroring %d split volume parts to Pixeldrain...",
+            "Archive '%s' (%.2f GB) is split. Mirroring %d split volume parts to Pixeldrain...",
             output_archive.name,
             archive_size / (1024**3),
             len(telegram_archives)
