@@ -55,7 +55,7 @@ def should_ignore_file(path: Path) -> bool:
         # 4. Ignored directories in any part of the path
         for part in path.parts:
             part_lower = part.lower()
-            if part_lower in IGNORED_DIRNAMES or part_lower.startswith("__macosx"):
+            if part_lower in IGNORED_DIRNAMES or part_lower.startswith("__macosx") or part_lower.endswith("_pd_temp"):
                 return True
                 
         # 5. Empty files
