@@ -563,6 +563,15 @@ class QueueManager:
             cleaned_url.endswith(".torrent") or
             "magnet:?xt=" in cleaned_url
         )
+
+        has_archive_fmt = False
+        if job.args:
+            try:
+                args_dict = json.loads(job.args)
+                if isinstance(args_dict, dict) and args_dict.get("archive_format"):
+                    has_archive_fmt = True
+            except Exception:
+                pass
         
         async def report(text: str) -> None:
             await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -1335,10 +1344,11 @@ class QueueManager:
                 _conversion_choices,
                 _converted_files
             )
-            if is_torrent:
+            if is_torrent or has_archive_fmt:
                 while not job_state.downloader_done.is_set():
                     await asyncio.sleep(2.0)
 
+            if is_torrent:
                 try:
                     if dest_dir.exists():
                         files = sorted(p for p in dest_dir.rglob("*") if p.is_file() and not should_ignore_file(p))
