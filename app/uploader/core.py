@@ -67,7 +67,7 @@ async def upload_file(
         log.info("Video '%s' duration: %s seconds", path.name, duration if duration > 0 else "unknown")
 
         thumb_path = await extract_video_thumbnail(path)
-        if duration > 0:
+        if duration >= 60:
             screenshots = await take_screenshots(path, duration)
 
     try:
