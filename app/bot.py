@@ -56,6 +56,12 @@ from .conversion import (
     convert_media_async,
     handle_conversion_choice,
 )
+from .manager.multi_unzip import (
+    start_multi_unzip_session,
+    handle_multi_document,
+    handle_multi_cancel_cb,
+    handle_multi_start_cb,
+)
 
 log = logging.getLogger("tgdl_bot")
 
@@ -182,7 +188,7 @@ async def start_cmd(_, message: Message) -> None:
         "**Commands:**\n"
         "• /gd2tg — Download Google Drive link & upload to Telegram. To setup credentials, reply to any Service Account `.json` file with `/gd2tg` (0-browser setup).\n"
         "• /tor — Download a magnet link or `.torrent` file (e.g., `/tor magnet:?xt=...` or reply to a `.torrent` file with `/tor`).\n"
-        "• /unzip — Reply to a zip/rar/7z archive with `/unzip [password]` to extract and upload its contents.\n"
+        "• /unzip — Reply to an archive with `/unzip [password]`, or use `/unzip split [password]` or `/unzip multi [password]` for split/multiple archives.\n"
         "• /pdup — Reply to a media file to upload it directly to Pixeldrain.\n"
         "• /status — View active download/upload metrics or queued jobs.\n"
         "• /cancel — Cancel the active task and clean up temporary storage.\n\n"
@@ -473,8 +479,16 @@ def compile_split_session_text(prefix: str, ext: str, parts: dict[int, Message])
 
 @app.on_message(filters.command("unzip"))
 async def unzip_cmd(_, message: Message) -> None:
-    cmd_parts = (message.text or "").split(maxsplit=2)
-    if len(cmd_parts) >= 2 and cmd_parts[1].lower() == "split":
+    tokens = (message.text or "").split()[1:]
+    lowered_tokens = [t.lower() for t in tokens]
+
+    if "multi" in lowered_tokens:
+        password = next((t for t in tokens if t.lower() != "multi"), None)
+        await start_multi_unzip_session(message, password=password, split_archive_sessions=_split_archive_sessions)
+        return
+
+    if "split" in lowered_tokens:
+        password = next((t for t in tokens if t.lower() != "split"), None)
         chat_id = message.chat.id
         user_id = message.from_user.id if message.from_user else chat_id
         session_key = chat_id
@@ -490,8 +504,6 @@ async def unzip_cmd(_, message: Message) -> None:
             except Exception:
                 pass
                 
-        password = cmd_parts[2].strip() if len(cmd_parts) > 2 else None
-        
         from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         
         def get_split_session_keyboard(c_id: int, u_id: int) -> InlineKeyboardMarkup:
@@ -1002,6 +1014,10 @@ async def handle_document_part(_, message: Message) -> None:
     try:
         chat_id = message.chat.id
         
+        if await handle_multi_document(message):
+            message.stop_propagation()
+            return
+
         session_key = chat_id
         if session_key not in _split_archive_sessions:
             return
@@ -1376,6 +1392,16 @@ async def handle_split_start_cb(_, callback_query: CallbackQuery) -> None:
         
     await callback_query.answer("Starting extraction job...")
     asyncio.create_task(run_split_archive_download_and_extract(session, callback_query.message))
+
+
+@app.on_callback_query(filters.regex(r"^multi_cancel:(-?\d+):(-?\d+)$"))
+async def multi_cancel_cb(client: Client, callback_query: CallbackQuery) -> None:
+    await handle_multi_cancel_cb(client, callback_query)
+
+
+@app.on_callback_query(filters.regex(r"^multi_start:(-?\d+):(-?\d+)$"))
+async def multi_start_cb(client: Client, callback_query: CallbackQuery) -> None:
+    await handle_multi_start_cb(client, callback_query, store, queue_manager)
 
 
 @app.on_callback_query(filters.regex(r"^archive_(only|ext):(\w+):(.+)$"))
