@@ -39,7 +39,6 @@ class ProgressReader(io.IOBase):
             self.read_bytes += len(chunk)
             if self.callback:
                 now = time.time()
-                # Update progress if 1 second passed, or 1MB uploaded, or finished
                 if (
                     now - self.last_update_time >= 1.0 
                     or self.read_bytes - self.last_update_bytes >= 1024 * 1024 
