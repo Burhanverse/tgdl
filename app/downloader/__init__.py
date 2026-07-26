@@ -1,5 +1,6 @@
 from .gallery_dl import run_with_progress, DownloadResult, GalleryDLNotFound
 from .torrent import download_torrent_async, start_aria2_daemon, stop_aria2_daemon
+from .direct import DirectDownloader, DirectDownloadError, download_direct
 
 __all__ = [
     "run_with_progress",
@@ -8,4 +9,7 @@ __all__ = [
     "download_torrent_async",
     "start_aria2_daemon",
     "stop_aria2_daemon",
+    "DirectDownloader",
+    "DirectDownloadError",
+    "download_direct",
 ]
