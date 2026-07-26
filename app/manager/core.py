@@ -731,7 +731,7 @@ class QueueManager:
                 m_status = await safe_send(
                     self.client,
                     chat_id,
-                    "Mirroring downloaded file(s) in parallel to GoFile, FileDitch & Pixeldrain..."
+                    "Mirroring downloaded file(s) sequentially to GoFile, FileDitch & Pixeldrain..."
                 )
 
                 all_downloaded = [f for f in files if f.is_file() and not should_ignore_file(f)]
