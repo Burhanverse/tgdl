@@ -485,6 +485,16 @@ class QueueManager:
                     cleaned_url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
                 )
 
+            elif cleaned_url.startswith("direct:"):
+                direct_url = cleaned_url[len("direct:"):]
+                async def on_direct_progress(current: int, total: int, filename: str) -> None:
+                    job_state.total_downloaded_bytes = current
+                    job_state.current_download_file = filename
+                    job_state.trigger_event.set()
+
+                from ..downloader import download_direct, DownloadResult
+                downloaded_paths = await download_direct(direct_url, dest_dir, progress_cb=on_direct_progress)
+                result = DownloadResult(ok=True, files=downloaded_paths)
             else:
                 extra_args = None
                 if job.args:

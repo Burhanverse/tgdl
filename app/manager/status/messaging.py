@@ -6,6 +6,9 @@ from typing import Optional
 from pyrogram import Client
 from pyrogram.types import LinkPreviewOptions, Message
 
+from ...telegram_helper.message_utils import (
+    send_message as helper_send_message,
+)
 from ...rate_limiter import telegram_limiter
 
 log = logging.getLogger(__name__)
@@ -26,18 +29,9 @@ def make_progress_bar(pct: float) -> str:
 
 
 async def safe_send(client: Client, chat_id: int, text: str, **kwargs) -> Message | None:
-    from pyrogram.errors import FloodWait
-    for _ in range(3):
-        await telegram_limiter.acquire(chat_id)
-        try:
-            return await client.send_message(chat_id, text, **kwargs)
-        except FloodWait as e:
-            telegram_limiter.notify_floodwait(e.value, chat_id)
-            log.warning("Telegram FloodWait: waiting %s seconds on send", e.value)
-            await asyncio.sleep(e.value + 1)
-        except Exception as e:
-            log.warning("Failed to send message to chat %s: %s", chat_id, e)
-            return None
+    res = await helper_send_message(client, text, chat_id=chat_id, buttons=kwargs.get("reply_markup"))
+    if isinstance(res, Message):
+        return res
     return None
 
 
