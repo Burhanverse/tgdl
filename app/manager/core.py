@@ -1299,14 +1299,14 @@ class QueueManager:
                                 pass
 
                 # Handle large files (>1.95GB) auto mirroring & splitting before upload
-                from ..uploader import handle_large_file, upload_file, upload_to_gofile, upload_to_pixeldrain, UploadTooLarge
+                from ..uploader import handle_large_file, upload_file, upload_to_gofile, upload_to_pixeldrain, upload_to_fileditch, UploadTooLarge
                 
                 if f.stat().st_size >= 1.95 * 1024 * 1024 * 1024:
-                    log.info("File %s exceeds 2GB. Mirroring original file to GoFile & Pixeldrain...", f.name)
+                    log.info("File %s exceeds 2GB. Mirroring original file to web hosts...", f.name)
                     m_status = await safe_send(
                         self.client,
                         chat_id,
-                        f"Large file detected (>2GB): `{f.name}` ({format_size(f.stat().st_size)})\nMirroring original file to GoFile & Pixeldrain..."
+                        f"Large file detected (>2GB): `{f.name}` ({format_size(f.stat().st_size)})\nMirroring original file to GoFile, Pixeldrain & FileDitch..."
                     )
 
                     mirror_links = []
@@ -1330,6 +1330,16 @@ class QueueManager:
                             mirror_links.append(f"- **Pixeldrain**: {pd_url}")
                     except Exception as pde:
                         log.warning("Failed to mirror %s to Pixeldrain: %s", f.name, pde)
+
+                    # 3. Mirror to FileDitch
+                    try:
+                        res_fd, _ = await upload_to_fileditch(f)
+                        if isinstance(res_fd, dict) and res_fd.get("success") is True:
+                            fd_url = res_fd.get("url")
+                            if fd_url:
+                                mirror_links.append(f"- **FileDitch**: {fd_url}")
+                    except Exception as fde:
+                        log.warning("Failed to mirror %s to FileDitch: %s", f.name, fde)
 
                     if m_status:
                         try:
