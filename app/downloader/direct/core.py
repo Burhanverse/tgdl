@@ -36,14 +36,28 @@ DIRECT_FILE_EXTENSIONS = {
 
 def is_direct_url(url: str) -> bool:
     """Determines if a URL is a direct file download link based on scheme or extension."""
+    if not url:
+        return False
     if url.startswith("direct:"):
         return True
     try:
-        clean_u = url.split("?", 1)[0].split("#", 1)[0]
-        parsed = urlparse(clean_u)
-        path_ext = Path(parsed.path).suffix.lower()
-        if path_ext in DIRECT_FILE_EXTENSIONS:
-            return True
+        urls = []
+        if url.startswith("[") and url.endswith("]"):
+            try:
+                parsed = json.loads(url)
+                if isinstance(parsed, list):
+                    urls = [str(u).strip() for u in parsed if str(u).strip()]
+            except Exception:
+                pass
+        if not urls:
+            urls = [u.strip() for u in url.split() if u.strip().startswith(("http://", "https://"))]
+
+        for u in urls:
+            clean_u = u.split("?", 1)[0].split("#", 1)[0]
+            parsed = urlparse(clean_u)
+            path_ext = Path(parsed.path).suffix.lower()
+            if path_ext in DIRECT_FILE_EXTENSIONS:
+                return True
     except Exception:
         pass
     return False
@@ -177,7 +191,22 @@ class DirectDownloader:
 
         items: List[Dict[str, str]] = []
         if isinstance(contents, str):
-            items.append({"url": contents, "filename": "", "path": ""})
+            try:
+                parsed = json.loads(contents)
+                if isinstance(parsed, list):
+                    for u in parsed:
+                        if isinstance(u, str) and u.strip():
+                            items.append({"url": u.strip(), "filename": "", "path": ""})
+            except Exception:
+                pass
+
+            if not items:
+                lines = [u.strip() for u in contents.split() if u.strip().startswith(("http://", "https://"))]
+                if len(lines) > 1:
+                    for u in lines:
+                        items.append({"url": u, "filename": "", "path": ""})
+                else:
+                    items.append({"url": contents.strip(), "filename": "", "path": ""})
         elif isinstance(contents, list):
             for c in contents:
                 if isinstance(c, dict) and "url" in c:
@@ -186,8 +215,8 @@ class DirectDownloader:
                         "filename": c.get("filename", ""),
                         "path": c.get("path", ""),
                     })
-                elif isinstance(c, str):
-                    items.append({"url": c, "filename": "", "path": ""})
+                elif isinstance(c, str) and c.strip():
+                    items.append({"url": c.strip(), "filename": "", "path": ""})
 
         if not items:
             raise DirectDownloadError("No direct URLs provided for download.")

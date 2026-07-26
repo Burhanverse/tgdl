@@ -103,12 +103,24 @@ async def run_with_progress(
             "pip install gallery-dl --break-system-packages"
         )
 
-    try:
-        urls = json.loads(url)
-        if not isinstance(urls, list):
-            urls = [url]
-    except Exception:
-        urls = [url]
+    urls = []
+    if isinstance(url, list):
+        urls = [str(u).strip() for u in url if str(u).strip()]
+    elif isinstance(url, str):
+        try:
+            parsed = json.loads(url)
+            if isinstance(parsed, list):
+                urls = [str(u).strip() for u in parsed if str(u).strip()]
+            elif isinstance(parsed, str):
+                urls = [u.strip() for u in parsed.split() if u.strip().startswith(("http://", "https://"))]
+        except Exception:
+            pass
+
+        if not urls:
+            urls = [u.strip() for u in url.split() if u.strip().startswith(("http://", "https://"))]
+
+        if not urls:
+            urls = [url.strip()]
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     attempts = 0
