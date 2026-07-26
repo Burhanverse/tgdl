@@ -1604,4 +1604,30 @@ async def log_upload(job_id: str, filename: str) -> None:
     await asyncio.to_thread(append_to_file)
 
 
+async def cleanup_orphaned_directories() -> None:
+    """Scan downloads directory and delete any directories job_{id} that are
+    not active, queued, or waiting in the database."""
+    if not settings.downloads_dir.exists():
+        return
+
+    try:
+        cur = await store.db.execute(
+            "SELECT id FROM jobs WHERE status IN ('queued', 'downloading', 'uploading', 'waiting')"
+        )
+        rows = await cur.fetchall()
+        keep_ids = {f"job_{r['id']}" for r in rows}
+
+        def run_cleanup():
+            import shutil
+            for p in settings.downloads_dir.iterdir():
+                if p.is_dir() and p.name.startswith("job_"):
+                    if p.name not in keep_ids:
+                        log.info("Cleaning up orphaned directory: %s", p)
+                        shutil.rmtree(p, ignore_errors=True)
+
+        await asyncio.to_thread(run_cleanup)
+    except Exception:
+        log.exception("Error during orphaned directories cleanup")
+
+
 queue_manager = QueueManager()

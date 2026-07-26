@@ -1,4 +1,4 @@
-from .core import QueueManager, queue_manager, store, _password_prompt_events, _password_prompt_messages
+from .core import QueueManager, queue_manager, store, cleanup_orphaned_directories, _password_prompt_events, _password_prompt_messages
 from .state import JobState
 from .status import (
     format_size,
