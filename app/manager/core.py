@@ -231,6 +231,8 @@ class QueueManager:
                 except Exception:
                     pass
 
+            from ..downloader import is_direct_url
+
             is_torrent = (
                 cleaned_url.startswith("magnet:") or
                 cleaned_url.startswith("torrent:") or
