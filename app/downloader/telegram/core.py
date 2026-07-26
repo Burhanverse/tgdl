@@ -12,9 +12,14 @@ from pyrogram.types import Message
 
 from ...rate_limiter import telegram_limiter
 
-log = logging.getLogger(__name__)
+_global_lock: Optional[asyncio.Lock] = None
 
-global_lock = asyncio.Lock()
+def get_global_lock() -> asyncio.Lock:
+    global _global_lock
+    if _global_lock is None:
+        _global_lock = asyncio.Lock()
+    return _global_lock
+
 GLOBAL_GID: Set[str] = set()
 
 
@@ -98,7 +103,7 @@ class TelegramDownloader:
 
         self.file_unique_id = getattr(media, "file_unique_id", "")
         if self.file_unique_id:
-            async with global_lock:
+            async with get_global_lock():
                 if self.file_unique_id in GLOBAL_GID:
                     raise TelegramDownloadError(f"File {self.file_unique_id} is already being downloaded.")
                 GLOBAL_GID.add(self.file_unique_id)
@@ -136,7 +141,7 @@ class TelegramDownloader:
         finally:
             self.is_downloading = False
             if self.file_unique_id:
-                async with global_lock:
+                async with get_global_lock():
                     if self.file_unique_id in GLOBAL_GID:
                         GLOBAL_GID.remove(self.file_unique_id)
 

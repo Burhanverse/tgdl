@@ -9,11 +9,11 @@ from pathlib import Path
 from pyrogram import Client, idle
 
 from .config import settings
-from .db import JobStore
 from .handlers import register_all_handlers
 from .telegram_helper import delete_status
 
 log = logging.getLogger("tgdl_bot")
+
 
 def setup_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
@@ -34,6 +34,7 @@ def setup_logging() -> None:
 
     logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
+
 async def log_upload(job_id: int, filename: str) -> None:
     log_path = settings.log_dir / "uploads.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,19 +45,20 @@ async def log_upload(job_id: int, filename: str) -> None:
 
     await asyncio.to_thread(append_to_file)
 
-app = Client(
-    "tgdl_bot",
-    api_id=settings.tg_api_id,
-    api_hash=settings.tg_api_hash,
-    bot_token=settings.tg_bot_token,
-    workdir=str(settings.data_dir),
-)
-
-register_all_handlers(app)
 
 async def main() -> None:
     setup_logging()
     log.info("Starting TGDL Bot...")
+
+    app = Client(
+        "tgdl_bot",
+        api_id=settings.tg_api_id,
+        api_hash=settings.tg_api_hash,
+        bot_token=settings.tg_bot_token,
+        workdir=str(settings.data_dir),
+    )
+    register_all_handlers(app)
+
     await app.start()
 
     from .manager import queue_manager, store, cleanup_orphaned_directories
@@ -72,6 +74,7 @@ async def main() -> None:
     await store.close()
     await delete_status()
     await app.stop()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
