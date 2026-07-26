@@ -206,14 +206,14 @@ class TelegramUploader:
                 cap_mono, f_renamed = self._prepare_filename_and_caption(f)
                 media_list.append(InputMediaDocument(media=str(f_renamed), caption=cap_mono))
 
-            await telegram_limiter.acquire(self.chat_id)
+            await telegram_limiter.acquire_upload(self.chat_id)
             try:
                 await self.client.send_media_group(self.chat_id, media=media_list)
                 log.info("Successfully uploaded media group batch of %s files", len(batch))
-            except FloodWait as e:
+            except (FloodWait, FloodPremiumWait) as e:
                 telegram_limiter.notify_floodwait(e.value, self.chat_id)
                 log.warning("FloodWait %ss on send_media_group", e.value)
-                await asyncio.sleep(e.value + 1)
+                await asyncio.sleep(e.value + 2.0)
                 await self.client.send_media_group(self.chat_id, media=media_list)
             except Exception as e:
                 log.warning("Media group upload failed (%s). Falling back to single file uploads.", e)
@@ -275,7 +275,7 @@ class TelegramUploader:
         screenshots: List[Path] = []
         video_meta: Dict[str, Any] = {}
 
-        await telegram_limiter.acquire(self.chat_id)
+        await telegram_limiter.acquire_upload(self.chat_id)
 
         try:
             if force_document or (not is_video and not is_audio and not is_image):
@@ -343,7 +343,7 @@ class TelegramUploader:
         except (FloodWait, FloodPremiumWait) as f:
             telegram_limiter.notify_floodwait(f.value, self.chat_id)
             log.warning("Telegram FloodWait on upload: waiting %s seconds", f.value)
-            await asyncio.sleep(f.value * 1.3)
+            await asyncio.sleep(f.value * 2.0)
             return await self._upload_file(cap_mono, file_path, force_document)
         except BadRequest as err:
             err_msg = str(err)

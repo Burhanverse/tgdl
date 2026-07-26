@@ -71,12 +71,14 @@ class TelegramRateLimiter:
     ):
         self.global_rate_limit = global_rate_limit
         self.per_chat_interval = per_chat_interval
+        self.per_upload_interval = 3.0
 
         self._global_lock = asyncio.Lock()
         self._global_last_call = 0.0
 
         self._chat_locks: dict[int, asyncio.Lock] = {}
         self._chat_last_call: dict[int, float] = {}
+        self._chat_last_upload: dict[int, float] = {}
         self._chat_floodwait_until: dict[int, float] = {}
         self._global_floodwait_until: float = 0.0
 
@@ -122,6 +124,18 @@ class TelegramRateLimiter:
                 if elapsed < self.per_chat_interval:
                     await asyncio.sleep(self.per_chat_interval - elapsed)
                 self._chat_last_call[chat_id] = time.time()
+
+    async def acquire_upload(self, chat_id: Optional[int] = None) -> None:
+        """Paces execution specifically for Telegram file & media uploads (3.0s min gap)."""
+        await self.acquire(chat_id)
+        if chat_id is not None:
+            chat_lock = self._get_chat_lock(chat_id)
+            async with chat_lock:
+                last_upload = self._chat_last_upload.get(chat_id, 0.0)
+                elapsed = time.time() - last_upload
+                if elapsed < self.per_upload_interval:
+                    await asyncio.sleep(self.per_upload_interval - elapsed)
+                self._chat_last_upload[chat_id] = time.time()
 
     def notify_floodwait(self, seconds: int, chat_id: Optional[int] = None) -> None:
         """Register a FloodWait penalty so subsequent calls wait out the penalty."""
