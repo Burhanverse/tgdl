@@ -23,7 +23,7 @@ def compile_mirror_status_text(
     lines = [
         f"**Mirroring Active**",
         f"**File**: `{file_name}` ({file_size_str})",
-        "───────────────────────────────"
+        "\n"
     ]
     host_labels = [
         ("gofile", "GoFile", "🟢"),

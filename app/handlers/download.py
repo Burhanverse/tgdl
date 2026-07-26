@@ -274,7 +274,7 @@ def register_download_handlers(app: Client) -> None:
                 pd_url = f"https://{domain}/u/{res['id']}"
                 await status_msg.edit_text(
                     f"🟣 **Pixeldrain Upload Complete**\n"
-                    f"───────────────────────────────\n"
+                    f"\n\n"
                     f"**File**: `{local_path.name}`\n"
                     f"**URL**: {pd_url}"
                 )
@@ -317,7 +317,7 @@ def register_download_handlers(app: Client) -> None:
                 gf_url = res.get("data", {}).get("downloadPage")
                 await status_msg.edit_text(
                     f"🟢 **GoFile Upload Complete**\n"
-                    f"───────────────────────────────\n"
+                    f"\n\n"
                     f"**File**: `{local_path.name}`\n"
                     f"**URL**: {gf_url}"
                 )
@@ -360,7 +360,7 @@ def register_download_handlers(app: Client) -> None:
                 fd_url = res.get("url")
                 await status_msg.edit_text(
                     f"🔵 **FileDitch Upload Complete**\n"
-                    f"───────────────────────────────\n"
+                    f"\n\n"
                     f"**File**: `{local_path.name}`\n"
                     f"**URL**: {fd_url}"
                 )
