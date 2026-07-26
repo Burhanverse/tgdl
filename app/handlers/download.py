@@ -33,6 +33,17 @@ async def _create_and_enqueue_job(chat_id: int, target_url: str, message: Messag
     )
     await store.set_status_message(job.id, status_msg.id)
 
+    async def auto_delete_queued():
+        await asyncio.sleep(10)
+        try:
+            db_j = await store.get_job(job.id)
+            if db_j and db_j.status == "queued":
+                await message.client.delete_messages(chat_id, status_msg.id)
+        except Exception:
+            pass
+
+    asyncio.create_task(auto_delete_queued())
+
 
 def register_download_handlers(app: Client) -> None:
 

@@ -752,7 +752,7 @@ class QueueManager:
                         now = time.time()
                         if m_status and (now - last_edit_time >= 1.5):
                             last_edit_time = now
-                            await safe_edit(m_status, text)
+                            await safe_edit(self.client, chat_id, m_status.id, text)
 
                     host_links = await mirror_file_to_web_hosts(
                         f,
