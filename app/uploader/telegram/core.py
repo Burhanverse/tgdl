@@ -117,26 +117,24 @@ class TelegramUploader:
     def _prepare_filename_and_caption(self, file_path: Path) -> Tuple[str, Path]:
         filename = file_path.name
 
-        if self.lprefix:
-            cap_mono = f"{self.lprefix} <code>{escape(filename)}</code>"
+        # Check for split part pattern like _part001.mp4, .part001.mp4, .001
+        part_match = re.search(r'((?:_part|\.part)\d+\.[^.]+$|\.\d+$)', filename, re.IGNORECASE)
+        if part_match:
+            part_suffix = part_match.group(1)
+            base_stem = filename[:-len(part_suffix)]
         else:
-            cap_mono = f"<code>{escape(filename)}</code>"
+            part_suffix = file_path.suffix
+            base_stem = file_path.stem
 
+        display_name = filename
         if len(filename) > 60:
-            ext = file_path.suffix
-            part_match = re.search(r'(\.part\d+\.[^.]+$|\.0*\d+$)', filename, re.IGNORECASE)
-            if part_match:
-                ext = part_match.group(1)
+            remain = max(10, 60 - len(part_suffix))
+            display_name = f"{base_stem[:remain]}{part_suffix}"
 
-            base_name = filename[:-len(ext)] if ext and filename.endswith(ext) else filename
-            remain = max(10, 60 - len(ext))
-            new_filename = f"{base_name[:remain]}{ext}"
-            new_path = file_path.parent / new_filename
-            try:
-                file_path.rename(new_path)
-                file_path = new_path
-            except Exception as e:
-                log.warning("Could not rename file %s to %s: %s", filename, new_filename, e)
+        if self.lprefix:
+            cap_mono = f"{self.lprefix} <code>{escape(display_name)}</code>"
+        else:
+            cap_mono = f"<code>{escape(display_name)}</code>"
 
         return cap_mono, file_path
 
