@@ -35,8 +35,20 @@ async def safe_send(client: Client, chat_id: int, text: str, **kwargs) -> Messag
     return None
 
 
-async def safe_edit(client: Client, chat_id: int, message_id: int, text: str, reply_markup=None) -> bool:
+_last_edit_times: dict[tuple[int, int], float] = {}
+
+
+async def safe_edit(client: Client, chat_id: int, message_id: int, text: str, reply_markup=None, force: bool = False) -> bool:
     from pyrogram.errors import FloodWait, MessageNotModified
+    import time
+
+    now = time.time()
+    key = (chat_id, message_id)
+    if not force:
+        last_t = _last_edit_times.get(key, 0.0)
+        if now - last_t < 5.0:
+            return False
+
     await telegram_limiter.acquire(chat_id)
     try:
         await client.edit_message_text(
@@ -46,8 +58,10 @@ async def safe_edit(client: Client, chat_id: int, message_id: int, text: str, re
             reply_markup=reply_markup,
             link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
+        _last_edit_times[key] = time.time()
         return True
     except MessageNotModified:
+        _last_edit_times[key] = time.time()
         return True
     except FloodWait as e:
         telegram_limiter.notify_floodwait(e.value, chat_id)

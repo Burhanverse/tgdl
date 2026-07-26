@@ -280,7 +280,7 @@ class QueueManager:
             async def download_status_updater_loop() -> None:
                 while not job_state.downloader_done.is_set():
                     try:
-                        await asyncio.wait_for(job_state.trigger_event.wait(), timeout=3.0)
+                        await asyncio.wait_for(job_state.trigger_event.wait(), timeout=5.0)
                         job_state.trigger_event.clear()
                         if job_state.downloader_done.is_set():
                             break
@@ -667,7 +667,7 @@ class QueueManager:
         async def status_updater_loop() -> None:
             while not job_state.uploader_done.is_set():
                 try:
-                    await asyncio.sleep(4)
+                    await asyncio.sleep(5)
                     if job_state.uploader_done.is_set():
                         break
                         
@@ -750,7 +750,7 @@ class QueueManager:
                     async def on_mirror_progress(text: str) -> None:
                         nonlocal last_edit_time
                         now = time.time()
-                        if m_status and (now - last_edit_time >= 1.5):
+                        if m_status and (now - last_edit_time >= 5.0):
                             last_edit_time = now
                             await safe_edit(self.client, chat_id, m_status.id, text)
 
