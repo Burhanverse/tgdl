@@ -727,11 +727,11 @@ class QueueManager:
 
             if job.url.startswith("mirror:") or job.url.startswith("mirror_tg:"):
                 from .mirror import mirror_file_to_web_hosts
-                log.info("Processing web mirror package upload for job #%s", job.id)
+                log.info("Processing mirror upload for job #%s", job.id)
                 m_status = await safe_send(
                     self.client,
                     chat_id,
-                    "Mirroring downloaded file(s) sequentially to GoFile, FileDitch & Pixeldrain..."
+                    f"**Mirroring Initiated** for job #{job.id}..."
                 )
 
                 all_downloaded = [f for f in files if f.is_file() and not should_ignore_file(f)]
@@ -745,7 +745,19 @@ class QueueManager:
                     job_state.current_upload_file = f.name
                     job_state.trigger_event.set()
 
-                    host_links = await mirror_file_to_web_hosts(f)
+                    last_edit_time = 0.0
+
+                    async def on_mirror_progress(text: str) -> None:
+                        nonlocal last_edit_time
+                        now = time.time()
+                        if m_status and (now - last_edit_time >= 1.5):
+                            last_edit_time = now
+                            await safe_edit(m_status, text)
+
+                    host_links = await mirror_file_to_web_hosts(
+                        f,
+                        status_callback=on_mirror_progress
+                    )
 
                     links_display = []
                     if "gofile" in host_links:
@@ -756,7 +768,7 @@ class QueueManager:
                         links_display.append(f"- **Pixeldrain**: {host_links['pixeldrain']}")
 
                     summary_msg = (
-                        f"**Web Mirror Package Complete**\n"
+                        f"**Mirror Complete**\n"
                         f"------------------------------------\n"
                         f"- **File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
                         + "\n".join(links_display)

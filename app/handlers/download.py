@@ -39,7 +39,7 @@ def register_download_handlers(app: Client) -> None:
     @app.on_message(filters.command(["m", "mirror"]))
     async def mirror_cmd(_, message: Message) -> None:
         target_url = None
-        display_text = "Web Mirror"
+        display_text = "Mirror"
 
         # 1. Check if user replied to a Telegram message containing media
         if message.reply_to_message:
@@ -57,7 +57,7 @@ def register_download_handlers(app: Client) -> None:
             if media:
                 target_url = f"mirror_tg:{reply_msg.chat.id}:{reply_msg.id}"
                 file_name = getattr(media, "file_name", None) or f"tg_media_{reply_msg.id}"
-                display_text = f"Web Mirror: Telegram file `{file_name}`"
+                display_text = f"Mirror: Telegram file `{file_name}`"
 
         # 2. Check if URL text argument is provided
         if not target_url:
@@ -65,7 +65,7 @@ def register_download_handlers(app: Client) -> None:
             if len(parts) >= 2:
                 raw_link = parts[1].strip()
                 target_url = f"mirror:{raw_link}"
-                display_text = f"Web Mirror: {raw_link}"
+                display_text = f"Mirror: {raw_link}"
 
         if not target_url:
             await message.reply_text("Provide a URL or reply to a Telegram media message with `/m` or `/mirror`.")
