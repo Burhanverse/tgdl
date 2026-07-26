@@ -761,16 +761,16 @@ class QueueManager:
 
                     links_display = []
                     if "gofile" in host_links:
-                        links_display.append(f"- **GoFile**: {host_links['gofile']}")
+                        links_display.append(f"🟢 **GoFile**: {host_links['gofile']}")
                     if "fileditch" in host_links:
-                        links_display.append(f"- **FileDitch**: {host_links['fileditch']}")
+                        links_display.append(f"🔵 **FileDitch**: {host_links['fileditch']}")
                     if "pixeldrain" in host_links:
-                        links_display.append(f"- **Pixeldrain**: {host_links['pixeldrain']}")
+                        links_display.append(f"🟣 **Pixeldrain**: {host_links['pixeldrain']}")
 
                     summary_msg = (
                         f"**Mirror Complete**\n"
-                        f"------------------------------------\n"
-                        f"- **File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
+                        f"───────────────────────────────\n"
+                        f"**File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
                         + "\n".join(links_display)
                     )
                     await safe_send(self.client, chat_id, summary_msg)

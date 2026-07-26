@@ -73,18 +73,18 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
             torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
             return (
-                f"**Queued (job #{job_id})**\n"
-                f"------------------------------------\n"
-                f"- **File**: `{name}`\n"
-                f"- **Tool**: `aria2c`"
+                f"**Task Queued** • `#job_{job_id}`\n"
+                f"───────────────────────────────\n"
+                f"• **Torrent**: `{name}`\n"
+                f"• **Engine**: `aria2c`"
             )
         else:
-            magnet_disp = cleaned_url[:60] + "..." if len(cleaned_url) > 60 else cleaned_url
+            magnet_disp = cleaned_url[:55] + "..." if len(cleaned_url) > 55 else cleaned_url
             return (
-                f"**Queued (job #{job_id})**\n"
-                f"------------------------------------\n"
-                f"- **Link**: `{magnet_disp}`\n"
-                f"- **Tool**: `aria2c`"
+                f"**Task Queued** • `#job_{job_id}`\n"
+                f"───────────────────────────────\n"
+                f"• **Magnet**: `{magnet_disp}`\n"
+                f"• **Engine**: `aria2c`"
             )
 
     is_gdrive = (
@@ -98,20 +98,20 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
         for prefix in ("gdrive:", "gd2tg:"):
             if gdrive_disp.startswith(prefix):
                 gdrive_disp = gdrive_disp[len(prefix):]
-        gdrive_disp = gdrive_disp[:55] + "..." if len(gdrive_disp) > 55 else gdrive_disp
+        gdrive_disp = gdrive_disp[:50] + "..." if len(gdrive_disp) > 50 else gdrive_disp
         return (
-            f"**Queued (job #{job_id})**\n"
-            f"------------------------------------\n"
-            f"- **Type**: `Google Drive Download`\n"
-            f"- **Tool**: `Google Drive API`\n"
-            f"- **Link**: `{gdrive_disp}`{args_display}"
+            f"**Task Queued** • `#job_{job_id}`\n"
+            f"───────────────────────────────\n"
+            f"• **Type**: `Google Drive Download`\n"
+            f"• **Engine**: `Google Drive API`\n"
+            f"• **Link**: `{gdrive_disp}`{args_display}"
         )
 
     return (
-        f"**Queued (job #{job_id})**\n"
-        f"------------------------------------\n"
-        f"- **URL**: {format_url_display(url)}{args_display}\n"
-        f"- **Tool**: `gallery-dl`"
+        f"**Task Queued** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"• **URL**: {format_url_display(url)}{args_display}\n"
+        f"• **Engine**: `gallery-dl`"
     )
 
 
@@ -119,116 +119,113 @@ def compile_unzip_download_status_text(job_id: str, filename: str, current: int,
     pct = current * 100.0 / total if total > 0 else 0.0
     bar = make_progress_bar(pct)
     return (
-        f"**Job #{job_id} Registered**\n"
-        f"------------------------------------\n"
-        f"- **Archive**: `{filename}`\n\n"
-        f"Downloading: {pct:.1f}%\n"
-        f"  `[{bar}]`\n"
-        f"Downloaded: {format_size(current)} of {format_size(total)}"
+        f"**Task Active** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"• **Archive**: `{filename}`\n"
+        f"• **Progress**: `{pct:.1f}%` `[{bar}]`\n"
+        f"• **Downloaded**: `{format_size(current)} / {format_size(total)}`"
     )
 
 
 def compile_archive_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Archive Detected**\n"
-        f"------------------------------------\n"
-        f"- **File**: `{filename}`\n\n"
-        "Do you want to upload the archive file only, or extract its contents and upload both?"
+        f"**Archive Handling Prompt** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"• **File**: `{filename}`\n\n"
+        "Choose whether to upload the archive file only or extract its contents and upload both:"
     )
 
 
 def compile_archive_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
-        f"**Job #{job_id} - Archive Choice**\n"
-        f"------------------------------------\n"
-        f"- **File**: `{filename}`\n"
-        f"- **Selected**: `{choice_str}`\n\n"
-        "Processing choice..."
+        f"**Archive Action Confirmed** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"• **File**: `{filename}`\n"
+        f"• **Selection**: `{choice_str}`\n\n"
+        "Processing selected operation..."
     )
 
 
 def compile_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Incompatible Video Format**\n"
-        f"------------------------------------\n"
-        f"- **File**: `{filename}`\n\n"
-        "The file format is not natively supported for Telegram inline streaming. "
-        "Do you want to convert it to MP4 first, or upload the original as a document?"
+        f"**Media Conversion Prompt** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"• **File**: `{filename}`\n\n"
+        "Convert video to MP4 first or upload original document?"
     )
 
 
 def compile_audio_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - High Quality Audio Format**\n"
-        f"------------------------------------\n"
-        f"- **File**: `{filename}`\n\n"
-        "The file is in a lossless or uncompressed audio format. "
-        "Do you want to convert it to MP3 (optimized & mastered using Pedalboard) first, or upload the original?"
+        f"**Audio Processing Prompt** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"• **File**: `{filename}`\n\n"
+        "Convert audio to MP3 with Pedalboard mastering or upload original?"
     )
 
 
 def compile_conversion_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
-        f"**Job #{job_id} - Media Conversion**\n"
-        f"------------------------------------\n"
-        f"- **File**: `{filename}`\n\n"
-        f"Choice selected: **{choice_str}**"
+        f"**Media Action Confirmed** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"• **File**: `{filename}`\n"
+        f"• **Selection**: `{choice_str}`"
     )
 
 
 def compile_extraction_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Archive Extraction**\n"
-        f"------------------------------------\n"
+        f"**Archive Extraction Active** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
         f"Extracting `{filename}`..."
     )
 
 
 def compile_conversion_running_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Media Conversion**\n"
-        f"------------------------------------\n"
-        f"Converting `{filename}` to standard MP4 container..."
+        f"**Media Transcoding Active** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"Transcoding `{filename}` to MP4 container..."
     )
 
 
 def compile_audio_conversion_running_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Audio Processing & Conversion**\n"
-        f"------------------------------------\n"
-        f"Applying Pedalboard mastering chain and converting `{filename}` to MP3..."
+        f"**Audio Processing Active** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"Mastering & transcoding `{filename}` to MP3..."
     )
 
 
 def compile_conversion_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Conversion Failed**\n"
-        f"------------------------------------\n"
-        f"Failed to convert `{filename}`. Uploading original as document."
+        f"**Conversion Failed** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"Failed to transcode `{filename}`. Uploading original file."
     )
 
 
 def compile_audio_conversion_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Audio Processing Failed**\n"
-        f"------------------------------------\n"
+        f"**Audio Processing Failed** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
         f"Failed to process `{filename}`. Uploading original file."
     )
 
 
 def compile_extraction_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Extraction Failed**\n"
-        f"------------------------------------\n"
+        f"**Extraction Failed** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
         f"Failed to extract `{filename}`."
     )
 
 
 def compile_extraction_success_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Job #{job_id} - Archive Extracted**\n"
-        f"------------------------------------\n"
-        f"Successfully extracted `{filename}` into download directory."
+        f"**Archive Extracted** • `#job_{job_id}`\n"
+        f"───────────────────────────────\n"
+        f"Successfully extracted `{filename}`."
     )
 
 
@@ -282,128 +279,108 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         "docs.google.com" in cleaned_url
     )
 
-    # Determine active tool dynamically based on current phase
-    if getattr(job_state, "is_archiving", False):
-        import shutil
-        active_tool = "7z" if shutil.which("7z") else ("zip" if shutil.which("zip") else "zipfile")
-    elif getattr(job_state, "is_converting", False):
-        active_tool = "FFmpeg"
-    elif job.status == "uploading" or job_state.sent > 0 or job_state.current_upload_file:
-        active_tool = "Pyrogram (Telegram Uploader)"
-    elif is_gdrive:
-        active_tool = "Google Drive API"
-    elif is_torrent:
-        active_tool = "aria2c"
-    elif cleaned_url.startswith("unzip:"):
-        active_tool = "Pyrogram Downloader"
-    else:
-        active_tool = "gallery-dl"
+    status_icon = "⚡" if job.status == "downloading" else ("📤" if job.status == "uploading" else "⏳")
+    split_str = "Enabled (2GB)" if job.split_large_files else "Disabled"
 
-    split_str = "Enabled" if job.split_large_files else "Disabled"
-    
-    text = (
-        f"**Active Task Details**\n"
-        f"------------------------------------\n"
-        f"**Job ID:** `{job.id}`\n"
-        f"**Status:** `{job.status.upper()}`\n"
-    )
+    lines = [
+        f"**Task Execution Details** • `#job_{job.id}`",
+        f"───────────────────────────────",
+        f"• **Status**: {status_icon} `{job.status.upper()}`",
+    ]
 
     if is_torrent:
         torrent_name = getattr(job_state, "torrent_name", None)
         if torrent_name:
-            text += f"**Name:** `{torrent_name}`\n"
+            lines.append(f"• **Torrent**: `{torrent_name}`")
         elif cleaned_url.startswith("torrent:"):
             torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
-            text += f"**Torrent File:** `{name}`\n"
+            lines.append(f"• **File**: `{name}`")
         else:
             magnet_disp = cleaned_url[:50] + "..." if len(cleaned_url) > 50 else cleaned_url
-            text += f"**Magnet Link:** `{magnet_disp}`\n"
+            lines.append(f"• **Magnet**: `{magnet_disp}`")
     else:
-        text += f"**URL:** {format_url_display(job.url)}\n"
+        lines.append(f"• **Target**: {format_url_display(job.url)}")
         user_args_str = format_user_args(job.args)
         if user_args_str:
-            text += f"**Args:** `{user_args_str}`\n"
-            
-    text += f"**Split > 2GB:** `{split_str}`\n"
-    text += f"------------------------------------\n"
+            lines.append(f"• **Args**: `{user_args_str}`")
+
+    lines.append(f"• **Auto Split**: `{split_str}`")
+    lines.append(f"───────────────────────────────")
 
     if not job_state.downloader_done.is_set():
         dl_speed_str = format_size(job_state.download_speed)
         dl_bytes_str = format_size(job_state.total_downloaded_bytes)
         dl_tool = "Google Drive API" if is_gdrive else ("aria2c" if is_torrent else ("Pyrogram Downloader" if cleaned_url.startswith("unzip:") else "gallery-dl"))
-        
+
         if is_gdrive:
             marquee = make_marquee_bar()
-            text += (
-                f"**GDrive Downloader Metrics**\n"
-                f"| Tool: `{dl_tool}`\n"
-                f"| `[{marquee}]`\n"
-                f"| Downloaded: `{dl_bytes_str}`\n"
-                f"| Speed: `{dl_speed_str}/s`\n"
+            lines.append(
+                f"**GDrive Download Metrics**\n"
+                f"• **Engine**: `{dl_tool}`\n"
+                f"• **State**: `[{marquee}]`\n"
+                f"• **Downloaded**: `{dl_bytes_str}`\n"
+                f"• **Speed**: `{dl_speed_str}/s`"
             )
             if job_state.current_download_file:
-                text += f"| Current File: `{job_state.current_download_file}`\n"
+                lines.append(f"• **Current**: `{job_state.current_download_file}`")
         elif is_torrent:
             bar = make_progress_bar(job_state.download_pct)
             seeders = getattr(job_state, "torrent_seeders", 0)
             peers = getattr(job_state, "torrent_peers", 0)
-            text += (
-                f"**Downloader Metrics**\n"
-                f"| Tool: `{dl_tool}`\n"
-                f"| Progress: `{job_state.download_pct:.1f}%`\n"
-                f"| `[{bar}]`\n"
-                f"| Downloaded: `{dl_bytes_str}`\n"
-                f"| Speed: `{dl_speed_str}/s`\n"
-                f"| Peers: `Seeders: {seeders} | Leechers/Peers: {peers}`\n"
+            lines.append(
+                f"**Torrent Download Metrics**\n"
+                f"• **Engine**: `{dl_tool}`\n"
+                f"• **Progress**: `{job_state.download_pct:.1f}%` `[{bar}]`\n"
+                f"• **Downloaded**: `{dl_bytes_str}`\n"
+                f"• **Speed**: `{dl_speed_str}/s`\n"
+                f"• **Swarm**: `Seeders: {seeders} | Leechers: {peers}`"
             )
         else:
             marquee = make_marquee_bar()
-            text += (
+            lines.append(
                 f"**Downloader Metrics**\n"
-                f"| Tool: `{dl_tool}`\n"
-                f"| Files Downloaded: `{job_state.download_count}`\n"
-                f"| `[{marquee}]`\n"
-                f"| Downloaded: `{dl_bytes_str}`\n"
-                f"| Speed: `{dl_speed_str}/s`\n"
+                f"• **Engine**: `{dl_tool}`\n"
+                f"• **Downloaded Count**: `{job_state.download_count}`\n"
+                f"• **State**: `[{marquee}]`\n"
+                f"• **Total Size**: `{dl_bytes_str}`\n"
+                f"• **Speed**: `{dl_speed_str}/s`"
             )
             if job_state.current_download_file:
-                text += f"| Current File: `{job_state.current_download_file}`\n"
+                lines.append(f"• **Current**: `{job_state.current_download_file}`")
     elif getattr(job_state, "is_archiving", False):
         import shutil
         archiver_tool = "7z" if shutil.which("7z") else ("zip" if shutil.which("zip") else "zipfile")
         fmt = getattr(job_state, "archive_format", "ZIP") or "ZIP"
-        text += (
-            f"**Folder Compression & Archiving**\n"
-            f"| Tool: `{archiver_tool}`\n"
-            f"| Format: `{fmt.upper()}`\n"
-            f"| Status: `Compressing downloaded folders...`\n"
+        lines.append(
+            f"**Archive Compression**\n"
+            f"• **Engine**: `{archiver_tool}`\n"
+            f"• **Format**: `{fmt.upper()}`\n"
+            f"• **Status**: `Compressing downloaded folder structure...`"
         )
     elif getattr(job_state, "is_converting", False):
         conv_file = getattr(job_state, "conversion_file", "media file")
-        text += (
-            f"**Media Conversion**\n"
-            f"| Tool: `FFmpeg`\n"
-            f"| Converting File: `{conv_file}`\n"
-            f"| *(Converting format to standard MP4 container)*\n"
+        lines.append(
+            f"**Media Transcoding**\n"
+            f"• **Engine**: `FFmpeg / PyAV`\n"
+            f"• **Converting**: `{conv_file}`\n"
+            f"• **Status**: `Transcoding to standard MP4 container...`"
         )
     elif job.status == "uploading" or job_state.sent > 0 or job_state.current_upload_file:
         ul_speed_str = format_size(job_state.upload_speed)
-        text += (
-            f"**Uploader Metrics**\n"
-            f"| Tool: `Pyrogram (Telegram Uploader)`\n"
-            f"| Files Sent: `{job_state.sent} / {job.total_files if job.total_files > 0 else 'Calculating'}`\n"
-            f"| Files Skipped: `{len(job_state.skipped)}`\n"
+        total_files_disp = job.total_files if job.total_files > 0 else 'Calculating'
+        lines.append(
+            f"**Telegram Upload Metrics**\n"
+            f"• **Engine**: `Pyrogram Uploader`\n"
+            f"• **Files Uploaded**: `{job_state.sent} / {total_files_disp}`\n"
+            f"• **Files Skipped**: `{len(job_state.skipped)}`"
         )
         if job_state.current_upload_file:
             bar = make_progress_bar(job_state.current_upload_pct)
-            text += (
-                f"| Current File: `{job_state.current_upload_file}`\n"
-                f"| Progress: `{job_state.current_upload_pct:.1f}%`\n"
-                f"| `[{bar}]`\n"
-                f"| Speed: `{ul_speed_str}/s`\n"
+            lines.append(
+                f"• **Current File**: `{job_state.current_upload_file}`\n"
+                f"• **Progress**: `{job_state.current_upload_pct:.1f}%` `[{bar}]`\n"
+                f"• **Upload Speed**: `{ul_speed_str}/s`"
             )
-    else:
-        text += f"**Status:** `{job.status.upper()}`\n"
 
-    return text
+    return "\n".join(lines)

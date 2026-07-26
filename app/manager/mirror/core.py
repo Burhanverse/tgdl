@@ -21,33 +21,35 @@ def compile_mirror_status_text(
     hosts_info: Dict[str, Dict[str, Any]]
 ) -> str:
     lines = [
-        f"**Mirroring File**: `{file_name}` ({file_size_str})",
-        "------------------------------------"
+        f"**Mirroring Active**",
+        f"**File**: `{file_name}` ({file_size_str})",
+        "───────────────────────────────"
     ]
     host_labels = [
-        ("gofile", "GoFile"),
-        ("fileditch", "FileDitch"),
-        ("pixeldrain", "Pixeldrain")
+        ("gofile", "GoFile", "🟢"),
+        ("fileditch", "FileDitch", "🔵"),
+        ("pixeldrain", "Pixeldrain", "🟣")
     ]
 
-    for key, label in host_labels:
+    for idx, (key, label, icon) in enumerate(host_labels):
+        tree = "├" if idx < len(host_labels) - 1 else "└"
         info = hosts_info.get(key, {})
         st = info.get("status", "pending")
         if st == "pending":
-            lines.append(f"- **{label}**: Pending")
+            lines.append(f"{tree} {icon} **{label}**: ⏳ `Pending`")
         elif st == "uploading":
             pct = info.get("pct", 0.0)
             spd = info.get("speed", 0.0)
             bar = make_progress_bar(pct)
             spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
-            lines.append(f"- **{label}**: `{bar}` {pct:.1f}% ({spd_str})")
+            lines.append(f"{tree} {icon} **{label}**: ⚡ `{bar}` {pct:.1f}% ({spd_str})")
         elif st == "done":
-            lines.append(f"- **{label}**: Uploaded")
+            lines.append(f"{tree} {icon} **{label}**: ✅ `Uploaded`")
         elif st == "skipped":
-            lines.append(f"- **{label}**: Skipped (>10GB)")
+            lines.append(f"{tree} {icon} **{label}**: ⚠️ `Skipped (>10GB)`")
         elif st == "failed":
             err = info.get("error", "Failed")
-            lines.append(f"- **{label}**: {err}")
+            lines.append(f"{tree} {icon} **{label}**: ❌ `{err}`")
 
     return "\n".join(lines)
 
