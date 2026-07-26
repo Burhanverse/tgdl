@@ -22,7 +22,7 @@ async def _create_and_enqueue_job(chat_id: int, target_url: str, message: Messag
     await store.update_progress(job.id, status="queued")
     await queue_manager.add_job(job.id)
 
-    queued_text = compile_queued_status_text(job.id, display_text)
+    queued_text = compile_queued_status_text(job.id, display_text, "")
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
     ])
