@@ -86,51 +86,115 @@ def register_download_handlers(app: Client) -> None:
 
     @app.on_message(filters.command(["direct", "dl"]))
     async def direct_cmd(_, message: Message) -> None:
-        parts = message.text.split(maxsplit=1)
-        if len(parts) < 2:
-            await message.reply_text("Provide a direct file URL: `/direct <url>` or `/dl <url>`.")
+        urls = []
+
+        # Option 1: User replied to a message
+        if message.reply_to_message:
+            reply_msg = message.reply_to_message
+
+            # 1a. Reply to a document file (.txt or text MIME)
+            if reply_msg.document and (
+                reply_msg.document.file_name.endswith(".txt") or
+                (reply_msg.document.mime_type and reply_msg.document.mime_type.startswith("text/"))
+            ):
+                temp_path = await reply_msg.download()
+                if temp_path and Path(temp_path).exists():
+                    try:
+                        content = Path(temp_path).read_text(encoding="utf-8", errors="ignore")
+                        for line in content.splitlines():
+                            line = line.strip()
+                            if line.startswith(("http://", "https://")):
+                                urls.append(line)
+                    except Exception as e:
+                        log.warning("Failed reading replied txt file for direct_cmd: %s", e)
+                    finally:
+                        Path(temp_path).unlink(missing_ok=True)
+
+            # 1b. Reply to a text message (or caption) containing URLs
+            reply_text = reply_msg.text or reply_msg.caption
+            if reply_text and not urls:
+                for token in reply_text.split():
+                    token = token.strip()
+                    if token.startswith(("http://", "https://")):
+                        urls.append(token)
+
+        # Option 2: Direct command argument `/direct <url>` or `/dl <url1> <url2>`
+        if not urls:
+            parts = message.text.split(maxsplit=1)
+            if len(parts) >= 2:
+                raw_arg = parts[1].strip()
+                for token in raw_arg.split():
+                    token = token.strip()
+                    if token.startswith(("http://", "https://")):
+                        urls.append(token)
+
+        if not urls:
+            await message.reply_text(
+                "Provide a direct URL or reply to a text/message containing URLs:\n"
+                "• `/direct <url>` or `/dl <url>`\n"
+                "• Reply with `/direct` or `/dl` to a text message or `.txt` file containing URLs."
+            )
             return
 
-        raw_link = parts[1].strip()
-        link = f"direct:{raw_link}"
-        await _create_and_enqueue_job(message.chat.id, link, message, raw_link)
+        urls_json = json.dumps([f"direct:{u}" for u in urls]) if len(urls) > 1 else f"direct:{urls[0]}"
+        display_text = f"direct: `{urls[0]}`" if len(urls) == 1 else f"direct: `{urls[0]}` (+ {len(urls) - 1} more)"
+        await _create_and_enqueue_job(message.chat.id, urls_json, message, display_text)
 
     @app.on_message(filters.command("gdl"))
     async def gdl_cmd(_, message: Message) -> None:
-        if not message.reply_to_message or not message.reply_to_message.document:
-            await message.reply_text("Reply to a .txt file containing URLs with `/gdl [options]`.")
-            return
-
-        doc = message.reply_to_message.document
-        if not (doc.file_name.endswith(".txt") or (doc.mime_type and doc.mime_type.startswith("text/"))):
-            await message.reply_text("Please reply to a text (.txt) file.")
-            return
-
-        temp_path = await message.reply_to_message.download()
-        if not temp_path or not Path(temp_path).exists():
-            await message.reply_text("Failed to download the file.")
-            return
-
-        try:
-            content = Path(temp_path).read_text(encoding="utf-8", errors="ignore")
-        except Exception as e:
-            await message.reply_text(f"Failed to read the file: {e}")
-            return
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
-
         urls = []
-        for line in content.splitlines():
-            line = line.strip()
-            if line.startswith(("http://", "https://")):
-                urls.append(line)
+
+        # Option 1: User replied to a message
+        if message.reply_to_message:
+            reply_msg = message.reply_to_message
+
+            # 1a. Reply to a document file (.txt or text MIME)
+            if reply_msg.document and (
+                reply_msg.document.file_name.endswith(".txt") or
+                (reply_msg.document.mime_type and reply_msg.document.mime_type.startswith("text/"))
+            ):
+                temp_path = await reply_msg.download()
+                if temp_path and Path(temp_path).exists():
+                    try:
+                        content = Path(temp_path).read_text(encoding="utf-8", errors="ignore")
+                        for line in content.splitlines():
+                            line = line.strip()
+                            if line.startswith(("http://", "https://")):
+                                urls.append(line)
+                    except Exception as e:
+                        log.warning("Failed reading replied txt file: %s", e)
+                    finally:
+                        Path(temp_path).unlink(missing_ok=True)
+
+            # 1b. Reply to a text message (or caption) containing URLs
+            reply_text = reply_msg.text or reply_msg.caption
+            if reply_text and not urls:
+                for token in reply_text.split():
+                    token = token.strip()
+                    if token.startswith(("http://", "https://")):
+                        urls.append(token)
+
+        # Option 2: Direct argument `/gdl <url>` or `/gdl <url1> <url2>`
+        if not urls:
+            parts = message.text.split(maxsplit=1)
+            if len(parts) >= 2:
+                raw_arg = parts[1].strip()
+                for token in raw_arg.split():
+                    token = token.strip()
+                    if token.startswith(("http://", "https://")):
+                        urls.append(token)
 
         if not urls:
-            await message.reply_text("No valid URLs found in the text file.")
+            await message.reply_text(
+                "Provide a URL or reply to a text/message containing URLs:\n"
+                "• `/gdl <url>`\n"
+                "• Reply with `/gdl` to a text message or `.txt` file containing URLs."
+            )
             return
 
-        urls_json = json.dumps(urls)
-        await _create_and_enqueue_job(message.chat.id, urls_json, message, urls_json)
+        urls_json = json.dumps(urls) if len(urls) > 1 else urls[0]
+        display_text = f"gallery-dl: `{urls[0]}`" if len(urls) == 1 else f"gallery-dl: `{urls[0]}` (+ {len(urls) - 1} more)"
+        await _create_and_enqueue_job(message.chat.id, urls_json, message, display_text)
 
     @app.on_message(filters.command("tor"))
     async def tor_cmd(_, message: Message) -> None:
