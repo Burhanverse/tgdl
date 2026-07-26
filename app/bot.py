@@ -61,6 +61,31 @@ async def main() -> None:
 
     await app.start()
 
+    try:
+        from pyrogram.types import BotCommand
+        await app.set_bot_commands([
+            BotCommand("m", "Mirror file/URL to GoFile, FileDitch & Pixeldrain"),
+            BotCommand("mirror", "Mirror file/URL to GoFile, FileDitch & Pixeldrain"),
+            BotCommand("direct", "Download direct HTTP link"),
+            BotCommand("dl", "Download direct HTTP link"),
+            BotCommand("tor", "Download torrent or magnet link"),
+            BotCommand("gdl", "Batch download URLs from replied .txt file"),
+            BotCommand("gd2tg", "Download Google Drive link to Telegram"),
+            BotCommand("gfup", "Upload replied media to GoFile"),
+            BotCommand("gofile", "Upload replied media to GoFile"),
+            BotCommand("fdup", "Upload replied media to FileDitch"),
+            BotCommand("fileditch", "Upload replied media to FileDitch"),
+            BotCommand("pdup", "Upload replied media to Pixeldrain"),
+            BotCommand("unzip", "Download & extract archive"),
+            BotCommand("status", "Show active tasks & status"),
+            BotCommand("cancel", "Cancel active or queued jobs"),
+            BotCommand("help", "Show command help guide"),
+            BotCommand("start", "Start bot & get welcome message"),
+        ])
+        log.info("Bot commands set successfully on Telegram.")
+    except Exception as e:
+        log.warning("Failed to set bot commands: %s", e)
+
     from .manager import queue_manager, store, cleanup_orphaned_directories
     await store.open()
     await cleanup_orphaned_directories()
