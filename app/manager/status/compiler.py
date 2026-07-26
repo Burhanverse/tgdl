@@ -104,10 +104,19 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
             f"• **Link**: `{gdrive_disp}`{args_display}"
         )
 
+    is_direct = (
+        cleaned_url.startswith("direct:") or
+        '"direct:' in cleaned_url or
+        "['direct:" in cleaned_url or
+        "direct:" in url
+    )
+
+    engine_name = "Direct HTTP Downloader" if is_direct else "gallery-dl"
+
     return (
         f"**Task Queued** • `#job_{job_id}`\n"
         f"• **URL**: {format_url_display(url)}{args_display}\n"
-        f"• **Engine**: `gallery-dl`"
+        f"• **Engine**: `{engine_name}`"
     )
 
 
@@ -262,6 +271,14 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         "docs.google.com" in cleaned_url
     )
 
+    is_direct = (
+        cleaned_url.startswith("direct:") or
+        '"direct:' in cleaned_url or
+        "['direct:" in cleaned_url or
+        job.url.startswith("direct:") or
+        '"direct:' in job.url
+    )
+
     status_icon = "⚡" if job.status == "downloading" else ("📤" if job.status == "uploading" else "⏳")
     split_str = "Enabled (2GB)" if job.split_large_files else "Disabled"
 
@@ -293,7 +310,7 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
     if not job_state.downloader_done.is_set():
         dl_speed_str = format_size(job_state.download_speed)
         dl_bytes_str = format_size(job_state.total_downloaded_bytes)
-        dl_tool = "Google Drive API" if is_gdrive else ("aria2c" if is_torrent else ("Pyrogram Downloader" if cleaned_url.startswith("unzip:") else "gallery-dl"))
+        dl_tool = "Google Drive API" if is_gdrive else ("aria2c" if is_torrent else ("Direct HTTP Downloader" if is_direct else ("Pyrogram Downloader" if cleaned_url.startswith("unzip:") else "gallery-dl")))
 
         if is_gdrive:
             marquee = make_marquee_bar()
