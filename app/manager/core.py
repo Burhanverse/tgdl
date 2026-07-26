@@ -1621,6 +1621,8 @@ class QueueManager:
 
 async def safe_send(client: Client, chat_id: int, text: str, **kwargs) -> Message | None:
     from pyrogram.errors import FloodWait
+    from pyrogram.types import LinkPreviewOptions
+    kwargs.setdefault("link_preview_options", LinkPreviewOptions(is_disabled=True))
     for _ in range(3):
         try:
             return await client.send_message(chat_id, text, **kwargs)

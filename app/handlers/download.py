@@ -282,8 +282,9 @@ def register_download_handlers(app: Client) -> None:
             if isinstance(res, dict) and res.get("id"):
                 pd_url = f"https://{domain}/u/{res['id']}"
                 await status_msg.edit_text(
-                    f"🟣 **[Pixeldrain Upload Complete]({pd_url})**\n"
-                    f"**File**: `{local_path.name}`"
+                    f"**[Pixeldrain Upload Complete]({pd_url})**\n"
+                    f"**File**: `{local_path.name}`",
+                    link_preview_options=LinkPreviewOptions(is_disabled=True)
                 )
             else:
                 err = res.get("error") if isinstance(res, dict) else "Unknown error"
@@ -323,8 +324,9 @@ def register_download_handlers(app: Client) -> None:
             if isinstance(res, dict) and res.get("status") == "ok":
                 gf_url = res.get("data", {}).get("downloadPage")
                 await status_msg.edit_text(
-                    f"🟢 **[GoFile Upload Complete]({gf_url})**\n"
-                    f"**File**: `{local_path.name}`"
+                    f"**[GoFile Upload Complete]({gf_url})**\n"
+                    f"**File**: `{local_path.name}`",
+                    link_preview_options=LinkPreviewOptions(is_disabled=True)
                 )
             else:
                 err = res.get("error") if isinstance(res, dict) else "Unknown error"
@@ -364,8 +366,9 @@ def register_download_handlers(app: Client) -> None:
             if isinstance(res, dict) and res.get("success") is True:
                 fd_url = res.get("url")
                 await status_msg.edit_text(
-                    f"🔵 **[FileDitch Upload Complete]({fd_url})**\n"
-                    f"**File**: `{local_path.name}`"
+                    f"**[FileDitch Upload Complete]({fd_url})**\n"
+                    f"**File**: `{local_path.name}`",
+                    link_preview_options=LinkPreviewOptions(is_disabled=True)
                 )
             else:
                 err = res.get("error") if isinstance(res, dict) else "Unknown error"
