@@ -348,21 +348,51 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             f"• **Converting**: `{conv_file}`\n"
             f"• **Status**: `Transcoding to standard MP4 container...`"
         )
-    elif job.status == "uploading" or job_state.sent > 0 or job_state.current_upload_file:
+    else:
         ul_speed_str = format_size(job_state.upload_speed)
         total_files_disp = job.total_files if job.total_files > 0 else 'Calculating'
-        lines.append(
-            f"**Telegram Upload Metrics**\n"
-            f"• **Engine**: `Pyrogram Uploader`\n"
-            f"• **Files Uploaded**: `{job_state.sent} / {total_files_disp}`\n"
-            f"• **Files Skipped**: `{len(job_state.skipped)}`"
-        )
-        if job_state.current_upload_file:
-            bar = make_progress_bar(job_state.current_upload_pct)
+
+        web_mirror_info = getattr(job_state, "web_mirror_info", None)
+        if web_mirror_info:
+            lines.append("**Mirror Metrics**")
+            host_labels = [
+                ("gofile", "GoFile", "🟢"),
+                ("fileditch", "FileDitch", "🔵"),
+                ("pixeldrain", "Pixeldrain", "🟣")
+            ]
+            for idx, (key, label, icon) in enumerate(host_labels):
+                tree = "├" if idx < len(host_labels) - 1 else "└"
+                info = web_mirror_info.get(key, {})
+                st = info.get("status", "pending")
+                url = info.get("url")
+                if st == "done" and url:
+                    lines.append(f"{tree} {icon} **[{label}]({url})**: `Uploaded`")
+                elif st == "uploading":
+                    pct = info.get("pct", 0.0)
+                    spd = info.get("speed", 0.0)
+                    bar = make_progress_bar(pct)
+                    spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
+                    lines.append(f"{tree} {icon} **{label}**: `{bar}` {pct:.1f}% ({spd_str})")
+                elif st == "skipped":
+                    lines.append(f"{tree} {icon} **{label}**: `Skipped (>10GB)`")
+                elif st == "failed":
+                    err = info.get("error", "Failed")
+                    lines.append(f"{tree} {icon} **{label}**: `{err}`")
+                else:
+                    lines.append(f"{tree} {icon} **{label}**: `Pending`")
+        else:
             lines.append(
-                f"• **Current File**: `{job_state.current_upload_file}`\n"
-                f"• **Progress**: `{job_state.current_upload_pct:.1f}%` `[{bar}]`\n"
-                f"• **Upload Speed**: `{ul_speed_str}/s`"
+                f"**Telegram Upload Metrics**\n"
+                f"• **Engine**: `Pyrogram Uploader`\n"
+                f"• **Files Uploaded**: `{job_state.sent} / {total_files_disp}`\n"
+                f"• **Files Skipped**: `{len(job_state.skipped)}`"
             )
+            if job_state.current_upload_file:
+                bar = make_progress_bar(job_state.current_upload_pct)
+                lines.append(
+                    f"• **Current File**: `{job_state.current_upload_file}`\n"
+                    f"• **Progress**: `{job_state.current_upload_pct:.1f}%` `[{bar}]`\n"
+                    f"• **Upload Speed**: `{ul_speed_str}/s`"
+                )
 
     return "\n".join(lines)

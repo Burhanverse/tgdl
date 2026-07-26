@@ -761,11 +761,11 @@ class QueueManager:
 
                     links_display = []
                     if "gofile" in host_links:
-                        links_display.append(f"🟢 **GoFile**: {host_links['gofile']}")
+                        links_display.append(f"🟢 **[GoFile]({host_links['gofile']})**")
                     if "fileditch" in host_links:
-                        links_display.append(f"🔵 **FileDitch**: {host_links['fileditch']}")
+                        links_display.append(f"🔵 **[FileDitch]({host_links['fileditch']})**")
                     if "pixeldrain" in host_links:
-                        links_display.append(f"🟣 **Pixeldrain**: {host_links['pixeldrain']}")
+                        links_display.append(f"🟣 **[Pixeldrain]({host_links['pixeldrain']})**")
 
                     summary_msg = (
                         f"**Mirror Complete**\n"
@@ -1334,7 +1334,7 @@ class QueueManager:
                         if isinstance(res_gf, dict) and res_gf.get("status") == "ok":
                             gf_url = res_gf.get("data", {}).get("downloadPage")
                             if gf_url:
-                                mirror_links.append(f"- **GoFile**: {gf_url}")
+                                mirror_links.append(f"🟢 **[GoFile]({gf_url})**")
                     except Exception as gfe:
                         log.warning("Failed to mirror %s to GoFile: %s", f.name, gfe)
 
@@ -1344,7 +1344,7 @@ class QueueManager:
                         res_pd, _ = await upload_to_pixeldrain(f, api_key=settings.pixeldrain_api_key, domain=domain)
                         if isinstance(res_pd, dict) and res_pd.get("id"):
                             pd_url = f"https://{domain}/u/{res_pd['id']}"
-                            mirror_links.append(f"- **Pixeldrain**: {pd_url}")
+                            mirror_links.append(f"🟣 **[Pixeldrain]({pd_url})**")
                     except Exception as pde:
                         log.warning("Failed to mirror %s to Pixeldrain: %s", f.name, pde)
 
@@ -1354,7 +1354,7 @@ class QueueManager:
                         if isinstance(res_fd, dict) and res_fd.get("success") is True:
                             fd_url = res_fd.get("url")
                             if fd_url:
-                                mirror_links.append(f"- **FileDitch**: {fd_url}")
+                                mirror_links.append(f"🔵 **[FileDitch]({fd_url})**")
                     except Exception as fde:
                         log.warning("Failed to mirror %s to FileDitch: %s", f.name, fde)
 
@@ -1367,8 +1367,7 @@ class QueueManager:
                     if mirror_links:
                         summary_txt = (
                             f"**Original Un-split 2GB+ File Mirrored**\n"
-                            f"------------------------------------\n"
-                            f"- **File**: `{f.name}` ({format_size(f.stat().st_size)})\n"
+                            f"**File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
                             + "\n".join(mirror_links)
                         )
                         await safe_send(self.client, chat_id, summary_txt)
