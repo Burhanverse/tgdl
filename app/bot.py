@@ -34,6 +34,25 @@ from .manager import (
     compile_extraction_failed_status_text,
     compile_extraction_success_status_text,
 )
+from .telegram_helper import (
+    ButtonMaker,
+    send_message,
+    edit_message,
+    delete_message,
+    auto_delete_message,
+    send_status_message,
+    update_status_message,
+    delete_status,
+    status_dict,
+    task_dict_lock,
+    intervals,
+)
+from .manager.status import (
+    MirrorStatus,
+    get_task_by_gid,
+    get_all_active_task_adapters,
+    get_readable_file_size,
+)
 from . import manager as status
 from .manager.archive import (
     _archive_ids,
@@ -201,58 +220,111 @@ async def start_cmd(_, message: Message) -> None:
 
 @app.on_message(filters.command("status"))
 async def status_cmd(_, message: Message) -> None:
-    import json
-    chat_id = message.chat.id
-
-    active_jobs = queue_manager.get_active_jobs_for_chat(chat_id)
-    response = ""
-    
-    if active_jobs:
-        for job_state in active_jobs:
-            job = await store.get_job(job_state.job_id)
-            if not job:
-                continue
-            from .manager import compile_job_status_text
-            job_text = compile_job_status_text(job, job_state)
-            response += job_text + "\n"
+    text = message.text.split()
+    if len(text) > 1:
+        user_id = message.from_user.id if text[1] == "me" else int(text[1])
     else:
-        response = "**Bot Status: Idle**\nNo active download/upload task is currently running.\n"
+        user_id = 0
+        sid = message.chat.id
+        async with task_dict_lock:
+            if obj := intervals["status"].get(sid):
+                if not obj.done():
+                    obj.cancel()
+                del intervals["status"][sid]
 
-    queued = [q for q in await store.queued_jobs() if is_job_owner(chat_id, q)]
+    await send_status_message(message, user_id)
+    await delete_message(message)
 
-    cur = await store.db.execute("SELECT * FROM jobs WHERE status = 'waiting' AND chat_id = ? ORDER BY created_at", (chat_id,))
-    waiting_rows = await cur.fetchall()
-    waiting = [store._row_to_job(r) for r in waiting_rows]
 
-    if queued:
-        response += f"\n**Queued Jobs ({len(queued)})**:"
-        for i, q_job in enumerate(queued[:5], 1):
-            q_parsed = []
-            if q_job.args:
+@app.on_callback_query(filters.regex(r"^status"))
+async def status_pages_cb(_, query: CallbackQuery) -> None:
+    data = query.data.split()
+    if len(data) < 3:
+        await query.answer()
+        return
+
+    try:
+        key = int(data[1])
+    except Exception:
+        await query.answer("Invalid callback key!", show_alert=True)
+        return
+
+    action = data[2]
+
+    if action == "cancel":
+        gid = data[3] if len(data) > 3 else ""
+        if not gid:
+            await query.answer("Invalid request!", show_alert=True)
+            return
+        user_id = query.from_user.id
+        task = await get_task_by_gid(gid)
+        if task is None:
+            await query.answer("Task not found or already finished!", show_alert=True)
+            return
+        if task.user_id and task.user_id != user_id and task.user_id != query.message.chat.id:
+            await query.answer("Not Yours!", show_alert=True)
+            return
+        await query.answer(f"Cancelling job #{gid}...")
+        await queue_manager.cancel_job(gid)
+        await update_status_message(key, force=True)
+        return
+
+    await query.answer()
+    if action == "ref":
+        await update_status_message(key, force=True)
+    elif action in ["nex", "pre"]:
+        async with task_dict_lock:
+            if key in status_dict:
+                if action == "nex":
+                    status_dict[key]["page_no"] += status_dict[key]["page_step"]
+                else:
+                    status_dict[key]["page_no"] -= status_dict[key]["page_step"]
+        await update_status_message(key, force=True)
+    elif action == "ps":
+        async with task_dict_lock:
+            if key in status_dict and len(data) > 3:
                 try:
-                    q_parsed = json.loads(q_job.args)
+                    status_dict[key]["page_step"] = int(data[3])
                 except Exception:
                     pass
-            q_args_str = f" (Args: `{' '.join(q_parsed)}`)" if q_parsed else ""
-            response += f"\n{i}. Job #{q_job.id}: {format_url_display(q_job.url)}{q_args_str}"
-        if len(queued) > 5:
-            response += f"\n…and {len(queued) - 5} more queued job(s)"
+        await update_status_message(key, force=True)
+    elif action == "st":
+        async with task_dict_lock:
+            if key in status_dict and len(data) > 3:
+                status_dict[key]["status"] = data[3]
+        await update_status_message(key, force=True)
+    elif action == "ov":
+        tasks_summary = await get_all_active_task_adapters()
+        counts = {
+            "Download": 0, "Upload": 0, "Archive": 0, "Extract": 0,
+            "Split": 0, "Convert": 0, "QueueDl": 0, "Pause": 0,
+        }
+        total_dl_speed = 0.0
+        total_ul_speed = 0.0
+        for tk in tasks_summary:
+            st = tk.status()
+            if st in counts:
+                counts[st] += 1
+            else:
+                counts["Download"] += 1
 
-    if waiting:
-        response += f"\n\n**Awaiting Split Choice Confirmation ({len(waiting)})**:"
-        for i, w_job in enumerate(waiting[:5], 1):
-            w_parsed = []
-            if w_job.args:
-                try:
-                    w_parsed = json.loads(w_job.args)
-                except Exception:
-                    pass
-            w_args_str = f" (Args: `{' '.join(w_parsed)}`)" if w_parsed else ""
-            response += f"\n{i}. Job #{w_job.id}: {format_url_display(w_job.url)}{w_args_str}"
-        if len(waiting) > 5:
-            response += f"\n…and {len(waiting) - 5} more awaiting confirmation"
+            if st == MirrorStatus.STATUS_UPLOAD:
+                total_ul_speed += tk.raw_speed()
+            else:
+                total_dl_speed += tk.raw_speed()
 
-    await message.reply_text(response, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        msg = (
+            f"<b>DL:</b> {counts['Download']} | <b>UP:</b> {counts['Upload']} | "
+            f"<b>AR:</b> {counts['Archive']} | <b>EX:</b> {counts['Extract']}\n"
+            f"<b>SP:</b> {counts['Split']} | <b>CM:</b> {counts['Convert']} | "
+            f"<b>QD:</b> {counts['QueueDl']} | <b>PA:</b> {counts['Pause']}\n\n"
+            f"<b>Overall DL Speed:</b> {get_readable_file_size(total_dl_speed)}/s\n"
+            f"<b>Overall UL Speed:</b> {get_readable_file_size(total_ul_speed)}/s\n"
+        )
+        buttons = ButtonMaker()
+        buttons.data_button("Back", f"status {key} ref")
+        await edit_message(query.message, msg, buttons.build_menu())
+
 
 
 @app.on_message(filters.command("cancel"))
