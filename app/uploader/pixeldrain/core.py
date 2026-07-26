@@ -22,12 +22,12 @@ class ProgressReader(io.IOBase):
     def __init__(
         self, 
         file_path: Path, 
-        callback: Callable[[int, int], Coroutine[None, None, None]] | None = None
+        progress_cb: Callable[[int, int], Coroutine[None, None, None]] | None = None
     ):
         super().__init__()
         self.file_path = file_path
         self.total_size = file_path.stat().st_size
-        self.callback = callback
+        self._progress_cb = progress_cb
         self.read_bytes = 0
         self.file = open(file_path, "rb")
         self.last_update_time = 0.0
@@ -37,7 +37,7 @@ class ProgressReader(io.IOBase):
         chunk = self.file.read(size)
         if chunk:
             self.read_bytes += len(chunk)
-            if self.callback:
+            if self._progress_cb:
                 now = time.time()
                 if (
                     now - self.last_update_time >= 1.0 
@@ -49,7 +49,7 @@ class ProgressReader(io.IOBase):
                     try:
                         loop = asyncio.get_running_loop()
                         if loop.is_running():
-                            res = self.callback(self.read_bytes, self.total_size)
+                            res = self._progress_cb(self.read_bytes, self.total_size)
                             if asyncio.iscoroutine(res):
                                 loop.create_task(res)
                     except RuntimeError:
