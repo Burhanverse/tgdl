@@ -12,7 +12,7 @@ from ..status import format_size, make_progress_bar
 
 log = logging.getLogger(__name__)
 
-TEN_GB_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB ceiling for Pixeldrain
+TEN_GB_BYTES = 10 * 1024 * 1024 * 1024
 
 
 def compile_mirror_status_text(

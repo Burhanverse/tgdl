@@ -652,15 +652,23 @@ class QueueManager:
             "magnet:?xt=" in cleaned_url
         )
 
+        is_mirror_job = (
+            cleaned_url.startswith("mirror:") or
+            cleaned_url.startswith("mirror_tg:")
+        )
+
         has_archive_fmt = False
         if job.args:
             try:
                 args_dict = json.loads(job.args)
-                if isinstance(args_dict, dict) and args_dict.get("archive_format"):
-                    has_archive_fmt = True
+                if isinstance(args_dict, dict):
+                    if args_dict.get("archive_format"):
+                        has_archive_fmt = True
+                    if args_dict.get("is_mirror"):
+                        is_mirror_job = True
             except Exception:
                 pass
-        
+
         async def report(text: str) -> None:
             await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
@@ -725,7 +733,7 @@ class QueueManager:
                 await self.store.update_progress(job.id, total_files=db_total)
                 job = await self.store.get_job(job.id)
 
-            if job.url.startswith("mirror:") or job.url.startswith("mirror_tg:"):
+            if is_mirror_job and not getattr(job_state, "web_mirror_done", False):
                 from .mirror import mirror_file_to_web_hosts
                 log.info("Processing mirror upload for job #%s", job.id)
                 m_status = await safe_send(
@@ -767,13 +775,16 @@ class QueueManager:
                     if "pixeldrain" in host_links:
                         links_display.append(f"🟣 **[Pixeldrain]({host_links['pixeldrain']})**")
 
-                    summary_msg = (
-                        f"**Mirror Complete**\n"
-                        f"**File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
-                        + "\n".join(links_display)
-                    )
-                    await safe_send(self.client, chat_id, summary_msg)
-                    await self.store.mark_uploaded(job.id, f_rel)
+                    if links_display:
+                        summary_msg = (
+                            f"**Mirror Complete**\n"
+                            f"**File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
+                            + "\n".join(links_display)
+                        )
+                        await safe_send(self.client, chat_id, summary_msg)
+
+                    if f_rel in job_state.uploading_files:
+                        job_state.uploading_files.remove(f_rel)
 
                 if m_status:
                     try:
@@ -781,9 +792,7 @@ class QueueManager:
                     except Exception:
                         pass
 
-                await self.store.update_progress(job.id, status=JobStatus.DONE)
-                self.jobs.pop(job.id, None)
-                return
+                job_state.web_mirror_done = True
 
             pending = []
             for f in files:
