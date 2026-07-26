@@ -17,6 +17,7 @@ from ..db import Job, JobStatus, JobStore
 
 from .state import JobState
 from .status import (
+    format_size,
     safe_edit,
     safe_pin,
     safe_delete,

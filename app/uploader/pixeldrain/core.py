@@ -49,7 +49,9 @@ class ProgressReader(io.IOBase):
                     try:
                         loop = asyncio.get_running_loop()
                         if loop.is_running():
-                            loop.create_task(self.callback(self.read_bytes, self.total_size))
+                            res = self.callback(self.read_bytes, self.total_size)
+                            if asyncio.iscoroutine(res):
+                                loop.create_task(res)
                     except RuntimeError:
                         pass
         return chunk
