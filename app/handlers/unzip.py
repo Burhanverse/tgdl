@@ -8,7 +8,7 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 
 from ..config import settings
 from ..middleware import is_job_owner
-from ..manager.core import queue_manager, store, _password_prompt_events, _password_prompt_messages
+from ..manager import queue_manager, store, _password_prompt_events, _password_prompt_messages
 from ..manager.status.compiler import (
     compile_split_prompt_text,
     compile_queued_status_text,

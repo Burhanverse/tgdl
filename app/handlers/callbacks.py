@@ -5,7 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 
 from ..middleware import is_job_owner
-from ..manager.core import queue_manager, store
+from ..manager import queue_manager, store
 from ..manager.status.compiler import (
     compile_queued_status_text,
     compile_archive_choice_status_text,

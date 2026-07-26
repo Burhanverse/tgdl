@@ -5,7 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from ..middleware import is_job_owner
-from ..manager.core import queue_manager, store
+from ..manager import queue_manager, store
 from ..db import JobStatus
 
 log = logging.getLogger(__name__)

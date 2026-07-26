@@ -15,7 +15,6 @@ from .telegram_helper import delete_status
 
 log = logging.getLogger("tgdl_bot")
 
-
 def setup_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -35,7 +34,6 @@ def setup_logging() -> None:
 
     logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
-
 async def log_upload(job_id: int, filename: str) -> None:
     log_path = settings.log_dir / "uploads.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,8 +44,6 @@ async def log_upload(job_id: int, filename: str) -> None:
 
     await asyncio.to_thread(append_to_file)
 
-
-store = JobStore(settings.db_path)
 app = Client(
     "tgdl_bot",
     api_id=settings.tg_api_id,
@@ -56,27 +52,26 @@ app = Client(
     workdir=str(settings.data_dir),
 )
 
-# Register all modular command & callback handlers
 register_all_handlers(app)
-
 
 async def main() -> None:
     setup_logging()
     log.info("Starting TGDL Bot...")
     await app.start()
 
-    from .manager import queue_manager, cleanup_orphaned_directories
+    from .manager import queue_manager, store, cleanup_orphaned_directories
+    await store.open()
     await cleanup_orphaned_directories()
-    await queue_manager.start()
+    await queue_manager.start(app, store)
 
     log.info("Bot is active and listening for messages.")
     await idle()
 
     log.info("Shutting down bot...")
     await queue_manager.stop()
+    await store.close()
     await delete_status()
     await app.stop()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

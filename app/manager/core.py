@@ -14,9 +14,7 @@ from pyrogram.types import LinkPreviewOptions, Message, ForceReply, InlineKeyboa
 
 from ..config import settings
 from ..db import Job, JobStatus, JobStore
-# conversion and archive imports moved inside methods to break circular dependencies
 
-# Local imports from manager package
 from .state import JobState
 from .status import (
     safe_edit,
@@ -40,6 +38,8 @@ log = logging.getLogger(__name__)
 
 _password_prompt_events: dict[str, dict[str, tuple[asyncio.Event, dict]]] = {}
 _password_prompt_messages: dict[int, tuple[str, str, int]] = {}
+
+store = JobStore(settings.db_path)
 
 
 class QueueManager:
