@@ -38,9 +38,12 @@ from .archive import (
     get_split_archive_info
 )
 
+from .mirror import mirror_file_to_web_hosts
+
 __all__ = [
     "QueueManager",
     "queue_manager",
+    "mirror_file_to_web_hosts",
     "JobState",
     "_password_prompt_events",
     "_password_prompt_messages",

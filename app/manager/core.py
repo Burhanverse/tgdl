@@ -508,6 +508,57 @@ class QueueManager:
                     cleaned_url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
                 )
 
+            elif cleaned_url.startswith("mirror_tg:"):
+                parts = cleaned_url.split(":")
+                tgt_chat_id = int(parts[1])
+                tgt_msg_id = int(parts[2])
+                tgt_msg = await self.client.get_messages(tgt_chat_id, tgt_msg_id)
+                if not tgt_msg or tgt_msg.empty:
+                    raise Exception(f"Failed to fetch Telegram message {tgt_msg_id} for mirror")
+
+                async def on_tg_progress(current: int, total: int, filename: str) -> None:
+                    job_state.total_downloaded_bytes = current
+                    job_state.current_download_file = filename
+                    job_state.trigger_event.set()
+
+                from ..downloader import TelegramDownloader, DownloadResult
+                downloader = TelegramDownloader(
+                    client=self.client,
+                    message=tgt_msg,
+                    dest_dir=dest_dir,
+                    progress_callback=on_tg_progress
+                )
+                dl_path = await downloader.download()
+                result = DownloadResult(ok=True, files=[dl_path])
+
+            elif cleaned_url.startswith("mirror:"):
+                target_u = cleaned_url[len("mirror:"):]
+                from ..downloader import download_direct, run_with_progress, is_direct_url, DownloadResult
+                if is_direct_url(target_u):
+                    async def on_direct_progress(current: int, total: int, filename: str) -> None:
+                        job_state.total_downloaded_bytes = current
+                        job_state.current_download_file = filename
+                        job_state.trigger_event.set()
+                    downloaded_paths = await download_direct(target_u, dest_dir, progress_cb=on_direct_progress)
+                    result = DownloadResult(ok=True, files=downloaded_paths)
+                else:
+                    def on_dl_progress(count: int, filename: Optional[str] = None) -> None:
+                        job_state.download_count = count
+                        if filename:
+                            job_state.current_download_file = filename
+                        job_state.trigger_event.set()
+                    result = await run_with_progress(target_u, dest_dir, on_progress=on_dl_progress, register_proc=reg)
+                    if not result.ok:
+                        async def on_fallback_progress(current: int, total: int, filename: str) -> None:
+                            job_state.total_downloaded_bytes = current
+                            job_state.current_download_file = filename
+                            job_state.trigger_event.set()
+                        try:
+                            downloaded_paths = await download_direct(target_u, dest_dir, progress_cb=on_fallback_progress)
+                            result = DownloadResult(ok=True, files=downloaded_paths)
+                        except Exception as fe:
+                            log.warning("Mirror fallback direct download failed for %s: %s", target_u, fe)
+
             elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url):
                 direct_url = cleaned_url[len("direct:"):] if cleaned_url.startswith("direct:") else cleaned_url
                 async def on_direct_progress(current: int, total: int, filename: str) -> None:
@@ -681,6 +732,55 @@ class QueueManager:
             if job.total_files != db_total:
                 await self.store.update_progress(job.id, total_files=db_total)
                 job = await self.store.get_job(job.id)
+
+            if job.url.startswith("mirror:") or job.url.startswith("mirror_tg:"):
+                from .mirror import mirror_file_to_web_hosts
+                log.info("Processing web mirror package upload for job #%s", job.id)
+                m_status = await safe_send(
+                    self.client,
+                    chat_id,
+                    "Mirroring downloaded file(s) in parallel to GoFile, FileDitch & Pixeldrain..."
+                )
+
+                all_downloaded = [f for f in files if f.is_file() and not should_ignore_file(f)]
+                for f in all_downloaded:
+                    try:
+                        f_rel = str(f.relative_to(extract_dir))
+                    except ValueError:
+                        f_rel = str(f.relative_to(dest_dir))
+
+                    job_state.uploading_files.add(f_rel)
+                    job_state.current_upload_file = f.name
+                    job_state.trigger_event.set()
+
+                    host_links = await mirror_file_to_web_hosts(f)
+
+                    links_display = []
+                    if "gofile" in host_links:
+                        links_display.append(f"- **GoFile**: {host_links['gofile']}")
+                    if "fileditch" in host_links:
+                        links_display.append(f"- **FileDitch**: {host_links['fileditch']}")
+                    if "pixeldrain" in host_links:
+                        links_display.append(f"- **Pixeldrain**: {host_links['pixeldrain']}")
+
+                    summary_msg = (
+                        f"**Web Mirror Package Complete**\n"
+                        f"------------------------------------\n"
+                        f"- **File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
+                        + "\n".join(links_display)
+                    )
+                    await safe_send(self.client, chat_id, summary_msg)
+                    await self.store.mark_uploaded(job.id, f_rel)
+
+                if m_status:
+                    try:
+                        await self.client.delete_messages(chat_id, m_status.id)
+                    except Exception:
+                        pass
+
+                await self.store.update_progress(job.id, status=JobStatus.COMPLETED)
+                self.jobs.pop(job.id, None)
+                return
 
             pending = []
             for f in files:

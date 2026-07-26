@@ -36,6 +36,43 @@ async def _create_and_enqueue_job(chat_id: int, target_url: str, message: Messag
 
 def register_download_handlers(app: Client) -> None:
 
+    @app.on_message(filters.command(["m", "mirror"]))
+    async def mirror_cmd(_, message: Message) -> None:
+        target_url = None
+        display_text = "Web Mirror"
+
+        # 1. Check if user replied to a Telegram message containing media
+        if message.reply_to_message:
+            reply_msg = message.reply_to_message
+            media = (
+                reply_msg.document
+                or reply_msg.video
+                or reply_msg.audio
+                or reply_msg.photo
+                or reply_msg.voice
+                or reply_msg.video_note
+                or reply_msg.sticker
+                or reply_msg.animation
+            )
+            if media:
+                target_url = f"mirror_tg:{reply_msg.chat.id}:{reply_msg.id}"
+                file_name = getattr(media, "file_name", None) or f"tg_media_{reply_msg.id}"
+                display_text = f"Web Mirror: Telegram file `{file_name}`"
+
+        # 2. Check if URL text argument is provided
+        if not target_url:
+            parts = message.text.split(maxsplit=1)
+            if len(parts) >= 2:
+                raw_link = parts[1].strip()
+                target_url = f"mirror:{raw_link}"
+                display_text = f"Web Mirror: {raw_link}"
+
+        if not target_url:
+            await message.reply_text("Provide a URL or reply to a Telegram media message with `/m` or `/mirror`.")
+            return
+
+        await _create_and_enqueue_job(message.chat.id, target_url, message, display_text)
+
     @app.on_message(filters.command(["direct", "dl"]))
     async def direct_cmd(_, message: Message) -> None:
         parts = message.text.split(maxsplit=1)
@@ -187,7 +224,7 @@ def register_download_handlers(app: Client) -> None:
         link = f"gd2tg:{raw_link}"
         await _create_and_enqueue_job(message.chat.id, link, message, raw_link)
 
-    @app.on_message(filters.text & ~filters.command(["start", "help", "status", "cancel", "gdl", "tor", "unzip", "gd2tg", "pdup", "direct", "dl"]))
+    @app.on_message(filters.text & ~filters.command(["start", "help", "status", "cancel", "gdl", "tor", "unzip", "gd2tg", "pdup", "direct", "dl", "m", "mirror"]))
     async def url_message_listener(_, message: Message) -> None:
         text = message.text.strip()
         if not (text.startswith(("http://", "https://", "magnet:", "direct:")) or "drive.google.com" in text or "docs.google.com" in text):
