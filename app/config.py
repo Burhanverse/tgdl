@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     tg_bot_token: str = Field(..., min_length=1)
     pixeldrain_api_key: str | None = Field(default=None, description="API key for Pixeldrain uploads")
     pixeldrain_domain: str = Field(default="pixeldrain.com", description="Domain to use for Pixeldrain uploads and links (pixeldrain.com or pixeldra.in)")
+    gofile_api_key: str | None = Field(default=None, description="API token for GoFile uploads")
 
 
     # --- Storage locations ---
