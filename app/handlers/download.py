@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
@@ -12,6 +13,7 @@ from ..config import settings
 from ..middleware import is_job_owner
 from ..manager import queue_manager, store
 from ..manager.status.compiler import compile_queued_status_text
+from ..manager.status.messaging import safe_send
 from ..uploader import upload_to_pixeldrain, upload_to_gofile, upload_to_fileditch
 
 log = logging.getLogger(__name__)
@@ -21,28 +23,34 @@ async def _create_and_enqueue_job(chat_id: int, target_url: str, message: Messag
     job = await store.create_job(chat_id, target_url, split_large_files=1, args=None)
     await store.update_progress(job.id, status="queued")
     await queue_manager.add_job(job.id)
+    await asyncio.sleep(0.4)
 
-    queued_text = compile_queued_status_text(job.id, display_text, "")
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
-    ])
-    status_msg = await message.reply_text(
-        queued_text,
-        reply_markup=keyboard,
-        link_preview_options=LinkPreviewOptions(is_disabled=True)
-    )
-    await store.set_status_message(job.id, status_msg.id)
+    db_j = await store.get_job(job.id)
+    if db_j and db_j.status == "queued" and job.id not in queue_manager.jobs:
+        queued_text = compile_queued_status_text(job.id, display_text, "")
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+        ])
+        status_msg = await safe_send(
+            message.client,
+            chat_id,
+            queued_text,
+            reply_markup=keyboard,
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+        if status_msg:
+            await store.set_status_message(job.id, status_msg.id)
 
-    async def auto_delete_queued():
-        await asyncio.sleep(10)
-        try:
-            db_j = await store.get_job(job.id)
-            if db_j and db_j.status == "queued":
-                await message.client.delete_messages(chat_id, status_msg.id)
-        except Exception:
-            pass
+            async def auto_delete_queued():
+                await asyncio.sleep(10)
+                try:
+                    cur_j = await store.get_job(job.id)
+                    if cur_j and cur_j.status == "queued":
+                        await message.client.delete_messages(chat_id, status_msg.id)
+                except Exception:
+                    pass
 
-    asyncio.create_task(auto_delete_queued())
+            asyncio.create_task(auto_delete_queued())
 
 
 def register_download_handlers(app: Client) -> None:
@@ -52,7 +60,6 @@ def register_download_handlers(app: Client) -> None:
         target_url = None
         display_text = "Mirror"
 
-        # 1. Check if user replied to a Telegram message containing media
         if message.reply_to_message:
             reply_msg = message.reply_to_message
             media = (
@@ -70,7 +77,6 @@ def register_download_handlers(app: Client) -> None:
                 file_name = getattr(media, "file_name", None) or f"tg_media_{reply_msg.id}"
                 display_text = f"Mirror: Telegram file `{file_name}`"
 
-        # 2. Check if URL text argument is provided
         if not target_url:
             parts = message.text.split(maxsplit=1)
             if len(parts) >= 2:
@@ -88,11 +94,9 @@ def register_download_handlers(app: Client) -> None:
     async def direct_cmd(_, message: Message) -> None:
         urls = []
 
-        # Option 1: User replied to a message
         if message.reply_to_message:
             reply_msg = message.reply_to_message
 
-            # 1a. Reply to a document file (.txt or text MIME)
             if reply_msg.document and (
                 reply_msg.document.file_name.endswith(".txt") or
                 (reply_msg.document.mime_type and reply_msg.document.mime_type.startswith("text/"))
@@ -110,7 +114,6 @@ def register_download_handlers(app: Client) -> None:
                     finally:
                         Path(temp_path).unlink(missing_ok=True)
 
-            # 1b. Reply to a text message (or caption) containing URLs
             reply_text = reply_msg.text or reply_msg.caption
             if reply_text and not urls:
                 for token in reply_text.split():
@@ -118,7 +121,6 @@ def register_download_handlers(app: Client) -> None:
                     if token.startswith(("http://", "https://")):
                         urls.append(token)
 
-        # Option 2: Direct command argument `/direct <url>` or `/dl <url1> <url2>`
         if not urls:
             parts = message.text.split(maxsplit=1)
             if len(parts) >= 2:
@@ -140,15 +142,13 @@ def register_download_handlers(app: Client) -> None:
         display_text = f"direct: `{urls[0]}`" if len(urls) == 1 else f"direct: `{urls[0]}` (+ {len(urls) - 1} more)"
         await _create_and_enqueue_job(message.chat.id, urls_json, message, display_text)
 
-    @app.on_message(filters.command("gdl"))
+    @app.on_message(filters.command(["gallerydl", "gdl"]))
     async def gdl_cmd(_, message: Message) -> None:
         urls = []
 
-        # Option 1: User replied to a message
         if message.reply_to_message:
             reply_msg = message.reply_to_message
 
-            # 1a. Reply to a document file (.txt or text MIME)
             if reply_msg.document and (
                 reply_msg.document.file_name.endswith(".txt") or
                 (reply_msg.document.mime_type and reply_msg.document.mime_type.startswith("text/"))
@@ -166,7 +166,6 @@ def register_download_handlers(app: Client) -> None:
                     finally:
                         Path(temp_path).unlink(missing_ok=True)
 
-            # 1b. Reply to a text message (or caption) containing URLs
             reply_text = reply_msg.text or reply_msg.caption
             if reply_text and not urls:
                 for token in reply_text.split():
@@ -174,7 +173,6 @@ def register_download_handlers(app: Client) -> None:
                     if token.startswith(("http://", "https://")):
                         urls.append(token)
 
-        # Option 2: Direct argument `/gdl <url>` or `/gdl <url1> <url2>`
         if not urls:
             parts = message.text.split(maxsplit=1)
             if len(parts) >= 2:
