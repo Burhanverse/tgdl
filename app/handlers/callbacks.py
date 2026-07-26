@@ -68,7 +68,7 @@ def register_choice_callback_handlers(app: Client) -> None:
         except Exception:
             pass
 
-        await queue_manager.enqueue_job(job.id)
+        await queue_manager.add_job(job.id)
 
     @app.on_callback_query(filters.regex(r"^archive_(only|ext):(\w+):(.+)$"))
     async def archive_choice_cb(_, query: CallbackQuery) -> None:
