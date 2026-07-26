@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import aiohttp
 
-from ...config import settings
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
 
@@ -97,24 +97,29 @@ async def upload_to_fileditch(
         logs.append(f"File not found: {file_path}")
         return {"error": "File not found"}, logs
 
+    file_size = file_path.stat().st_size
+    if file_size == 0:
+        logs.append(f"Cannot upload 0-byte file: {file_path}")
+        return {"error": "File is empty (0 bytes)"}, logs
+
     upload_endpoint = FILEDITCH_TEMP_URL if is_temp else FILEDITCH_PERMANENT_URL
-    logs.append(f"Uploading file to FileDitch ({'temp' if is_temp else 'permanent'}): {file_path.name}")
+    upload_url = f"{upload_endpoint}?filename={quote(file_path.name)}"
+    logs.append(f"Uploading file to FileDitch ({'temp' if is_temp else 'permanent'}): {file_path.name} ({file_size} bytes)")
+
+    headers = {
+        "Content-Type": "application/octet-stream",
+        "X-Filename": file_path.name,
+        "Content-Length": str(file_size),
+    }
 
     try:
         async with aiohttp.ClientSession() as session:
             reader = FileDitchProgressReader(file_path, progress_callback)
             try:
-                data = aiohttp.FormData()
-                data.add_field(
-                    "file",
-                    reader,
-                    filename=file_path.name,
-                    content_type="application/octet-stream"
-                )
-
                 async with session.post(
-                    upload_endpoint,
-                    data=data,
+                    upload_url,
+                    data=reader,
+                    headers=headers,
                     timeout=aiohttp.ClientTimeout(total=None)
                 ) as response:
                     if response.status >= 400:
