@@ -794,6 +794,8 @@ class QueueManager:
                     pending.append(f)
 
             for f in pending:
+                if not f.exists():
+                    continue
                 if not job_state.downloader_done.is_set():
                     try:
                         sz1 = f.stat().st_size
@@ -1401,7 +1403,7 @@ class QueueManager:
                 # Handle large files (>1.95GB) auto mirroring & splitting before upload
                 from ..uploader import handle_large_file, upload_file, upload_to_gofile, upload_to_pixeldrain, upload_to_fileditch, UploadTooLarge
                 
-                if f.stat().st_size >= 1.95 * 1024 * 1024 * 1024:
+                if f.exists() and f.stat().st_size >= 1.95 * 1024 * 1024 * 1024:
                     log.info("File %s exceeds 2GB. Mirroring original file to web hosts...", f.name)
                     m_status = await safe_send(
                         self.client,
@@ -1500,11 +1502,12 @@ class QueueManager:
                     log.info("Successfully uploaded %s for job %s", f.name, job.id)
 
                     try:
-                        f_size = f.stat().st_size
-                        f.unlink(missing_ok=True)
-                        job_state.deleted_bytes += f_size
-                    except Exception:
-                        log.exception("Failed to delete file after upload: %s", f)
+                        if f.exists():
+                            f_size = f.stat().st_size
+                            f.unlink(missing_ok=True)
+                            job_state.deleted_bytes += f_size
+                    except Exception as de:
+                        log.debug("Notice on post-upload file cleanup for %s: %s", f, de)
 
                 except UploadTooLarge as e:
                     job_state.skipped.append((f.name, str(e)))
