@@ -11,7 +11,10 @@ from .telegram import (
     handle_conversion_choice,
 )
 
-CONVERSION_EXT = {".ts", ".flv", ".avi", ".wmv", ".asf", ".mkv"}
+CONVERSION_EXT = {
+    ".ts", ".flv", ".avi", ".wmv", ".asf", ".mkv", ".m4v",
+    ".webm", ".mov", ".3gp", ".mpeg", ".mpg", ".f4v", ".vob"
+}
 AUDIO_CONVERSION_EXT = {".wav", ".flac", ".ogg", ".opus", ".aiff", ".aac"}
 
 async def convert_media_async(input_path, output_path) -> bool:

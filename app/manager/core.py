@@ -1132,144 +1132,56 @@ class QueueManager:
                     continue
 
                 is_incompatible = f.suffix.lower() in CONVERSION_EXT
-                if is_incompatible and not is_torrent:
-                    if job.id not in _conversion_ids:
-                         _conversion_ids[job.id] = {}
-                    conv_id = None
-                    for cid, fname in _conversion_ids[job.id].items():
-                         if fname == f.name:
-                             conv_id = cid
-                             break
-                    if conv_id is None:
-                         conv_id = str(len(_conversion_ids[job.id]) + 1)
-                         _conversion_ids[job.id][conv_id] = f.name
+                if is_incompatible:
+                    if job.id not in _converted_files:
+                        _converted_files[job.id] = set()
 
-                    choice = _conversion_choices.get(job.id, {}).get(conv_id)
-                    if choice != "orig" and f.name not in _converted_files.get(job.id, set()):
-                         conversion_prompt_msg_id = None
-                         if choice is None:
-                              keyboard = InlineKeyboardMarkup([
-                                  [
-                                      InlineKeyboardButton("Convert to MP4", callback_data=f"convert_mp4:{job.id}:{conv_id}"),
-                                      InlineKeyboardButton("Original File", callback_data=f"convert_orig:{job.id}:{conv_id}")
-                                  ],
-                                  [
-                                      InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
-                                  ]
-                              ])
-                              prompt_text = compile_conversion_prompt_text(job.id, f.name)
-                              prompt_msg = await safe_send(self.client, chat_id, prompt_text, reply_markup=keyboard)
-                              if prompt_msg:
-                                   conversion_prompt_msg_id = prompt_msg.id
+                    if f.name not in _converted_files[job.id]:
+                        _converted_files[job.id].add(f.name)
 
-                                   if job.id not in _conversion_events:
-                                        _conversion_events[job.id] = {}
-                                   _conversion_events[job.id][conv_id] = asyncio.Event()
+                        log.info("Automatically converting video %s to MP4 for job %s", f.name, job.id)
+                        output_name = f.stem + "_converted.mp4"
+                        output_path = f.parent / output_name
 
-                                   start_t = time.time()
-                                   while not job_state.uploader_done.is_set() and not _conversion_events[job.id][conv_id].is_set():
-                                        if time.time() - start_t >= 15.0:
-                                            break
-                                        try:
-                                            await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
-                                        except asyncio.TimeoutError:
-                                            pass
-                                   if job_state.uploader_done.is_set():
-                                        return
+                        conv_msg = await safe_send(
+                            self.client,
+                            chat_id,
+                            compile_conversion_running_status_text(job.id, f.name),
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+                            ])
+                        )
 
-                                   if not _conversion_events[job.id][conv_id].is_set():
-                                        if conversion_prompt_msg_id:
-                                            try:
-                                                await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
-                                            except Exception:
-                                                pass
-                                            conversion_prompt_msg_id = None
-                                        if not isinstance(_conversion_choices.get(job.id), dict):
-                                            _conversion_choices[job.id] = {}
-                                        _conversion_choices[job.id][conv_id] = "orig"
-                              else:
-                                   if not isinstance(_conversion_choices.get(job.id), dict):
-                                        _conversion_choices[job.id] = {}
-                                   _conversion_choices[job.id][conv_id] = "orig"
-                              choice = _conversion_choices.get(job.id, {}).get(conv_id)
+                        job_state.is_converting = True
+                        job_state.conversion_file = f.name
+                        job_state.trigger_event.set()
 
-                         if choice == "mp4":
-                             if job.id not in _converted_files:
-                                 _converted_files[job.id] = set()
-                             _converted_files[job.id].add(f.name)
+                        try:
+                            success = await convert_media_async(f, output_path)
+                        finally:
+                            job_state.is_converting = False
+                            job_state.conversion_file = None
+                            job_state.trigger_event.set()
 
-                             log.info("Converting video %s to MP4 for job %s", f.name, job.id)
-                             output_name = f.stem + "_converted.mp4"
-                             output_path = f.parent / output_name
+                        if conv_msg:
+                            try:
+                                await self.client.delete_messages(chat_id, conv_msg.id)
+                            except Exception:
+                                pass
 
-                             conv_msg = await safe_send(
-                                 self.client,
-                                 chat_id,
-                                 compile_conversion_running_status_text(job.id, f.name),
-                                 reply_markup=InlineKeyboardMarkup([
-                                     [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
-                                 ])
-                             )
-
-                             job_state.is_converting = True
-                             job_state.conversion_file = f.name
-                             job_state.trigger_event.set()
-
-                             try:
-                                 success = await convert_media_async(f, output_path)
-                             finally:
-                                 job_state.is_converting = False
-                                 job_state.conversion_file = None
-                                 job_state.trigger_event.set()
-
-                             if conv_msg:
-                                 try:
-                                     await self.client.delete_messages(chat_id, conv_msg.id)
-                                 except Exception:
-                                     pass
-
-                             if success:
-                                 log.info("Successfully converted video %s to %s", f.name, output_name)
-                                 try:
-                                     f.unlink(missing_ok=True)
-                                 except Exception:
-                                     pass
-
-                                 if conversion_prompt_msg_id:
-                                     try:
-                                         await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
-                                     except Exception:
-                                         pass
-                                 break
-                             else:
-                                 log.error("Failed to convert video %s", f.name)
-                                 fail_msg = await safe_send(
-                                     self.client,
-                                     chat_id,
-                                     compile_conversion_failed_status_text(job.id, f.name)
-                                 )
-                                 async def delete_fail_msg(m):
-                                     await asyncio.sleep(5)
-                                     try:
-                                         await self.client.delete_messages(chat_id, m.id)
-                                     except Exception:
-                                         pass
-                                 if fail_msg:
-                                     asyncio.create_task(delete_fail_msg(fail_msg))
-
-                                 if not isinstance(_conversion_choices.get(job.id), dict):
-                                     _conversion_choices[job.id] = {}
-                                 _conversion_choices[job.id][conv_id] = "orig"
-
-                         if choice == "orig" and conversion_prompt_msg_id:
-                             try:
-                                 await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
-                             except Exception:
-                                 pass
+                        if success:
+                            log.info("Successfully converted video %s to %s", f.name, output_name)
+                            try:
+                                f.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            continue
+                        else:
+                            log.error("Failed to convert video %s; keeping original file", f.name)
 
                 # Audio format conversion & processing using Pedalboard
                 is_audio_incompatible = f.suffix.lower() in AUDIO_CONVERSION_EXT
-                if is_audio_incompatible and not is_torrent:
+                if is_audio_incompatible:
                     if job.id not in _conversion_ids:
                         _conversion_ids[job.id] = {}
                     conv_id = None

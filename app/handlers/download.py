@@ -12,7 +12,7 @@ from ..config import settings
 from ..middleware import is_job_owner
 from ..manager import queue_manager, store
 from ..manager.status.compiler import compile_queued_status_text
-from ..uploader import upload_to_pixeldrain
+from ..uploader import upload_to_pixeldrain, upload_to_gofile, upload_to_fileditch
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +213,92 @@ def register_download_handlers(app: Client) -> None:
             if local_path.exists():
                 local_path.unlink(missing_ok=True)
 
+    @app.on_message(filters.command(["gfup", "gofile"]))
+    async def gfup_cmd(_, message: Message) -> None:
+        if not message.reply_to_message:
+            await message.reply_text("Please reply to a media message with `/gfup` or `/gofile` to upload it to GoFile.")
+            return
+
+        reply_msg = message.reply_to_message
+        if not (reply_msg.document or reply_msg.video or reply_msg.photo or reply_msg.audio or reply_msg.voice):
+            await message.reply_text("Replied message does not contain a supported media file.")
+            return
+
+        status_msg = await message.reply_text("Downloading media file for GoFile upload...")
+        temp_dir = settings.data_dir / "temp_gfup"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path_str = await reply_msg.download(file_name=str(temp_dir) + "/")
+        if not file_path_str or not Path(file_path_str).exists():
+            await status_msg.edit_text("Failed to download media file from Telegram.")
+            return
+
+        local_path = Path(file_path_str)
+        try:
+            await status_msg.edit_text(f"Uploading `{local_path.name}` to GoFile...")
+            res, _ = await upload_to_gofile(local_path)
+
+            if isinstance(res, dict) and res.get("status") == "ok":
+                gf_url = res.get("data", {}).get("downloadPage")
+                await status_msg.edit_text(
+                    f"**GoFile Upload Complete**\n"
+                    f"------------------------------------\n"
+                    f"- **File**: `{local_path.name}`\n"
+                    f"- **URL**: {gf_url}"
+                )
+            else:
+                err = res.get("error") if isinstance(res, dict) else "Unknown error"
+                await status_msg.edit_text(f"Failed to upload to GoFile: {err}")
+        except Exception as e:
+            log.exception("Error uploading file to GoFile")
+            await status_msg.edit_text(f"GoFile upload failed: {e}")
+        finally:
+            if local_path.exists():
+                local_path.unlink(missing_ok=True)
+
+    @app.on_message(filters.command(["fdup", "fileditch"]))
+    async def fdup_cmd(_, message: Message) -> None:
+        if not message.reply_to_message:
+            await message.reply_text("Please reply to a media message with `/fdup` or `/fileditch` to upload it to FileDitch.")
+            return
+
+        reply_msg = message.reply_to_message
+        if not (reply_msg.document or reply_msg.video or reply_msg.photo or reply_msg.audio or reply_msg.voice):
+            await message.reply_text("Replied message does not contain a supported media file.")
+            return
+
+        status_msg = await message.reply_text("Downloading media file for FileDitch upload...")
+        temp_dir = settings.data_dir / "temp_fdup"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path_str = await reply_msg.download(file_name=str(temp_dir) + "/")
+        if not file_path_str or not Path(file_path_str).exists():
+            await status_msg.edit_text("Failed to download media file from Telegram.")
+            return
+
+        local_path = Path(file_path_str)
+        try:
+            await status_msg.edit_text(f"Uploading `{local_path.name}` to FileDitch...")
+            res, _ = await upload_to_fileditch(local_path)
+
+            if isinstance(res, dict) and res.get("success") is True:
+                fd_url = res.get("url")
+                await status_msg.edit_text(
+                    f"**FileDitch Upload Complete**\n"
+                    f"------------------------------------\n"
+                    f"- **File**: `{local_path.name}`\n"
+                    f"- **URL**: {fd_url}"
+                )
+            else:
+                err = res.get("error") if isinstance(res, dict) else "Unknown error"
+                await status_msg.edit_text(f"Failed to upload to FileDitch: {err}")
+        except Exception as e:
+            log.exception("Error uploading file to FileDitch")
+            await status_msg.edit_text(f"FileDitch upload failed: {e}")
+        finally:
+            if local_path.exists():
+                local_path.unlink(missing_ok=True)
+
     @app.on_message(filters.command(["gd2tg"]))
     async def gd2tg_cmd(_, message: Message) -> None:
         parts = message.text.split(maxsplit=1)
@@ -223,11 +309,3 @@ def register_download_handlers(app: Client) -> None:
         raw_link = parts[1].strip()
         link = f"gd2tg:{raw_link}"
         await _create_and_enqueue_job(message.chat.id, link, message, raw_link)
-
-    @app.on_message(filters.text & ~filters.command(["start", "help", "status", "cancel", "gdl", "tor", "unzip", "gd2tg", "pdup", "direct", "dl", "m", "mirror"]))
-    async def url_message_listener(_, message: Message) -> None:
-        text = message.text.strip()
-        if not (text.startswith(("http://", "https://", "magnet:", "direct:")) or "drive.google.com" in text or "docs.google.com" in text):
-            return
-
-        await _create_and_enqueue_job(message.chat.id, text, message, text)
