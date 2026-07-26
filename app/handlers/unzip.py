@@ -132,7 +132,9 @@ def register_unzip_handlers(app: Client) -> None:
 
         password = tokens[0] if tokens else None
         target_url = f"unzip:{doc.file_name}"
-        job = await store.create_job(message.chat.id, target_url, split_large_files=1, args=None)
+        import json
+        args_json = json.dumps({"reply_message_id": message.reply_to_message.id, "password": password})
+        job = await store.create_job(message.chat.id, target_url, split_large_files=1, args=args_json)
         await store.update_progress(job.id, status="waiting")
 
         keyboard = InlineKeyboardMarkup([

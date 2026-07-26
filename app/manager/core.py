@@ -383,10 +383,31 @@ class QueueManager:
                 monitor_task = asyncio.create_task(monitor_download_speed())
 
             if is_unzip:
-                from ..downloader import DownloadResult
-                archive_files = []
-                if dest_dir.exists():
-                    archive_files = [p for p in dest_dir.iterdir() if p.is_file()]
+                from ..downloader import download_telegram_media, DownloadResult
+                reply_msg_id = None
+                if job.args:
+                    try:
+                        args_data = json.loads(job.args)
+                        reply_msg_id = args_data.get("reply_message_id")
+                    except Exception:
+                        pass
+
+                if reply_msg_id:
+                    try:
+                        reply_msg = await self.client.get_messages(chat_id, message_ids=reply_msg_id)
+                        if reply_msg and (reply_msg.document or reply_msg.video or reply_msg.audio or reply_msg.photo):
+                            async def on_tg_download_progress(current: int, total: int, filename: str) -> None:
+                                job_state.total_downloaded_bytes = current
+                                job_state.current_download_file = filename
+                                job_state.trigger_event.set()
+
+                            await download_telegram_media(
+                                self.client, reply_msg, dest_dir, progress_cb=on_tg_download_progress
+                            )
+                    except Exception as e:
+                        log.exception("Failed to download replied Telegram media for unzip job #%s: %s", job.id, e)
+
+                archive_files = [p for p in dest_dir.rglob("*") if p.is_file()]
                 result = DownloadResult(ok=True, files=archive_files)
             elif is_gdrive:
                 from ..gdrive import GoogleDriveDownloader, archive_all_folders_in_dir
