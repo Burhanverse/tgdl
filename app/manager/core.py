@@ -506,8 +506,8 @@ class QueueManager:
                     cleaned_url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
                 )
 
-            elif cleaned_url.startswith("direct:"):
-                direct_url = cleaned_url[len("direct:"):]
+            elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url):
+                direct_url = cleaned_url[len("direct:"):] if cleaned_url.startswith("direct:") else cleaned_url
                 async def on_direct_progress(current: int, total: int, filename: str) -> None:
                     job_state.total_downloaded_bytes = current
                     job_state.current_download_file = filename
@@ -530,10 +530,21 @@ class QueueManager:
                         job_state.current_download_file = filename
                     job_state.trigger_event.set()
 
-                from ..downloader import run_with_progress
+                from ..downloader import run_with_progress, download_direct, DownloadResult
                 result = await run_with_progress(
                     job.url, dest_dir, on_progress=on_download_progress, extra_args=extra_args, register_proc=reg
                 )
+                if not result.ok:
+                    log.info("gallery-dl failed or unsupported site for %s. Falling back to DirectDownloader...", job.url)
+                    async def on_fallback_progress(current: int, total: int, filename: str) -> None:
+                        job_state.total_downloaded_bytes = current
+                        job_state.current_download_file = filename
+                        job_state.trigger_event.set()
+                    try:
+                        downloaded_paths = await download_direct(job.url, dest_dir, progress_cb=on_fallback_progress)
+                        result = DownloadResult(ok=True, files=downloaded_paths)
+                    except Exception as fallback_err:
+                        log.warning("DirectDownloader fallback also failed for %s: %s", job.url, fallback_err)
 
 
             job_state.downloader_result = result

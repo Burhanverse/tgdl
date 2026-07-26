@@ -19,6 +19,37 @@ log = logging.getLogger(__name__)
 
 def register_download_handlers(app: Client) -> None:
 
+    @app.on_message(filters.command(["direct", "dl"]))
+    async def direct_cmd(_, message: Message) -> None:
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.reply_text("Provide a direct file URL: `/direct <url>` or `/dl <url>`.")
+            return
+
+        raw_link = parts[1].strip()
+        link = f"direct:{raw_link}"
+
+        job = await store.create_job(message.chat.id, link, split_large_files=1, args=None)
+        await store.update_progress(job.id, status="waiting")
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
+                InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
+            ],
+            [
+                InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
+            ]
+        ])
+
+        prompt_text = compile_split_prompt_text(job.id, raw_link)
+        status_msg = await message.reply_text(
+            prompt_text,
+            reply_markup=keyboard,
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+        await store.set_status_message(job.id, status_msg.id)
+
     @app.on_message(filters.command("gdl"))
     async def gdl_cmd(_, message: Message) -> None:
         if not message.reply_to_message or not message.reply_to_message.document:
@@ -217,7 +248,7 @@ def register_download_handlers(app: Client) -> None:
         )
         await store.set_status_message(job.id, status_msg.id)
 
-    @app.on_message(filters.text & ~filters.command(["start", "help", "status", "cancel", "gdl", "tor", "unzip", "gd2tg", "pdup"]))
+    @app.on_message(filters.text & ~filters.command(["start", "help", "status", "cancel", "gdl", "tor", "unzip", "gd2tg", "pdup", "direct", "dl"]))
     async def url_message_listener(_, message: Message) -> None:
         text = message.text.strip()
         if not (text.startswith(("http://", "https://", "magnet:", "direct:")) or "drive.google.com" in text or "docs.google.com" in text):

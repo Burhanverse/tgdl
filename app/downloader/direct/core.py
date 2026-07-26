@@ -20,6 +20,35 @@ class DirectDownloadError(Exception):
     pass
 
 
+DIRECT_FILE_EXTENSIONS = {
+    # Video
+    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".3gp", ".m4v", ".ts", ".f4v", ".vob",
+    # Audio
+    ".mp3", ".flac", ".m4a", ".aac", ".opus", ".ogg", ".wav", ".wma", ".alac", ".aiff",
+    # Archives & Compressed
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso", ".tgz", ".tbz2", ".zst", ".cab", ".dmg",
+    # Executables & Packages
+    ".apk", ".exe", ".bin", ".msi", ".deb", ".rpm", ".appimage", ".app", ".ipa",
+    # Documents & Ebooks
+    ".pdf", ".epub", ".mobi", ".djvu", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+}
+
+
+def is_direct_url(url: str) -> bool:
+    """Determines if a URL is a direct file download link based on scheme or extension."""
+    if url.startswith("direct:"):
+        return True
+    try:
+        clean_u = url.split("?", 1)[0].split("#", 1)[0]
+        parsed = urlparse(clean_u)
+        path_ext = Path(parsed.path).suffix.lower()
+        if path_ext in DIRECT_FILE_EXTENSIONS:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def get_filename_from_url(url: str, headers: Optional[Dict[str, str]] = None) -> str:
     """Extract filename from Content-Disposition header or URL path."""
     if headers:
