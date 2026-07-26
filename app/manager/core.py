@@ -1078,11 +1078,11 @@ class QueueManager:
                                             except Exception:
                                                 pass
                                             conversion_prompt_msg_id = None
-                                        if job.id not in _conversion_choices:
+                                        if not isinstance(_conversion_choices.get(job.id), dict):
                                             _conversion_choices[job.id] = {}
                                         _conversion_choices[job.id][conv_id] = "orig"
                               else:
-                                   if job.id not in _conversion_choices:
+                                   if not isinstance(_conversion_choices.get(job.id), dict):
                                         _conversion_choices[job.id] = {}
                                    _conversion_choices[job.id][conv_id] = "orig"
                               choice = _conversion_choices.get(job.id, {}).get(conv_id)
@@ -1151,7 +1151,7 @@ class QueueManager:
                                  if fail_msg:
                                      asyncio.create_task(delete_fail_msg(fail_msg))
 
-                                 if job.id not in _conversion_choices:
+                                 if not isinstance(_conversion_choices.get(job.id), dict):
                                      _conversion_choices[job.id] = {}
                                  _conversion_choices[job.id][conv_id] = "orig"
 

@@ -100,7 +100,7 @@ def register_choice_callback_handlers(app: Client) -> None:
         match = query.matches[0]
         choice = match.group(1)
         job_id = match.group(2)
-        filename = match.group(3)
+        conv_id = match.group(3)
 
         job = await store.get_job(job_id)
         if not job or not is_job_owner(query.message.chat.id, job):
@@ -114,14 +114,17 @@ def register_choice_callback_handlers(app: Client) -> None:
         else:
             choice_str = "Upload Original Document"
 
+        if not isinstance(_conversion_choices.get(job_id), dict):
+            _conversion_choices[job_id] = {}
+        _conversion_choices[job_id][conv_id] = choice
+
+        if job_id in _conversion_events and conv_id in _conversion_events[job_id]:
+            _conversion_events[job_id][conv_id].set()
+
+        filename = _conversion_ids.get(job_id, {}).get(conv_id, conv_id)
         await query.answer(f"Selected: {choice_str}")
 
         try:
-            await query.message.edit_text(compile_conversion_choice_status_text(job.id, filename, choice_str))
+            await query.message.edit_text(compile_conversion_choice_status_text(job_id, filename, choice_str))
         except Exception:
             pass
-
-        event = _conversion_events.get(job.id)
-        if event:
-            _conversion_choices[job.id] = choice
-            event.set()
