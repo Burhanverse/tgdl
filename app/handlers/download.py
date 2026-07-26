@@ -11,10 +11,27 @@ from pyrogram.types import Message, LinkPreviewOptions, InlineKeyboardMarkup, In
 from ..config import settings
 from ..middleware import is_job_owner
 from ..manager import queue_manager, store
-from ..manager.status.compiler import compile_split_prompt_text
+from ..manager.status.compiler import compile_queued_status_text
 from ..uploader import upload_to_pixeldrain
 
 log = logging.getLogger(__name__)
+
+
+async def _create_and_enqueue_job(chat_id: int, target_url: str, message: Message, display_text: str) -> None:
+    job = await store.create_job(chat_id, target_url, split_large_files=1, args=None)
+    await store.update_progress(job.id, status="queued")
+    await queue_manager.add_job(job.id)
+
+    queued_text = compile_queued_status_text(job.id, display_text)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+    ])
+    status_msg = await message.reply_text(
+        queued_text,
+        reply_markup=keyboard,
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
+    )
+    await store.set_status_message(job.id, status_msg.id)
 
 
 def register_download_handlers(app: Client) -> None:
@@ -28,27 +45,7 @@ def register_download_handlers(app: Client) -> None:
 
         raw_link = parts[1].strip()
         link = f"direct:{raw_link}"
-
-        job = await store.create_job(message.chat.id, link, split_large_files=1, args=None)
-        await store.update_progress(job.id, status="waiting")
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
-                InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
-            ],
-            [
-                InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
-            ]
-        ])
-
-        prompt_text = compile_split_prompt_text(job.id, raw_link)
-        status_msg = await message.reply_text(
-            prompt_text,
-            reply_markup=keyboard,
-            link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        await store.set_status_message(job.id, status_msg.id)
+        await _create_and_enqueue_job(message.chat.id, link, message, raw_link)
 
     @app.on_message(filters.command("gdl"))
     async def gdl_cmd(_, message: Message) -> None:
@@ -85,26 +82,7 @@ def register_download_handlers(app: Client) -> None:
             return
 
         urls_json = json.dumps(urls)
-        job = await store.create_job(message.chat.id, urls_json, split_large_files=1, args=None)
-        await store.update_progress(job.id, status="waiting")
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
-                InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
-            ],
-            [
-                InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
-            ]
-        ])
-
-        prompt_text = compile_split_prompt_text(job.id, urls_json)
-        status_msg = await message.reply_text(
-            prompt_text,
-            reply_markup=keyboard,
-            link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        await store.set_status_message(job.id, status_msg.id)
+        await _create_and_enqueue_job(message.chat.id, urls_json, message, urls_json)
 
     @app.on_message(filters.command("tor"))
     async def tor_cmd(_, message: Message) -> None:
@@ -142,32 +120,13 @@ def register_download_handlers(app: Client) -> None:
                 await message.reply_text("Please provide a valid magnet link or torrent URL.")
                 return
 
-        job = await store.create_job(message.chat.id, target_url, split_large_files=1, args=None)
-        await store.update_progress(job.id, status="waiting")
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
-                InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
-            ],
-            [
-                InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
-            ]
-        ])
-
         url_display = target_url
         if target_url.startswith("magnet:"):
             url_display = target_url[:60] + "..." if len(target_url) > 60 else target_url
         elif target_url.startswith("torrent:"):
             url_display = "local torrent file"
 
-        prompt_text = compile_split_prompt_text(job.id, url_display, is_torrent=True)
-        status_msg = await message.reply_text(
-            prompt_text,
-            reply_markup=keyboard,
-            link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        await store.set_status_message(job.id, status_msg.id)
+        await _create_and_enqueue_job(message.chat.id, target_url, message, url_display)
 
     @app.on_message(filters.command("pdup"))
     async def pdup_cmd(_, message: Message) -> None:
@@ -226,27 +185,7 @@ def register_download_handlers(app: Client) -> None:
 
         raw_link = parts[1].strip()
         link = f"gd2tg:{raw_link}"
-
-        job = await store.create_job(message.chat.id, link, split_large_files=1, args=None)
-        await store.update_progress(job.id, status="waiting")
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
-                InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
-            ],
-            [
-                InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
-            ]
-        ])
-
-        prompt_text = compile_split_prompt_text(job.id, raw_link)
-        status_msg = await message.reply_text(
-            prompt_text,
-            reply_markup=keyboard,
-            link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        await store.set_status_message(job.id, status_msg.id)
+        await _create_and_enqueue_job(message.chat.id, link, message, raw_link)
 
     @app.on_message(filters.text & ~filters.command(["start", "help", "status", "cancel", "gdl", "tor", "unzip", "gd2tg", "pdup", "direct", "dl"]))
     async def url_message_listener(_, message: Message) -> None:
@@ -254,23 +193,4 @@ def register_download_handlers(app: Client) -> None:
         if not (text.startswith(("http://", "https://", "magnet:", "direct:")) or "drive.google.com" in text or "docs.google.com" in text):
             return
 
-        job = await store.create_job(message.chat.id, text, split_large_files=1, args=None)
-        await store.update_progress(job.id, status="waiting")
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Yes, split them", callback_data=f"split_yes:{job.id}"),
-                InlineKeyboardButton("No, skip them", callback_data=f"split_no:{job.id}")
-            ],
-            [
-                InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")
-            ]
-        ])
-
-        prompt_text = compile_split_prompt_text(job.id, text)
-        status_msg = await message.reply_text(
-            prompt_text,
-            reply_markup=keyboard,
-            link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        await store.set_status_message(job.id, status_msg.id)
+        await _create_and_enqueue_job(message.chat.id, text, message, text)

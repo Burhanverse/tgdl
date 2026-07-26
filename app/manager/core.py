@@ -1298,8 +1298,54 @@ class QueueManager:
                             except Exception:
                                 pass
 
-                # Handle large files (>1.95GB) splitting before upload
-                from ..uploader import handle_large_file, upload_file, UploadTooLarge
+                # Handle large files (>1.95GB) auto mirroring & splitting before upload
+                from ..uploader import handle_large_file, upload_file, upload_to_gofile, upload_to_pixeldrain, UploadTooLarge
+                
+                if f.stat().st_size >= 1.95 * 1024 * 1024 * 1024:
+                    log.info("File %s exceeds 2GB. Mirroring original file to GoFile & Pixeldrain...", f.name)
+                    m_status = await safe_send(
+                        self.client,
+                        chat_id,
+                        f"Large file detected (>2GB): `{f.name}` ({format_size(f.stat().st_size)})\nMirroring original file to GoFile & Pixeldrain..."
+                    )
+
+                    mirror_links = []
+
+                    # 1. Mirror to GoFile
+                    try:
+                        res_gf, _ = await upload_to_gofile(f)
+                        if isinstance(res_gf, dict) and res_gf.get("status") == "ok":
+                            gf_url = res_gf.get("data", {}).get("downloadPage")
+                            if gf_url:
+                                mirror_links.append(f"- **GoFile**: {gf_url}")
+                    except Exception as gfe:
+                        log.warning("Failed to mirror %s to GoFile: %s", f.name, gfe)
+
+                    # 2. Mirror to Pixeldrain
+                    try:
+                        domain = settings.pixeldrain_domain or "pixeldrain.com"
+                        res_pd, _ = await upload_to_pixeldrain(f, api_key=settings.pixeldrain_api_key, domain=domain)
+                        if isinstance(res_pd, dict) and res_pd.get("id"):
+                            pd_url = f"https://{domain}/u/{res_pd['id']}"
+                            mirror_links.append(f"- **Pixeldrain**: {pd_url}")
+                    except Exception as pde:
+                        log.warning("Failed to mirror %s to Pixeldrain: %s", f.name, pde)
+
+                    if m_status:
+                        try:
+                            await self.client.delete_messages(chat_id, m_status.id)
+                        except Exception:
+                            pass
+
+                    if mirror_links:
+                        summary_txt = (
+                            f"**Original Un-split 2GB+ File Mirrored**\n"
+                            f"------------------------------------\n"
+                            f"- **File**: `{f.name}` ({format_size(f.stat().st_size)})\n"
+                            + "\n".join(mirror_links)
+                        )
+                        await safe_send(self.client, chat_id, summary_txt)
+
                 try:
                     split_parts = await handle_large_file(f, bool(job.split_large_files))
                 except Exception as sle:
