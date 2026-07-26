@@ -769,7 +769,6 @@ class QueueManager:
 
                     summary_msg = (
                         f"**Mirror Complete**\n"
-                        f"\n\n"
                         f"**File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
                         + "\n".join(links_display)
                     )
