@@ -24,7 +24,7 @@ def format_size(size_bytes: float) -> str:
 
 def make_progress_bar(pct: float) -> str:
     filled = int(round(pct / 10))
-    bar = "■" * filled + "□" * (10 - filled)
+    bar = "●" * filled + "○" * (10 - filled)
     return bar
 
 
