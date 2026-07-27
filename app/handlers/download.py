@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 
 
 async def _create_and_enqueue_job(
+    client: Client,
     chat_id: int,
     target_url: str,
     message: Message,
@@ -32,6 +33,7 @@ async def _create_and_enqueue_job(
     await queue_manager.add_job(job.id)
     await asyncio.sleep(0.4)
 
+    client_obj = client or getattr(message, "_client", getattr(message, "client", None))
     db_j = await store.get_job(job.id)
     if db_j and db_j.status == "queued" and job.id not in queue_manager.jobs:
         queued_text = compile_queued_status_text(job.id, display_text, "")
@@ -39,7 +41,7 @@ async def _create_and_enqueue_job(
             [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
         ])
         status_msg = await safe_send(
-            message.client,
+            client_obj,
             chat_id,
             queued_text,
             reply_markup=keyboard,
@@ -52,8 +54,8 @@ async def _create_and_enqueue_job(
                 await asyncio.sleep(10)
                 try:
                     cur_j = await store.get_job(job.id)
-                    if cur_j and cur_j.status == "queued":
-                        await message.client.delete_messages(chat_id, status_msg.id)
+                    if cur_j and cur_j.status == "queued" and client_obj:
+                        await client_obj.delete_messages(chat_id, status_msg.id)
                 except Exception:
                     pass
 
@@ -63,7 +65,7 @@ async def _create_and_enqueue_job(
 def register_download_handlers(app: Client) -> None:
 
     @app.on_message(filters.command(["m", "mirror"]))
-    async def mirror_cmd(_, message: Message) -> None:
+    async def mirror_cmd(client: Client, message: Message) -> None:
         target_url = None
         display_text = "Mirror"
 
@@ -95,10 +97,10 @@ def register_download_handlers(app: Client) -> None:
             await message.reply_text("Provide a URL or reply to a Telegram media message with `/m` or `/mirror`.")
             return
 
-        await _create_and_enqueue_job(message.chat.id, target_url, message, display_text, is_mirror=True)
+        await _create_and_enqueue_job(client, message.chat.id, target_url, message, display_text, is_mirror=True)
 
     @app.on_message(filters.command(["direct", "dl"]))
-    async def direct_cmd(_, message: Message) -> None:
+    async def direct_cmd(client: Client, message: Message) -> None:
         urls = []
         text_tokens = message.text.split()
         is_mirror = ("-m" in text_tokens) or ("-mirror" in text_tokens)
@@ -149,10 +151,10 @@ def register_download_handlers(app: Client) -> None:
         urls_json = json.dumps([f"direct:{u}" for u in urls]) if len(urls) > 1 else f"direct:{urls[0]}"
         prefix = "direct [mirror]:" if is_mirror else "direct:"
         display_text = f"{prefix} `{urls[0]}`" if len(urls) == 1 else f"{prefix} `{urls[0]}` (+ {len(urls) - 1} more)"
-        await _create_and_enqueue_job(message.chat.id, urls_json, message, display_text, is_mirror=is_mirror)
+        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror)
 
     @app.on_message(filters.command(["gallerydl", "gdl"]))
-    async def gdl_cmd(_, message: Message) -> None:
+    async def gdl_cmd(client: Client, message: Message) -> None:
         urls = []
         text_tokens = message.text.split()
         is_mirror = ("-m" in text_tokens) or ("-mirror" in text_tokens)
@@ -203,10 +205,10 @@ def register_download_handlers(app: Client) -> None:
         urls_json = json.dumps(urls) if len(urls) > 1 else urls[0]
         prefix = "gallery-dl [mirror]:" if is_mirror else "gallery-dl:"
         display_text = f"{prefix} `{urls[0]}`" if len(urls) == 1 else f"{prefix} `{urls[0]}` (+ {len(urls) - 1} more)"
-        await _create_and_enqueue_job(message.chat.id, urls_json, message, display_text, is_mirror=is_mirror)
+        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror)
 
     @app.on_message(filters.command("tor"))
-    async def tor_cmd(_, message: Message) -> None:
+    async def tor_cmd(client: Client, message: Message) -> None:
         target_url = None
 
         if message.reply_to_message and message.reply_to_message.document:
@@ -247,7 +249,7 @@ def register_download_handlers(app: Client) -> None:
         elif target_url.startswith("torrent:"):
             url_display = "local torrent file"
 
-        await _create_and_enqueue_job(message.chat.id, target_url, message, url_display)
+        await _create_and_enqueue_job(client, message.chat.id, target_url, message, url_display)
 
     @app.on_message(filters.command("pdup"))
     async def pdup_cmd(_, message: Message) -> None:
@@ -381,7 +383,7 @@ def register_download_handlers(app: Client) -> None:
                 local_path.unlink(missing_ok=True)
 
     @app.on_message(filters.command(["gd2tg"]))
-    async def gd2tg_cmd(_, message: Message) -> None:
+    async def gd2tg_cmd(client: Client, message: Message) -> None:
         parts = message.text.split(maxsplit=1)
         if len(parts) < 2:
             await message.reply_text("Provide a Google Drive link: `/gd2tg <gdrive_link>`.")
@@ -389,4 +391,4 @@ def register_download_handlers(app: Client) -> None:
 
         raw_link = parts[1].strip()
         link = f"gd2tg:{raw_link}"
-        await _create_and_enqueue_job(message.chat.id, link, message, raw_link)
+        await _create_and_enqueue_job(client, message.chat.id, link, message, raw_link)
