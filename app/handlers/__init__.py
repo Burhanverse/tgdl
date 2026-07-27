@@ -8,6 +8,7 @@ from .cancel import register_cancel_handlers
 from .download import register_download_handlers
 from .unzip import register_unzip_handlers
 from .callbacks import register_choice_callback_handlers
+from .gdlconf import register_gdlconf_handlers
 
 
 def register_all_handlers(app: Client) -> None:
@@ -18,6 +19,7 @@ def register_all_handlers(app: Client) -> None:
     register_download_handlers(app)
     register_unzip_handlers(app)
     register_choice_callback_handlers(app)
+    register_gdlconf_handlers(app)
 
 
 __all__ = ["register_all_handlers"]

@@ -70,6 +70,7 @@ async def main() -> None:
             BotCommand("dl", "Download direct HTTP link"),
             BotCommand("tor", "Download torrent or magnet link"),
             BotCommand("gdl", "Batch download URLs from replied .txt file"),
+            BotCommand("gdlconf", "Manage user gallery-dl configuration"),
             BotCommand("gd2tg", "Download Google Drive link to Telegram"),
             BotCommand("gfup", "Upload replied media to GoFile"),
             BotCommand("gofile", "Upload replied media to GoFile"),

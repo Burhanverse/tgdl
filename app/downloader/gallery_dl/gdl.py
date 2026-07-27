@@ -26,14 +26,40 @@ class DownloadResult:
     attempts: int = 0
 
 
+def get_user_gdl_config_path(user_id: int | str) -> Path:
+    return settings.auth_dir / str(user_id) / "gallery-dl.conf"
+
+
+def get_gdl_config_path(user_id: int | str | None = None) -> Path | None:
+    if user_id:
+        user_conf = get_user_gdl_config_path(user_id)
+        if user_conf.exists() and user_conf.is_file():
+            return user_conf
+    pkg_conf = Path(__file__).parent / "gallery-dl.conf"
+    if pkg_conf.exists() and pkg_conf.is_file():
+        return pkg_conf
+    if settings.gdl_config_path.exists() and settings.gdl_config_path.is_file():
+        return settings.gdl_config_path
+    auth_global = settings.auth_dir / "gallery-dl.conf"
+    if auth_global.exists() and auth_global.is_file():
+        return auth_global
+    return None
+
+
 def _build_cmd(
     urls: list[str],
     dest_dir: Path,
     extra_args: Optional[list[str]] = None,
     links_file: Optional[Path] = None,
+    config_path: Optional[Path] = None,
+    user_id: Optional[int | str] = None,
 ) -> list[str]:
-    cmd = [
-        "gallery-dl",
+    conf = config_path or get_gdl_config_path(user_id=user_id)
+    cmd = ["gallery-dl"]
+    if conf and conf.exists():
+        cmd.extend(["--config", str(conf.absolute())])
+
+    cmd.extend([
         "--no-mtime",
         "-D", str(dest_dir),
         "--sleep", f"{settings.gdl_sleep_min}-{settings.gdl_sleep_max}",
@@ -41,7 +67,7 @@ def _build_cmd(
         "--limit-rate", settings.gdl_limit_rate,
         "--retries", str(settings.gdl_retries),
         "-v",
-    ]
+    ])
     if extra_args:
         cmd.extend(extra_args)
     if links_file:
@@ -95,6 +121,8 @@ async def run_with_progress(
     on_progress: Optional[Callable[[int, Optional[str]], None]] = None,
     extra_args: Optional[list[str]] = None,
     register_proc: Optional[Callable[[asyncio.subprocess.Process], None]] = None,
+    user_id: Optional[int | str] = None,
+    config_path: Optional[Path] = None,
 ) -> DownloadResult:
 
     if shutil.which("gallery-dl") is None:
@@ -139,8 +167,15 @@ async def run_with_progress(
         url_success = False
         while True:
             attempts += 1
-            cmd = _build_cmd([single_url], dest_dir, extra_args, links_file=None)
-            log.info("gallery-dl run url %s/%s attempt=%s url=%s args=%s", idx, total_urls, attempts, single_url, extra_args)
+            cmd = _build_cmd(
+                [single_url],
+                dest_dir,
+                extra_args,
+                links_file=None,
+                config_path=config_path,
+                user_id=user_id,
+            )
+            log.info("gallery-dl run url %s/%s attempt=%s url=%s args=%s user_id=%s", idx, total_urls, attempts, single_url, extra_args, user_id)
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE

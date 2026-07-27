@@ -28,7 +28,11 @@ class Settings(BaseSettings):
     use_service_accounts: bool = Field(default=True)
 
 
-    # --- gallery-dl pacing ---
+    # --- gallery-dl config & pacing ---
+    gdl_config_path: Path = Field(
+        default=Path("./app/downloader/gallery_dl/gallery-dl.conf"),
+        description="Path to default gallery-dl configuration file",
+    )
     gdl_sleep_min: float = 1.5
     gdl_sleep_max: float = 4.0
     gdl_sleep_request: str = "1-3"

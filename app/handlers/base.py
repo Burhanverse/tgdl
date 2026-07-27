@@ -19,6 +19,7 @@ def register_base_handlers(app: Client) -> None:
             "• `/status` — View active download/upload metrics, task list, pagination, and overall speeds.\n"
             "• `/cancel [job_id]` — Cancel an active or queued job.\n"
             "• `/gdl [args]` — Submit text file containing URLs.\n"
+            "• `/gdlconf` — View and manage your `gallery-dl.conf` configuration.\n"
             "• `/tor [magnet/url]` — Download torrent file or magnet link.\n"
             "• `/unzip [password]` — Extract archive file.\n"
             "• `/pdup` — Upload replied file to Pixeldrain.\n"

@@ -549,7 +549,13 @@ class QueueManager:
                         if filename:
                             job_state.current_download_file = filename
                         job_state.trigger_event.set()
-                    result = await run_with_progress(target_u, dest_dir, on_progress=on_dl_progress, register_proc=reg)
+                    result = await run_with_progress(
+                        target_u,
+                        dest_dir,
+                        on_progress=on_dl_progress,
+                        register_proc=reg,
+                        user_id=job.chat_id,
+                    )
 
             elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url):
                 direct_url = cleaned_url[len("direct:"):] if cleaned_url.startswith("direct:") else cleaned_url
@@ -577,7 +583,12 @@ class QueueManager:
 
                 from ..downloader import run_with_progress, download_direct, DownloadResult
                 result = await run_with_progress(
-                    job.url, dest_dir, on_progress=on_download_progress, extra_args=extra_args, register_proc=reg
+                    job.url,
+                    dest_dir,
+                    on_progress=on_download_progress,
+                    extra_args=extra_args,
+                    register_proc=reg,
+                    user_id=job.chat_id,
                 )
                 if not result.ok:
                     log.info("gallery-dl failed or unsupported site for %s. Falling back to DirectDownloader...", job.url)
