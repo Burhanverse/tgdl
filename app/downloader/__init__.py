@@ -4,6 +4,8 @@ from .gallery_dl import (
     GalleryDLNotFound,
     get_gdl_config_path,
     get_user_gdl_config_path,
+    get_cookies_path,
+    get_user_cookies_path,
 )
 from .torrent import download_torrent_async, start_aria2_daemon, stop_aria2_daemon
 from .direct import DirectDownloader, DirectDownloadError, download_direct, is_direct_url
@@ -15,6 +17,8 @@ __all__ = [
     "GalleryDLNotFound",
     "get_gdl_config_path",
     "get_user_gdl_config_path",
+    "get_cookies_path",
+    "get_user_cookies_path",
     "download_torrent_async",
     "start_aria2_daemon",
     "stop_aria2_daemon",

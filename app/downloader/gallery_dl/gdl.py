@@ -46,6 +46,24 @@ def get_gdl_config_path(user_id: int | str | None = None) -> Path | None:
     return None
 
 
+def get_user_cookies_path(user_id: int | str) -> Path:
+    return settings.auth_dir / str(user_id) / "cookies.txt"
+
+
+def get_cookies_path(user_id: int | str | None = None) -> Path | None:
+    if user_id:
+        user_cookies = get_user_cookies_path(user_id)
+        if user_cookies.exists() and user_cookies.is_file():
+            return user_cookies
+    auth_global_cookies = settings.auth_dir / "cookies.txt"
+    if auth_global_cookies.exists() and auth_global_cookies.is_file():
+        return auth_global_cookies
+    root_cookies = Path("./cookies.txt")
+    if root_cookies.exists() and root_cookies.is_file():
+        return root_cookies
+    return None
+
+
 def _build_cmd(
     urls: list[str],
     dest_dir: Path,
@@ -55,9 +73,13 @@ def _build_cmd(
     user_id: Optional[int | str] = None,
 ) -> list[str]:
     conf = config_path or get_gdl_config_path(user_id=user_id)
+    cookies = get_cookies_path(user_id=user_id)
+
     cmd = ["gallery-dl"]
     if conf and conf.exists():
         cmd.extend(["--config", str(conf.absolute())])
+    if cookies and cookies.exists():
+        cmd.extend(["--cookies", str(cookies.absolute())])
 
     cmd.extend([
         "--no-mtime",
