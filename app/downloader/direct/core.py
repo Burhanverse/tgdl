@@ -143,6 +143,7 @@ class DirectDownloader:
 
             self.current_filename = filename
             out_file = save_dir / filename
+            part_file = save_dir / f"{filename}.part"
 
             file_size = 0
             if "Content-Length" in resp.headers:
@@ -156,30 +157,37 @@ class DirectDownloader:
 
             log.info("Downloading direct link %s to %s (size: %s bytes)", url, out_file, file_size)
 
-            async with aiopen(out_file, "wb") as f:
-                async for chunk in resp.content.iter_chunked(_CHUNK_SIZE):
-                    if self.is_cancelled:
-                        if out_file.exists():
-                            out_file.unlink(missing_ok=True)
-                        raise asyncio.CancelledError("Download cancelled during file stream.")
+            try:
+                async with aiopen(part_file, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(_CHUNK_SIZE):
+                        if self.is_cancelled:
+                            if part_file.exists():
+                                part_file.unlink(missing_ok=True)
+                            raise asyncio.CancelledError("Download cancelled during file stream.")
 
-                    await f.write(chunk)
-                    chunk_len = len(chunk)
-                    item_processed += chunk_len
-                    self.processed_bytes += chunk_len
+                        await f.write(chunk)
+                        chunk_len = len(chunk)
+                        item_processed += chunk_len
+                        self.processed_bytes += chunk_len
 
-                    if self.progress_cb:
-                        try:
-                            await self.progress_cb(self.processed_bytes, self.total_bytes, filename, url)
-                        except TypeError:
+                        if self.progress_cb:
                             try:
-                                await self.progress_cb(self.processed_bytes, self.total_bytes, filename)
+                                await self.progress_cb(self.processed_bytes, self.total_bytes, filename, url)
+                            except TypeError:
+                                try:
+                                    await self.progress_cb(self.processed_bytes, self.total_bytes, filename)
+                                except Exception as e:
+                                    log.debug("Progress callback error: %s", e)
                             except Exception as e:
                                 log.debug("Progress callback error: %s", e)
-                        except Exception as e:
-                            log.debug("Progress callback error: %s", e)
 
-            return out_file
+                if part_file.exists():
+                    part_file.replace(out_file)
+                return out_file
+            except Exception:
+                if part_file.exists():
+                    part_file.unlink(missing_ok=True)
+                raise
 
     async def download(
         self,

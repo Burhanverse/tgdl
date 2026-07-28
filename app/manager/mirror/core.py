@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
 from ...config import settings
-from ...uploader import upload_to_gofile, upload_to_pixeldrain, upload_to_fileditch
 from ..status import format_size, make_progress_bar
 
 log = logging.getLogger(__name__)
@@ -68,6 +67,8 @@ async def mirror_file_to_web_hosts(
     Returns:
         Dict mapping host name ("gofile", "fileditch", "pixeldrain") to link or status string.
     """
+    from ...uploader import upload_to_gofile, upload_to_pixeldrain, upload_to_fileditch
+
     file_path = Path(file_path)
     file_size = file_path.stat().st_size if file_path.exists() else 0
     file_size_str = format_size(file_size)
