@@ -20,39 +20,38 @@ def compile_mirror_status_text(
     hosts_info: Dict[str, Dict[str, Any]]
 ) -> str:
     lines = [
-        f"**Mirroring Active**",
-        f"**File**: `{file_name}` ({file_size_str})",
-        "\n"
+        f"> **Mirroring Active**\n"
+        f"> • **__File__**: __`{file_name}` ({file_size_str})__",
     ]
     host_labels = [
-        ("gofile", "GoFile", "🟢"),
-        ("fileditch", "FileDitch", "🔵"),
-        ("pixeldrain", "Pixeldrain", "🟣")
+        ("gofile", "GoFile"),
+        ("fileditch", "FileDitch"),
+        ("pixeldrain", "Pixeldrain")
     ]
 
-    for idx, (key, label, icon) in enumerate(host_labels):
+    for idx, (key, label) in enumerate(host_labels):
         tree = "├" if idx < len(host_labels) - 1 else "└"
         info = hosts_info.get(key, {})
         st = info.get("status", "pending")
         if st == "pending":
-            lines.append(f"{tree} {icon} **{label}**: `Pending`")
+            lines.append(f"> {tree} **__{label}__**: __`Pending`__")
         elif st == "uploading":
             pct = info.get("pct", 0.0)
             spd = info.get("speed", 0.0)
             bar = make_progress_bar(pct)
             spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
-            lines.append(f"{tree} {icon} **{label}**: `{bar}` {pct:.1f}% ({spd_str})")
+            lines.append(f"> {tree} **__{label}__**: __`{bar}` {pct:.1f}% ({spd_str})__")
         elif st == "done":
             url = info.get("url")
             if url:
-                lines.append(f"{tree} {icon} **[{label}]({url})**: `Uploaded`")
+                lines.append(f"> {tree} **__[{label}]({url})__**: __`Uploaded`__")
             else:
-                lines.append(f"{tree} {icon} **{label}**: `Uploaded`")
+                lines.append(f"> {tree} **__{label}__**: __`Uploaded`__")
         elif st == "skipped":
-            lines.append(f"{tree} {icon} **{label}**: `Skipped (>10GB)`")
+            lines.append(f"> {tree} **__{label}__**: __`Skipped (>10GB)`__")
         elif st == "failed":
             err = info.get("error", "Failed")
-            lines.append(f"{tree} {icon} **{label}**: `{err}`")
+            lines.append(f"> {tree} **__{label}__**: __`{err}`__")
 
     return "\n".join(lines)
 

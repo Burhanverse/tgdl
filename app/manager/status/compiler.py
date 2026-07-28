@@ -69,10 +69,9 @@ def compile_split_prompt_text(job_id: str, url_or_target: str, is_torrent: bool 
     
     display = format_url_display(url_or_target) if not (is_torrent or is_unzip) else url_or_target
     return (
-        f"{title}\n"
-        f"------------------------------------\n"
-        f"- **{target_label}**: {display}\n\n"
-        "Do you want to split files larger than 2GB for this job?"
+        f"> {title}\n"
+        f"> • **__{target_label}__**: {display}\n\n"
+        "__Do you want to split files larger than 2GB for this job?__"
     )
 
 
@@ -98,16 +97,16 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
             torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
             return (
-                f"**Task Queued** • `#job_{job_id}`\n"
-                f"• **Torrent**: `{name}`\n"
-                f"• **Engine**: `aria2c`"
+                f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+                f"> • **__Torrent__**: __`{name}`__\n"
+                f"> • **__Engine__**: __`aria2c`__"
             )
         else:
             return (
-                f"**Task Queued** • `#job_{job_id}`\n"
-                f"• **Magnet**:\n"
+                f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+                f"> • **__Magnet__**:\n"
                 f"**>**\n`{cleaned_url}`||\n"
-                f"• **Engine**: `aria2c`"
+                f"> • **__Engine__**: __`aria2c`__"
             )
 
     is_gdrive = (
@@ -123,10 +122,10 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
                 gdrive_disp = gdrive_disp[len(prefix):]
         gdrive_disp = gdrive_disp[:50] + "..." if len(gdrive_disp) > 50 else gdrive_disp
         return (
-            f"**Task Queued** • `#job_{job_id}`\n"
-            f"• **Type**: `Google Drive Download`\n"
-            f"• **Engine**: `Google Drive API`\n"
-            f"• **Link**: `{gdrive_disp}`{args_display}"
+            f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+            f"> • **__Type__**: __`Google Drive Download`__\n"
+            f"> • **__Engine__**: __`Google Drive API`__\n"
+            f"> • **__Link__**: __`{gdrive_disp}`__{args_display}"
         )
 
     is_direct = (
@@ -139,9 +138,9 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
     engine_name = "Direct HTTP Downloader" if is_direct else "gallery-dl"
 
     return (
-        f"**Task Queued** • `#job_{job_id}`\n"
-        f"• **URL**: {format_url_display(url)}{args_display}\n"
-        f"• **Engine**: `{engine_name}`"
+        f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+        f"> • **__URL__**: {format_url_display(url)}{args_display}\n"
+        f"> • **__Engine__**: __`{engine_name}`__"
     )
 
 
@@ -149,100 +148,100 @@ def compile_unzip_download_status_text(job_id: str, filename: str, current: int,
     pct = current * 100.0 / total if total > 0 else 0.0
     bar = make_progress_bar(pct)
     return (
-        f"**Task Active** • `#job_{job_id}`\n"
-        f"• **Archive**: `{filename}`\n"
-        f"• **Progress**: `{pct:.1f}%` `[{bar}]`\n"
-        f"• **Downloaded**: `{format_size(current)} / {format_size(total)}`"
+        f"**Task #{job.id} Active** • `#job_{job_id}`\n\n"
+        f"> • **Archive**: `{filename}`\n"
+        f"> • **Progress**: `{pct:.1f}%` `[{bar}]`\n"
+        f"> • **Downloaded**: `{format_size(current)} / {format_size(total)}`"
     )
 
 
 def compile_archive_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Archive Handling Prompt** • `#job_{job_id}`\n"
-        f"• **File**: `{filename}`\n\n"
-        "Choose whether to upload the archive file only or extract its contents and upload both:"
+        f"**Archive Handling Prompt** • `#job_{job_id}`\n\n"
+        f"> • **File**: `{filename}`\n\n"
+        "> __Choose whether to upload the archive file only or extract its contents and upload both:__"
     )
 
 
 def compile_archive_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
-        f"**Archive Action Confirmed** • `#job_{job_id}`\n"
-        f"• **File**: `{filename}`\n"
-        f"• **Selection**: `{choice_str}`\n\n"
-        "Processing selected operation..."
+        f"**Archive Action Confirmed** • `#job_{job_id}`\n\n"
+        f"> • **File**: `{filename}`\n"
+        f"> • **Selection**: `{choice_str}`\n\n"
+        "> __Processing selected operation...__"
     )
 
 
 def compile_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Media Conversion Prompt** • `#job_{job_id}`\n"
-        f"• **File**: `{filename}`\n\n"
-        "Convert video to MP4 first or upload original document?"
+        f"**Media Conversion Prompt** • `#job_{job_id}`\n\n"
+        f"> • **File**: `{filename}`\n\n"
+        "> __Convert video to MP4 first or upload original document?__"
     )
 
 
 def compile_audio_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Audio Processing Prompt** • `#job_{job_id}`\n"
-        f"• **File**: `{filename}`\n\n"
-        "Convert audio to MP3 with Pedalboard mastering or upload original?"
+        f"**Audio Processing Prompt** • `#job_{job_id}`\n\n"
+        f"> • **File**: `{filename}`\n\n"
+        "> __Convert audio to MP3 with Pedalboard mastering or upload original?__"
     )
 
 
 def compile_conversion_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
-        f"**Media Action Confirmed** • `#job_{job_id}`\n"
-        f"• **File**: `{filename}`\n"
-        f"• **Selection**: `{choice_str}`"
+        f"**Media Action Confirmed** • `#job_{job_id}`\n\n"
+        f"> • **File**: `{filename}`\n"
+        f"> • **Selection**: `{choice_str}`"
     )
 
 
 def compile_extraction_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Archive Extraction Active** • `#job_{job_id}`\n"
-        f"Extracting `{filename}`..."
+        f"**Archive Extraction Active** • `#job_{job_id}`\n\n"
+        f"> • **Extracting**: `{filename}`"
     )
 
 
 def compile_conversion_running_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Media Transcoding Active** • `#job_{job_id}`\n"
-        f"Transcoding `{filename}` to MP4 container..."
+        f"**Media Transcoding Active** • `#job_{job_id}`\n\n"
+        f"> • **Transcoding**: `{filename}` to MP4 container..."
     )
 
 
 def compile_audio_conversion_running_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Audio Processing Active** • `#job_{job_id}`\n"
-        f"Mastering & transcoding `{filename}` to MP3..."
+        f"**Audio Processing Active** • `#job_{job_id}`\n\n"
+        f"> • **Mastering**: `{filename}` to MP3..."
     )
 
 
 def compile_conversion_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Conversion Failed** • `#job_{job_id}`\n"
-        f"Failed to transcode `{filename}`. Uploading original file."
+        f"**Conversion Failed** • `#job_{job_id}`\n\n"
+        f"> • **Notice**: Failed to transcode `{filename}`. Uploading original file."
     )
 
 
 def compile_audio_conversion_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Audio Processing Failed** • `#job_{job_id}`\n"
-        f"Failed to process `{filename}`. Uploading original file."
+        f"**Audio Processing Failed** • `#job_{job_id}`\n\n"
+        f"> • **Notice**: Failed to process `{filename}`. Uploading original file."
     )
 
 
 def compile_extraction_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Extraction Failed** • `#job_{job_id}`\n"
-        f"Failed to extract `{filename}`."
+        f"**Extraction Failed** • `#job_{job_id}`\n\n"
+        f"> • **Notice**: Failed to extract `{filename}`."
     )
 
 
 def compile_extraction_success_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Archive Extracted** • `#job_{job_id}`\n"
-        f"Successfully extracted `{filename}`."
+        f"**Archive Extracted** • `#job_{job_id}`\n\n"
+        f"> • **Notice**: Successfully extracted `{filename}`."
     )
 
 
@@ -304,33 +303,31 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         '"direct:' in job.url
     )
 
-    status_icon = "⚡" if job.status == "downloading" else ("📤" if job.status == "uploading" else "⏳")
     split_str = "Enabled (2GB)" if job.split_large_files else "Disabled"
 
     lines = [
-        f"**Task Execution Details**\n"
-        f"• `#job_{job.id}`\n",
-        f"• **Status**: {status_icon} `{job.status.upper()}`",
+        f"**Task #{job.id} Details**\n",
+        f"> • **__Status__**: __`{job.status.upper()}`__",
     ]
 
     if is_torrent:
         torrent_name = getattr(job_state, "torrent_name", None)
         if torrent_name:
-            lines.append(f"• **Torrent**: `{torrent_name}`")
+            lines.append(f"> • **__Torrent__**: __`{torrent_name}`__")
         elif cleaned_url.startswith("torrent:"):
             torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
-            lines.append(f"• **File**: `{name}`")
+            lines.append(f"> • **__File__**: __`{name}`__")
         else:
-            lines.append(f"• **Magnet**:\n**>**\n`{cleaned_url}`||")
+            lines.append(f"> • **__Magnet__**:\n**>**\n`{cleaned_url}`||")
     else:
         cur_url = getattr(job_state, "current_download_url", None)
-        lines.append(f"• **Target**: {format_url_display(job.url, current_url=cur_url)}")
+        lines.append(f"> • **__Target__**: {format_url_display(job.url, current_url=cur_url)}")
         user_args_str = format_user_args(job.args)
         if user_args_str:
-            lines.append(f"• **Args**: `{user_args_str}`")
+            lines.append(f"> • **__Args__**: __`{user_args_str}`__")
 
-    lines.append(f"• **Auto Split**: `{split_str}`\n")
+    lines.append(f"> • **__Auto Split__**: __`{split_str}`__\n")
 
     if not job_state.downloader_done.is_set():
         dl_speed_str = format_size(job_state.download_speed)
@@ -340,25 +337,25 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         if is_gdrive:
             marquee = make_marquee_bar()
             lines.append(
-                f"**GDrive Download Metrics**\n"
-                f"• **Engine**: `{dl_tool}`\n"
-                f"• **State**: `[{marquee}]`\n"
-                f"• **Downloaded**: `{dl_bytes_str}`\n"
-                f"• **Speed**: `{dl_speed_str}/s`"
+                f"**Downloader Metrics**\n"
+                f"> • **__Engine__**: __`{dl_tool}`__\n"
+                f"> • **__State__**: __`[{marquee}]`__\n"
+                f"> • **__Downloaded__**: __`{dl_bytes_str}`__\n"
+                f"> • **__Speed__**: __`{dl_speed_str}/s`__"
             )
             if job_state.current_download_file:
-                lines.append(f"• **Current**: `{job_state.current_download_file}`")
+                lines.append(f"> • **__Current__**: __`{job_state.current_download_file}`__")
         elif is_torrent:
             bar = make_progress_bar(job_state.download_pct)
             seeders = getattr(job_state, "torrent_seeders", 0)
             peers = getattr(job_state, "torrent_peers", 0)
             lines.append(
-                f"**Torrent Download Metrics**\n"
-                f"• **Engine**: `{dl_tool}`\n"
-                f"• **Progress**: `{job_state.download_pct:.1f}%` `[{bar}]`\n"
-                f"• **Downloaded**: `{dl_bytes_str}`\n"
-                f"• **Speed**: `{dl_speed_str}/s`\n"
-                f"• **Swarm**: `Seeders: {seeders} | Leechers: {peers}`"
+                f"**Downloader Metrics**\n"
+                f"> • **__Engine__**: __`{dl_tool}`__\n"
+                f"> • **__Progress__**: __`{job_state.download_pct:.1f}%` `[{bar}]`__\n"
+                f"> • **__Downloaded__**: __`{dl_bytes_str}`__\n"
+                f"> • **__Speed__**: __`{dl_speed_str}/s`__\n"
+                f"> • **__Swarm__**: __`Seeders: {seeders} | Leechers: {peers}`__"
             )
         elif is_direct:
             dl_pct = job_state.download_pct
@@ -367,35 +364,35 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
                 bar = make_progress_bar(dl_pct)
                 total_str = format_size(total_bytes) if total_bytes > 0 else "Unknown"
                 lines.append(
-                    f"**Direct Download Metrics**\n"
-                    f"• **Engine**: `{dl_tool}`\n"
-                    f"• **Progress**: `{dl_pct:.1f}%` `[{bar}]`\n"
-                    f"• **Downloaded**: `{dl_bytes_str} / {total_str}`\n"
-                    f"• **Speed**: `{dl_speed_str}/s`"
+                    f"**Downloader Metrics**\n"
+                    f"> • **__Engine__**: __`{dl_tool}`__\n"
+                    f"> • **__Progress__**: __`{dl_pct:.1f}%` `[{bar}]`__\n"
+                    f"> • **__Downloaded__**: __`{dl_bytes_str} / {total_str}`__\n"
+                    f"> • **__Speed__**: __`{dl_speed_str}/s`__"
                 )
             else:
                 marquee = make_marquee_bar()
                 lines.append(
-                    f"**Direct Download Metrics**\n"
-                    f"• **Engine**: `{dl_tool}`\n"
-                    f"• **State**: `[{marquee}]`\n"
-                    f"• **Downloaded**: `{dl_bytes_str}`\n"
-                    f"• **Speed**: `{dl_speed_str}/s`"
+                    f"**Downloader Metrics**\n"
+                    f"> • **__Engine__**: __`{dl_tool}`__\n"
+                    f"> • **__State__**: __`[{marquee}]`__\n"
+                    f"> • **__Downloaded__**: __`{dl_bytes_str}`__\n"
+                    f"> • **__Speed__**: __`{dl_speed_str}/s`__"
                 )
             if job_state.current_download_file:
-                lines.append(f"• **Current**: `{job_state.current_download_file}`")
+                lines.append(f"> • **__Current__**: __`{job_state.current_download_file}`__")
         else:
             marquee = make_marquee_bar()
             lines.append(
                 f"**Downloader Metrics**\n"
-                f"• **Engine**: `{dl_tool}`\n"
-                f"• **Downloaded Count**: `{job_state.download_count}`\n"
-                f"• **State**: `[{marquee}]`\n"
-                f"• **Total Size**: `{dl_bytes_str}`\n"
-                f"• **Speed**: `{dl_speed_str}/s`"
+                f"> • **__Engine__**: __`{dl_tool}`__\n"
+                f"> • **__Downloaded Count__**: __`{job_state.download_count}`__\n"
+                f"> • **__State__**: __`[{marquee}]`__\n"
+                f"> • **__Total Size__**: __`{dl_bytes_str}`__\n"
+                f"> • **__Speed__**: __`{dl_speed_str}/s`__"
             )
             if job_state.current_download_file:
-                lines.append(f"• **Current**: `{job_state.current_download_file}`")
+                lines.append(f"> • **__Current__**: __`{job_state.current_download_file}`__")
 
     if getattr(job_state, "is_archiving", False):
         if not job_state.downloader_done.is_set():
@@ -405,9 +402,9 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         fmt = getattr(job_state, "archive_format", "ZIP") or "ZIP"
         lines.append(
             f"**Archive Compression**\n"
-            f"• **Engine**: `{archiver_tool}`\n"
-            f"• **Format**: `{fmt.upper()}`\n"
-            f"• **Status**: `Compressing downloaded folder structure...`"
+            f"> • **__Engine__**: __`{archiver_tool}`__\n"
+            f"> • **__Format__**: __`{fmt.upper()}`__\n"
+            f"> • **__Status__**: __`Compressing downloaded folder structure...`__"
         )
     elif getattr(job_state, "is_converting", False):
         if not job_state.downloader_done.is_set():
@@ -415,9 +412,9 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         conv_file = getattr(job_state, "conversion_file", "media file")
         lines.append(
             f"**Media Transcoding**\n"
-            f"• **Engine**: `FFmpeg / PyAV`\n"
-            f"• **Converting**: `{conv_file}`\n"
-            f"• **Status**: `Transcoding to standard MP4 container...`"
+            f"> • **__Engine__**: __`FFmpeg / PyAV`__\n"
+            f"> • **__Converting__**: __`{conv_file}`__\n"
+            f"> • **__Status__**: __`Transcoding to standard MP4 container...`__"
         )
 
     web_mirror_info = getattr(job_state, "web_mirror_info", None)
@@ -447,43 +444,43 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         if web_mirror_info:
             lines.append("**Mirror Metrics**")
             host_labels = [
-                ("gofile", "GoFile", "🟢"),
-                ("fileditch", "FileDitch", "🔵"),
-                ("pixeldrain", "Pixeldrain", "🟣")
+                ("gofile", "GoFile"),
+                ("fileditch", "FileDitch"),
+                ("pixeldrain", "Pixeldrain")
             ]
-            for idx, (key, label, icon) in enumerate(host_labels):
+            for idx, (key, label) in enumerate(host_labels):
                 tree = "├" if idx < len(host_labels) - 1 else "└"
                 info = web_mirror_info.get(key, {})
                 st = info.get("status", "pending")
                 url = info.get("url")
                 if st == "done" and url:
-                    lines.append(f"{tree} {icon} **[{label}]({url})**: `Uploaded`")
+                    lines.append(f"> {tree} **__[{label}]({url})__**: __`Uploaded`__")
                 elif st == "uploading":
                     pct = info.get("pct", 0.0)
                     spd = info.get("speed", 0.0)
                     bar = make_progress_bar(pct)
                     spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
-                    lines.append(f"{tree} {icon} **{label}**: `{bar}` {pct:.1f}% ({spd_str})")
+                    lines.append(f"> {tree} **__{label}__**: __`{bar}` {pct:.1f}% ({spd_str})__")
                 elif st == "skipped":
-                    lines.append(f"{tree} {icon} **{label}**: `Skipped (>10GB)`")
+                    lines.append(f"> {tree} **__{label}__**: __`Skipped (>10GB)`__")
                 elif st == "failed":
                     err = info.get("error", "Failed")
-                    lines.append(f"{tree} {icon} **{label}**: `{err}`")
+                    lines.append(f"> {tree} **__{label}__**: __`{err}`__")
                 else:
-                    lines.append(f"{tree} {icon} **{label}**: `Pending`")
+                    lines.append(f"> {tree} **__{label}__**: __`Pending`__")
         else:
             lines.append(
-                f"**Telegram Upload Metrics**\n"
-                f"• **Engine**: `Pyrogram Uploader`\n"
-                f"• **Files Uploaded**: `{uploaded_count} / {total_files_disp}`\n"
-                f"• **Files Skipped**: `{skipped_count}`"
+                f"**Uploader Metrics**\n"
+                f"> • **__Engine__**: __`Pyrogram Uploader`__\n"
+                f"> • **__Files Uploaded__**: __`{uploaded_count} / {total_files_disp}`__\n"
+                f"> • **__Files Skipped__**: __`{skipped_count}`__"
             )
             if job_state.current_upload_file:
                 bar = make_progress_bar(job_state.current_upload_pct)
                 lines.append(
-                    f"• **Current File**: `{job_state.current_upload_file}`\n"
-                    f"• **Progress**: `{job_state.current_upload_pct:.1f}%` `[{bar}]`\n"
-                    f"• **Upload Speed**: `{ul_speed_str}/s`"
+                    f"> • **__Current File__**: __`{job_state.current_upload_file}`__\n"
+                    f"> • **__Progress__**: __`{job_state.current_upload_pct:.1f}%` `[{bar}]`__\n"
+                    f"> • **__Upload Speed__**: __`{ul_speed_str}/s`__"
                 )
 
     return "\n".join(lines)

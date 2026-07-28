@@ -23,10 +23,8 @@ def format_size(size_bytes: float) -> str:
 
 
 def make_progress_bar(pct: float) -> str:
-    filled = int(round(pct / 10))
-    bar = "●" * filled + "○" * (10 - filled)
-    return bar
-
+    filled = max(0, min(10, int(round(pct / 10))))
+    return "●" * filled + "○" * (10 - filled)
 
 async def safe_send(client: Client, chat_id: int, text: str, **kwargs) -> Message | None:
     res = await helper_send_message(client, text, chat_id=chat_id, buttons=kwargs.get("reply_markup"))

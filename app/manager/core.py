@@ -802,11 +802,11 @@ class QueueManager:
 
                     links_display = []
                     if "gofile" in host_links:
-                        links_display.append(f"🟢 **[GoFile]({host_links['gofile']})**")
+                        links_display.append(f"• **[GoFile]({host_links['gofile']})**")
                     if "fileditch" in host_links:
-                        links_display.append(f"🔵 **[FileDitch]({host_links['fileditch']})**")
+                        links_display.append(f"• **[FileDitch]({host_links['fileditch']})**")
                     if "pixeldrain" in host_links:
-                        links_display.append(f"🟣 **[Pixeldrain]({host_links['pixeldrain']})**")
+                        links_display.append(f"• **[Pixeldrain]({host_links['pixeldrain']})**")
 
                     if links_display:
                         summary_msg = (
