@@ -97,13 +97,13 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
             torrent_path = cleaned_url[len("torrent:"):]
             name = Path(torrent_path).name
             return (
-                f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+                f"**Task #{job_id} Queued**\n"
                 f"> • **__Torrent__**: __`{name}`__\n"
                 f"> • **__Engine__**: __`aria2c`__"
             )
         else:
             return (
-                f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+                f"**Task #{job_id} Queued**\n"
                 f"> • **__Magnet__**:\n"
                 f"**>**\n`{cleaned_url}`||\n"
                 f"> • **__Engine__**: __`aria2c`__"
@@ -122,7 +122,7 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
                 gdrive_disp = gdrive_disp[len(prefix):]
         gdrive_disp = gdrive_disp[:50] + "..." if len(gdrive_disp) > 50 else gdrive_disp
         return (
-            f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+            f"**Task #{job_id} Queued**\n"
             f"> • **__Type__**: __`Google Drive Download`__\n"
             f"> • **__Engine__**: __`Google Drive API`__\n"
             f"> • **__Link__**: __`{gdrive_disp}`__{args_display}"
@@ -138,7 +138,7 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
     engine_name = "Direct HTTP Downloader" if is_direct else "gallery-dl"
 
     return (
-        f"**Task #{job.id} Queued** • `#job_{job_id}`\n"
+        f"**Task #{job_id} Queued**\n"
         f"> • **__URL__**: {format_url_display(url)}{args_display}\n"
         f"> • **__Engine__**: __`{engine_name}`__"
     )
@@ -148,7 +148,7 @@ def compile_unzip_download_status_text(job_id: str, filename: str, current: int,
     pct = current * 100.0 / total if total > 0 else 0.0
     bar = make_progress_bar(pct)
     return (
-        f"**Task #{job.id} Active** • `#job_{job_id}`\n\n"
+        f"**Task #{job_id} Active**\n\n"
         f"> • **Archive**: `{filename}`\n"
         f"> • **Progress**: `{pct:.1f}%` `[{bar}]`\n"
         f"> • **Downloaded**: `{format_size(current)} / {format_size(total)}`"
@@ -157,7 +157,7 @@ def compile_unzip_download_status_text(job_id: str, filename: str, current: int,
 
 def compile_archive_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Archive Handling Prompt** • `#job_{job_id}`\n\n"
+        f"**Archive Handling Prompt**\n\n"
         f"> • **File**: `{filename}`\n\n"
         "> __Choose whether to upload the archive file only or extract its contents and upload both:__"
     )
@@ -165,7 +165,7 @@ def compile_archive_prompt_text(job_id: str, filename: str) -> str:
 
 def compile_archive_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
-        f"**Archive Action Confirmed** • `#job_{job_id}`\n\n"
+        f"**Archive Action Confirmed**\n\n"
         f"> • **File**: `{filename}`\n"
         f"> • **Selection**: `{choice_str}`\n\n"
         "> __Processing selected operation...__"
@@ -174,7 +174,7 @@ def compile_archive_choice_status_text(job_id: str, filename: str, choice_str: s
 
 def compile_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Media Conversion Prompt** • `#job_{job_id}`\n\n"
+        f"**Media Conversion Prompt**\n\n"
         f"> • **File**: `{filename}`\n\n"
         "> __Convert video to MP4 first or upload original document?__"
     )
@@ -182,7 +182,7 @@ def compile_conversion_prompt_text(job_id: str, filename: str) -> str:
 
 def compile_audio_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
-        f"**Audio Processing Prompt** • `#job_{job_id}`\n\n"
+        f"**Audio Processing Prompt**\n\n"
         f"> • **File**: `{filename}`\n\n"
         "> __Convert audio to MP3 with Pedalboard mastering or upload original?__"
     )
@@ -190,7 +190,7 @@ def compile_audio_conversion_prompt_text(job_id: str, filename: str) -> str:
 
 def compile_conversion_choice_status_text(job_id: str, filename: str, choice_str: str) -> str:
     return (
-        f"**Media Action Confirmed** • `#job_{job_id}`\n\n"
+        f"**Media Action Confirmed**\n\n"
         f"> • **File**: `{filename}`\n"
         f"> • **Selection**: `{choice_str}`"
     )
@@ -198,49 +198,49 @@ def compile_conversion_choice_status_text(job_id: str, filename: str, choice_str
 
 def compile_extraction_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Archive Extraction Active** • `#job_{job_id}`\n\n"
+        f"**Archive Extraction Active**\n\n"
         f"> • **Extracting**: `{filename}`"
     )
 
 
 def compile_conversion_running_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Media Transcoding Active** • `#job_{job_id}`\n\n"
+        f"**Media Transcoding Active**\n\n"
         f"> • **Transcoding**: `{filename}` to MP4 container..."
     )
 
 
 def compile_audio_conversion_running_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Audio Processing Active** • `#job_{job_id}`\n\n"
+        f"**Audio Processing Active**\n\n"
         f"> • **Mastering**: `{filename}` to MP3..."
     )
 
 
 def compile_conversion_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Conversion Failed** • `#job_{job_id}`\n\n"
+        f"**Conversion Failed**\n\n"
         f"> • **Notice**: Failed to transcode `{filename}`. Uploading original file."
     )
 
 
 def compile_audio_conversion_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Audio Processing Failed** • `#job_{job_id}`\n\n"
+        f"**Audio Processing Failed**\n\n"
         f"> • **Notice**: Failed to process `{filename}`. Uploading original file."
     )
 
 
 def compile_extraction_failed_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Extraction Failed** • `#job_{job_id}`\n\n"
+        f"**Extraction Failed**\n\n"
         f"> • **Notice**: Failed to extract `{filename}`."
     )
 
 
 def compile_extraction_success_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Archive Extracted** • `#job_{job_id}`\n\n"
+        f"**Archive Extracted**\n\n"
         f"> • **Notice**: Successfully extracted `{filename}`."
     )
 

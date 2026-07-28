@@ -20,7 +20,7 @@ def compile_mirror_status_text(
     hosts_info: Dict[str, Dict[str, Any]]
 ) -> str:
     lines = [
-        f"> **Mirroring Active**\n"
+        f"**Mirroring Active**\n"
         f"> • **__File__**: __`{file_name}` ({file_size_str})__",
     ]
     host_labels = [
