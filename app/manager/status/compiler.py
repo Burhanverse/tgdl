@@ -31,9 +31,7 @@ def format_url_display(url_json: str, current_url: Optional[str] = None) -> str:
     def _format_single(u: str, suffix: str = "") -> str:
         clean_u = _clean(u)
         suffix_str = f" {suffix}" if suffix else ""
-        if len(clean_u) > 35 or clean_u.startswith("magnet:"):
-            return f"{suffix_str}\n**>**\n`{clean_u}`||"
-        return f"`{clean_u}`{suffix_str}"
+        return f"{clean_u}{suffix_str}"
 
     try:
         urls = json.loads(url_json)
@@ -319,7 +317,7 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             name = Path(torrent_path).name
             lines.append(f"> • **__File__**: __`{name}`__")
         else:
-            lines.append(f"> • **__Magnet__**:\n**>**\n`{cleaned_url}`||")
+            lines.append(f"> • **__Magnet__**: `{cleaned_url}`")
     else:
         cur_url = getattr(job_state, "current_download_url", None)
         lines.append(f"> • **__Target__**: {format_url_display(job.url, current_url=cur_url)}")
