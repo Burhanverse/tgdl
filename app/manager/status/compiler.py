@@ -347,7 +347,10 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             )
             if job_state.current_download_file:
                 lines.append(f"• **Current**: `{job_state.current_download_file}`")
-    elif getattr(job_state, "is_archiving", False):
+
+    if getattr(job_state, "is_archiving", False):
+        if not job_state.downloader_done.is_set():
+            lines.append("")
         import shutil
         archiver_tool = "7z" if shutil.which("7z") else ("zip" if shutil.which("zip") else "zipfile")
         fmt = getattr(job_state, "archive_format", "ZIP") or "ZIP"
@@ -358,6 +361,8 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             f"• **Status**: `Compressing downloaded folder structure...`"
         )
     elif getattr(job_state, "is_converting", False):
+        if not job_state.downloader_done.is_set():
+            lines.append("")
         conv_file = getattr(job_state, "conversion_file", "media file")
         lines.append(
             f"**Media Transcoding**\n"
@@ -365,11 +370,31 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             f"• **Converting**: `{conv_file}`\n"
             f"• **Status**: `Transcoding to standard MP4 container...`"
         )
-    else:
+
+    web_mirror_info = getattr(job_state, "web_mirror_info", None)
+    uploaded_count = getattr(job_state, "sent", 0)
+    if isinstance(uploaded_count, (set, list)):
+        uploaded_count = len(uploaded_count)
+    skipped_count = len(getattr(job_state, "skipped", [])) if isinstance(getattr(job_state, "skipped", []), (list, set)) else getattr(job_state, "skipped", 0)
+
+    is_uploader_active = (
+        not job_state.uploader_done.is_set() and (
+            job_state.downloader_done.is_set() or
+            uploaded_count > 0 or
+            len(job_state.uploaded_filenames) > 0 or
+            len(job_state.uploading_files) > 0 or
+            bool(job_state.current_upload_file) or
+            web_mirror_info is not None
+        )
+    )
+
+    if is_uploader_active:
+        if not job_state.downloader_done.is_set() or getattr(job_state, "is_archiving", False) or getattr(job_state, "is_converting", False):
+            lines.append("")
+
         ul_speed_str = format_size(job_state.upload_speed)
         total_files_disp = job.total_files if job.total_files > 0 else 'Calculating'
 
-        web_mirror_info = getattr(job_state, "web_mirror_info", None)
         if web_mirror_info:
             lines.append("**Mirror Metrics**")
             host_labels = [
@@ -401,8 +426,8 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             lines.append(
                 f"**Telegram Upload Metrics**\n"
                 f"• **Engine**: `Pyrogram Uploader`\n"
-                f"• **Files Uploaded**: `{job_state.sent} / {total_files_disp}`\n"
-                f"• **Files Skipped**: `{len(job_state.skipped)}`"
+                f"• **Files Uploaded**: `{uploaded_count} / {total_files_disp}`\n"
+                f"• **Files Skipped**: `{skipped_count}`"
             )
             if job_state.current_upload_file:
                 bar = make_progress_bar(job_state.current_upload_pct)
