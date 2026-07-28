@@ -537,6 +537,9 @@ class QueueManager:
                 from ..downloader import download_direct, run_with_progress, DownloadResult
                 async def on_direct_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
                     job_state.total_downloaded_bytes = current
+                    job_state.total_expected_bytes = total
+                    if total > 0:
+                        job_state.download_pct = min(100.0, (current / total) * 100.0)
                     if filename:
                         job_state.current_download_file = filename
                     if url:
@@ -566,6 +569,9 @@ class QueueManager:
                 direct_url = cleaned_url[len("direct:"):] if cleaned_url.startswith("direct:") else cleaned_url
                 async def on_direct_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
                     job_state.total_downloaded_bytes = current
+                    job_state.total_expected_bytes = total
+                    if total > 0:
+                        job_state.download_pct = min(100.0, (current / total) * 100.0)
                     if filename:
                         job_state.current_download_file = filename
                     if url:
@@ -604,6 +610,9 @@ class QueueManager:
                     log.info("gallery-dl failed or unsupported site for %s. Falling back to DirectDownloader...", job.url)
                     async def on_fallback_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
                         job_state.total_downloaded_bytes = current
+                        job_state.total_expected_bytes = total
+                        if total > 0:
+                            job_state.download_pct = min(100.0, (current / total) * 100.0)
                         if filename:
                             job_state.current_download_file = filename
                         if url:

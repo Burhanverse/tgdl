@@ -14,6 +14,7 @@ class JobState:
         self.trigger_event = asyncio.Event()
         self.download_speed = 0.0
         self.total_downloaded_bytes = 0
+        self.total_expected_bytes = 0
         self.download_count = 0
         self.download_pct = 0.0
         self.current_download_file = None

@@ -360,6 +360,30 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
                 f"• **Speed**: `{dl_speed_str}/s`\n"
                 f"• **Swarm**: `Seeders: {seeders} | Leechers: {peers}`"
             )
+        elif is_direct:
+            dl_pct = job_state.download_pct
+            total_bytes = getattr(job_state, "total_expected_bytes", 0)
+            if dl_pct > 0 or total_bytes > 0:
+                bar = make_progress_bar(dl_pct)
+                total_str = format_size(total_bytes) if total_bytes > 0 else "Unknown"
+                lines.append(
+                    f"**Direct Download Metrics**\n"
+                    f"• **Engine**: `{dl_tool}`\n"
+                    f"• **Progress**: `{dl_pct:.1f}%` `[{bar}]`\n"
+                    f"• **Downloaded**: `{dl_bytes_str} / {total_str}`\n"
+                    f"• **Speed**: `{dl_speed_str}/s`"
+                )
+            else:
+                marquee = make_marquee_bar()
+                lines.append(
+                    f"**Direct Download Metrics**\n"
+                    f"• **Engine**: `{dl_tool}`\n"
+                    f"• **State**: `[{marquee}]`\n"
+                    f"• **Downloaded**: `{dl_bytes_str}`\n"
+                    f"• **Speed**: `{dl_speed_str}/s`"
+                )
+            if job_state.current_download_file:
+                lines.append(f"• **Current**: `{job_state.current_download_file}`")
         else:
             marquee = make_marquee_bar()
             lines.append(
