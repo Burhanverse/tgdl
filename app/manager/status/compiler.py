@@ -19,16 +19,41 @@ def make_marquee_bar(width: int = 10) -> str:
     bar[pos] = "●"
     return "".join(bar)
 
-def format_url_display(url_json: str) -> str:
+def format_url_display(url_json: str, current_url: Optional[str] = None) -> str:
+    def _clean(u: str) -> str:
+        u_str = str(u).strip()
+        if u_str.startswith("direct:"):
+            return u_str[len("direct:"):]
+        if u_str.startswith("mirror:"):
+            return u_str[len("mirror:"):]
+        return u_str
+
+    def _format_single(u: str, suffix: str = "") -> str:
+        clean_u = _clean(u)
+        suffix_str = f" {suffix}" if suffix else ""
+        if len(clean_u) > 35 or clean_u.startswith("magnet:"):
+            return f"{suffix_str}\n**>**\n`{clean_u}`||"
+        return f"`{clean_u}`{suffix_str}"
+
     try:
         urls = json.loads(url_json)
         if isinstance(urls, list):
-            if len(urls) == 1:
-                return f"`{urls[0]}`"
-            return f"`{urls[0]}` (+ {len(urls) - 1} more)"
+            clean_urls = [_clean(u) for u in urls if str(u).strip()]
+            if current_url:
+                clean_curr = _clean(current_url)
+                if clean_curr in clean_urls:
+                    idx = clean_urls.index(clean_curr) + 1
+                    return _format_single(clean_curr, f"(Item {idx} of {len(clean_urls)})")
+                return _format_single(clean_curr)
+            if len(clean_urls) == 1:
+                return _format_single(clean_urls[0])
+            if len(clean_urls) > 1:
+                return _format_single(clean_urls[0], f"(+ {len(clean_urls) - 1} more)")
     except Exception:
         pass
-    return f"`{url_json}`"
+
+    target_u = current_url or url_json
+    return _format_single(target_u)
 
 
 def compile_split_prompt_text(job_id: str, url_or_target: str, is_torrent: bool = False, is_unzip: bool = False) -> str:
@@ -78,10 +103,10 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
                 f"• **Engine**: `aria2c`"
             )
         else:
-            magnet_disp = cleaned_url[:55] + "..." if len(cleaned_url) > 55 else cleaned_url
             return (
                 f"**Task Queued** • `#job_{job_id}`\n"
-                f"• **Magnet**: `{magnet_disp}`\n"
+                f"• **Magnet**:\n"
+                f"**>**\n`{cleaned_url}`||\n"
                 f"• **Engine**: `aria2c`"
             )
 
@@ -297,10 +322,10 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             name = Path(torrent_path).name
             lines.append(f"• **File**: `{name}`")
         else:
-            magnet_disp = cleaned_url[:50] + "..." if len(cleaned_url) > 50 else cleaned_url
-            lines.append(f"• **Magnet**: `{magnet_disp}`")
+            lines.append(f"• **Magnet**:\n**>**\n`{cleaned_url}`||")
     else:
-        lines.append(f"• **Target**: {format_url_display(job.url)}")
+        cur_url = getattr(job_state, "current_download_url", None)
+        lines.append(f"• **Target**: {format_url_display(job.url, current_url=cur_url)}")
         user_args_str = format_user_args(job.args)
         if user_args_str:
             lines.append(f"• **Args**: `{user_args_str}`")

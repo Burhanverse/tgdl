@@ -17,6 +17,7 @@ class JobState:
         self.download_count = 0
         self.download_pct = 0.0
         self.current_download_file = None
+        self.current_download_url = None
         self.upload_speed = 0.0
         self.current_upload_pct = 0.0
         self.current_upload_file = None

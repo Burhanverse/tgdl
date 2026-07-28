@@ -535,19 +535,24 @@ class QueueManager:
             elif cleaned_url.startswith("mirror:"):
                 target_u = cleaned_url[len("mirror:"):]
                 from ..downloader import download_direct, run_with_progress, DownloadResult
-                async def on_direct_progress(current: int, total: int, filename: str) -> None:
+                async def on_direct_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
                     job_state.total_downloaded_bytes = current
-                    job_state.current_download_file = filename
+                    if filename:
+                        job_state.current_download_file = filename
+                    if url:
+                        job_state.current_download_url = url
                     job_state.trigger_event.set()
                 try:
                     downloaded_paths = await download_direct(target_u, dest_dir, progress_cb=on_direct_progress)
                     result = DownloadResult(ok=True, files=downloaded_paths)
                 except Exception as de:
                     log.warning("DirectDownloader failed for mirror link %s, attempting gallery-dl fallback: %s", target_u, de)
-                    def on_dl_progress(count: int, filename: Optional[str] = None) -> None:
+                    def on_dl_progress(count: int, filename: Optional[str] = None, current_url: Optional[str] = None) -> None:
                         job_state.download_count = count
                         if filename:
                             job_state.current_download_file = filename
+                        if current_url:
+                            job_state.current_download_url = current_url
                         job_state.trigger_event.set()
                     result = await run_with_progress(
                         target_u,
@@ -559,9 +564,12 @@ class QueueManager:
 
             elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url):
                 direct_url = cleaned_url[len("direct:"):] if cleaned_url.startswith("direct:") else cleaned_url
-                async def on_direct_progress(current: int, total: int, filename: str) -> None:
+                async def on_direct_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
                     job_state.total_downloaded_bytes = current
-                    job_state.current_download_file = filename
+                    if filename:
+                        job_state.current_download_file = filename
+                    if url:
+                        job_state.current_download_url = url
                     job_state.trigger_event.set()
 
                 from ..downloader import download_direct, DownloadResult
@@ -575,10 +583,12 @@ class QueueManager:
                     except Exception:
                         pass
 
-                def on_download_progress(count: int, filename: Optional[str] = None) -> None:
+                def on_download_progress(count: int, filename: Optional[str] = None, current_url: Optional[str] = None) -> None:
                     job_state.download_count = count
                     if filename:
                         job_state.current_download_file = filename
+                    if current_url:
+                        job_state.current_download_url = current_url
                     job_state.trigger_event.set()
 
                 from ..downloader import run_with_progress, download_direct, DownloadResult
@@ -592,9 +602,12 @@ class QueueManager:
                 )
                 if not result.ok:
                     log.info("gallery-dl failed or unsupported site for %s. Falling back to DirectDownloader...", job.url)
-                    async def on_fallback_progress(current: int, total: int, filename: str) -> None:
+                    async def on_fallback_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
                         job_state.total_downloaded_bytes = current
-                        job_state.current_download_file = filename
+                        if filename:
+                            job_state.current_download_file = filename
+                        if url:
+                            job_state.current_download_url = url
                         job_state.trigger_event.set()
                     try:
                         downloaded_paths = await download_direct(job.url, dest_dir, progress_cb=on_fallback_progress)

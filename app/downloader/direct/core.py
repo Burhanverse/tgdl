@@ -170,7 +170,12 @@ class DirectDownloader:
 
                     if self.progress_cb:
                         try:
-                            await self.progress_cb(self.processed_bytes, self.total_bytes, filename)
+                            await self.progress_cb(self.processed_bytes, self.total_bytes, filename, url)
+                        except TypeError:
+                            try:
+                                await self.progress_cb(self.processed_bytes, self.total_bytes, filename)
+                            except Exception as e:
+                                log.debug("Progress callback error: %s", e)
                         except Exception as e:
                             log.debug("Progress callback error: %s", e)
 
@@ -227,6 +232,11 @@ class DirectDownloader:
             for item in items:
                 if self.is_cancelled:
                     break
+                if self.progress_cb:
+                    try:
+                        await self.progress_cb(self.processed_bytes, self.total_bytes, "", item["url"])
+                    except Exception:
+                        pass
                 try:
                     downloaded_file = await self._download_content_item(
                         session=session,

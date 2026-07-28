@@ -180,6 +180,12 @@ async def run_with_progress(
     total_download_count = 0
 
     for idx, single_url in enumerate(urls, 1):
+        if on_progress:
+            try:
+                on_progress(total_download_count, None, single_url)
+            except Exception:
+                pass
+
         backoff = Backoff(
             base_s=settings.gdl_backoff_base_s,
             multiplier=settings.gdl_backoff_multiplier,
@@ -229,9 +235,12 @@ async def run_with_progress(
 
                     if on_progress:
                         try:
-                            on_progress(total_download_count + count, filename)
+                            on_progress(total_download_count + count, filename, single_url)
                         except TypeError:
-                            on_progress(total_download_count + count)
+                            try:
+                                on_progress(total_download_count + count, filename)
+                            except TypeError:
+                                on_progress(total_download_count + count)
 
             async def pump_stderr():
                 assert proc.stderr is not None
