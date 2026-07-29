@@ -65,6 +65,19 @@ async def safe_edit(client: Client, chat_id: int, message_id: int, text: str, re
         telegram_limiter.notify_floodwait(e.value, chat_id)
         log.warning("Telegram FloodWait: waiting %s seconds on status edit", e.value)
         await asyncio.sleep(e.value + 1)
+        if force:
+            try:
+                await client.edit_message_text(
+                    chat_id,
+                    message_id,
+                    text,
+                    reply_markup=reply_markup,
+                    link_preview_options=LinkPreviewOptions(is_disabled=True)
+                )
+                _last_edit_times[key] = time.time()
+                return True
+            except Exception as ex:
+                log.warning("Failed forced retry edit of status message %s: %s", message_id, ex)
         return False
     except Exception as e:
         log.warning("Failed to edit status message %s in chat %s: %s", message_id, chat_id, e)

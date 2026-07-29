@@ -1689,18 +1689,11 @@ class QueueManager:
             updater_task.cancel()
             await asyncio.gather(updater_task, return_exceptions=True)
             
-            # Edit the status message one final time to remove buttons and show final state
+            # Edit the status message one final time with force=True to ensure final state is updated
             db_job = await self.store.get_job(job.id)
             if db_job and job_state.msg_id:
-                if db_job.status == JobStatus.DONE:
-                    final_text = f"**Job #{job.id} Completed Successfully**\n------------------------------------\nUploaded {job_state.sent} file(s) total."
-                elif db_job.status == JobStatus.FAILED:
-                    final_text = f"**Job #{job.id} Failed**\n------------------------------------\nError: {db_job.error}"
-                elif db_job.status == JobStatus.CANCELLED:
-                    final_text = f"**Job #{job.id} Cancelled**\n------------------------------------\nCancelled successfully by owner."
-                else:
-                    final_text = compile_job_status_text(db_job, job_state)
-                await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None)
+                final_text = compile_job_status_text(db_job, job_state)
+                await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None, force=True)
 
             from .archive import _archive_ids, _archive_events, _archive_choices, _extracted_archives, _extracted_file_names
             from ..conversion import _conversion_ids, _conversion_events, _conversion_choices, _converted_files
