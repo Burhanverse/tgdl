@@ -172,7 +172,7 @@ def register_unzip_handlers(app: Client) -> None:
             return
 
         chat_id = message.chat.id
-        handled_multi = await handle_multi_document(message, _split_archive_sessions)
+        handled_multi = await handle_multi_document(message)
         if handled_multi:
             return
 
@@ -256,9 +256,9 @@ def register_unzip_handlers(app: Client) -> None:
         await query.answer("Starting extraction...")
 
     @app.on_callback_query(filters.regex(r"^multi_cancel:(-?\d+):(-?\d+)$"))
-    async def multi_cancel_cb(_, query: CallbackQuery) -> None:
-        await handle_multi_cancel_cb(query, _split_archive_sessions)
+    async def multi_cancel_cb(client: Client, query: CallbackQuery) -> None:
+        await handle_multi_cancel_cb(client, query)
 
     @app.on_callback_query(filters.regex(r"^multi_start:(-?\d+):(-?\d+)$"))
-    async def multi_start_cb(_, query: CallbackQuery) -> None:
-        await handle_multi_start_cb(query, _split_archive_sessions)
+    async def multi_start_cb(client: Client, query: CallbackQuery) -> None:
+        await handle_multi_start_cb(client, query, store, queue_manager)
