@@ -380,15 +380,28 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             if job_state.current_download_file:
                 lines.append(f"> • **__Current__**: __`{job_state.current_download_file}`__")
         else:
-            marquee = make_marquee_bar()
-            lines.append(
-                f"**Downloader Metrics**\n"
-                f"> • **__Engine__**: __`{dl_tool}`__\n"
-                f"> • **__Downloaded Count__**: __`{job_state.download_count}`__\n"
-                f"> • **__State__**: __`[{marquee}]`__\n"
-                f"> • **__Total Size__**: __`{dl_bytes_str}`__\n"
-                f"> • **__Speed__**: __`{dl_speed_str}/s`__"
-            )
+            dl_pct = job_state.download_pct
+            total_bytes = getattr(job_state, "total_expected_bytes", 0)
+            if dl_pct > 0 or total_bytes > 0:
+                bar = make_progress_bar(dl_pct)
+                total_str = format_size(total_bytes) if total_bytes > 0 else "Unknown"
+                lines.append(
+                    f"**Downloader Metrics**\n"
+                    f"> • **__Engine__**: __`{dl_tool}`__\n"
+                    f"> • **__Progress__**: __`{dl_pct:.1f}%` `[{bar}]`__\n"
+                    f"> • **__Downloaded__**: __`{dl_bytes_str} / {total_str}`__\n"
+                    f"> • **__Speed__**: __`{dl_speed_str}/s`__"
+                )
+            else:
+                marquee = make_marquee_bar()
+                lines.append(
+                    f"**Downloader Metrics**\n"
+                    f"> • **__Engine__**: __`{dl_tool}`__\n"
+                    f"> • **__Downloaded Count__**: __`{job_state.download_count}`__\n"
+                    f"> • **__State__**: __`[{marquee}]`__\n"
+                    f"> • **__Total Size__**: __`{dl_bytes_str}`__\n"
+                    f"> • **__Speed__**: __`{dl_speed_str}/s`__"
+                )
             if job_state.current_download_file:
                 lines.append(f"> • **__Current__**: __`{job_state.current_download_file}`__")
 
@@ -478,7 +491,7 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
                 lines.append(
                     f"> • **__Current File__**: __`{job_state.current_upload_file}`__\n"
                     f"> • **__Progress__**: __`{job_state.current_upload_pct:.1f}%` `[{bar}]`__\n"
-                    f"> • **__Upload Speed__**: __`{ul_speed_str}/s`__"
+                    f"> • **__Speed__**: __`{ul_speed_str}/s`__"
                 )
 
     return "\n".join(lines)

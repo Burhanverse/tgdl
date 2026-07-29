@@ -49,6 +49,9 @@ class TelegramDownloader:
         self.processed_bytes = 0
         self.total_bytes = 0
         self.start_time = time.time()
+        self.last_time = time.time()
+        self.last_bytes = 0
+        self.current_speed = 0.0
         self.is_downloading = False
         self.is_cancelled = False
         self.file_unique_id = ""
@@ -56,6 +59,8 @@ class TelegramDownloader:
 
     @property
     def speed(self) -> float:
+        if self.current_speed > 0:
+            return self.current_speed
         elapsed = time.time() - self.start_time
         if elapsed > 0:
             return self.processed_bytes / elapsed
@@ -78,10 +83,27 @@ class TelegramDownloader:
         if total > 0:
             self.total_bytes = total
 
+        now = time.time()
+        dt = now - self.last_time
+        if dt >= 0.5:
+            db = current - self.last_bytes
+            inst_speed = max(0.0, db / dt)
+            if self.last_bytes > 0:
+                self.current_speed = 0.7 * inst_speed + 0.3 * self.current_speed
+            else:
+                self.current_speed = inst_speed
+            self.last_time = now
+            self.last_bytes = current
+
         if self.progress_cb:
             file_name = self.custom_file_name or (self.downloaded_path.name if self.downloaded_path else "telegram_media")
             try:
-                await self.progress_cb(current, total, file_name)
+                await self.progress_cb(current, total, self.speed, file_name)
+            except TypeError:
+                try:
+                    await self.progress_cb(current, total, file_name)
+                except Exception as e:
+                    log.debug("Progress callback error: %s", e)
             except Exception as e:
                 log.debug("Progress callback error: %s", e)
 

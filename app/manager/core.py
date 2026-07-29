@@ -399,8 +399,40 @@ class QueueManager:
                     try:
                         reply_msg = await self.client.get_messages(chat_id, message_ids=reply_msg_id)
                         if reply_msg and (reply_msg.document or reply_msg.video or reply_msg.audio or reply_msg.photo):
-                            async def on_tg_download_progress(current: int, total: int, filename: str) -> None:
+                            last_tg_time = 0.0
+                            last_tg_bytes = 0
+
+                            async def on_tg_download_progress(current: int, total: int, *args) -> None:
+                                nonlocal last_tg_time, last_tg_bytes
+                                now = time.time()
                                 job_state.total_downloaded_bytes = current
+                                if total > 0:
+                                    job_state.total_expected_bytes = total
+                                    job_state.download_pct = min(100.0, (current / total) * 100.0)
+
+                                speed = 0.0
+                                filename = "telegram_media"
+                                if len(args) == 2:
+                                    speed = float(args[0])
+                                    filename = str(args[1])
+                                elif len(args) == 1:
+                                    filename = str(args[0])
+
+                                if speed > 0:
+                                    job_state.download_speed = speed
+                                else:
+                                    if last_tg_time > 0:
+                                        dt = now - last_tg_time
+                                        if dt >= 0.5:
+                                            db = current - last_tg_bytes
+                                            calc_speed = max(0.0, db / dt)
+                                            job_state.download_speed = 0.7 * calc_speed + 0.3 * job_state.download_speed if last_tg_bytes > 0 else calc_speed
+                                            last_tg_time = now
+                                            last_tg_bytes = current
+                                    else:
+                                        last_tg_time = now
+                                        last_tg_bytes = current
+
                                 job_state.current_download_file = filename
                                 job_state.trigger_event.set()
 
@@ -517,8 +549,40 @@ class QueueManager:
                 if not tgt_msg or tgt_msg.empty:
                     raise Exception(f"Failed to fetch Telegram message {tgt_msg_id} for mirror")
 
-                async def on_tg_progress(current: int, total: int, filename: str) -> None:
+                last_tg_time = 0.0
+                last_tg_bytes = 0
+
+                async def on_tg_progress(current: int, total: int, *args) -> None:
+                    nonlocal last_tg_time, last_tg_bytes
+                    now = time.time()
                     job_state.total_downloaded_bytes = current
+                    if total > 0:
+                        job_state.total_expected_bytes = total
+                        job_state.download_pct = min(100.0, (current / total) * 100.0)
+
+                    speed = 0.0
+                    filename = "telegram_media"
+                    if len(args) == 2:
+                        speed = float(args[0])
+                        filename = str(args[1])
+                    elif len(args) == 1:
+                        filename = str(args[0])
+
+                    if speed > 0:
+                        job_state.download_speed = speed
+                    else:
+                        if last_tg_time > 0:
+                            dt = now - last_tg_time
+                            if dt >= 0.5:
+                                db = current - last_tg_bytes
+                                calc_speed = max(0.0, db / dt)
+                                job_state.download_speed = 0.7 * calc_speed + 0.3 * job_state.download_speed if last_tg_bytes > 0 else calc_speed
+                                last_tg_time = now
+                                last_tg_bytes = current
+                        else:
+                            last_tg_time = now
+                            last_tg_bytes = current
+
                     job_state.current_download_file = filename
                     job_state.trigger_event.set()
 
@@ -527,7 +591,7 @@ class QueueManager:
                     client=self.client,
                     message=tgt_msg,
                     dest_dir=dest_dir,
-                    progress_callback=on_tg_progress
+                    progress_cb=on_tg_progress
                 )
                 dl_path = await downloader.download()
                 result = DownloadResult(ok=True, files=[dl_path])
