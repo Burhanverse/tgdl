@@ -89,9 +89,15 @@ async def safe_delete(client: Client, chat_id: int, message_id: int) -> bool:
 
 async def safe_pin(client: Client, chat_id: int, message_id: int, disable_notification: bool = True) -> bool:
     from pyrogram.errors import FloodWait
+    from pyrogram.types import Message as PyrogramMessage
     await telegram_limiter.acquire(chat_id)
     try:
-        await client.pin_chat_message(chat_id, message_id, disable_notification=disable_notification, both_sides=True)
+        res = await client.pin_chat_message(chat_id, message_id, disable_notification=disable_notification, both_sides=True)
+        if isinstance(res, PyrogramMessage):
+            try:
+                await res.delete()
+            except Exception:
+                pass
         return True
     except FloodWait as e:
         telegram_limiter.notify_floodwait(e.value, chat_id)
@@ -100,7 +106,12 @@ async def safe_pin(client: Client, chat_id: int, message_id: int, disable_notifi
         return False
     except Exception:
         try:
-            await client.pin_chat_message(chat_id, message_id, disable_notification=disable_notification)
+            res = await client.pin_chat_message(chat_id, message_id, disable_notification=disable_notification)
+            if isinstance(res, PyrogramMessage):
+                try:
+                    await res.delete()
+                except Exception:
+                    pass
             return True
         except Exception as ex:
             log.warning("Failed to pin status message %s in chat %s: %s", message_id, chat_id, ex)

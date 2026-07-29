@@ -26,3 +26,11 @@ def register_base_handlers(app: Client) -> None:
             "• `/gd2tg [link]` — Download Google Drive link to Telegram.\n"
         )
         await message.reply_text(text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+    @app.on_message(filters.service)
+    async def auto_delete_service_messages(_, message: Message) -> None:
+        if message.pinned_message or getattr(message, "service", False):
+            try:
+                await message.delete()
+            except Exception:
+                pass
