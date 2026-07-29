@@ -19,6 +19,72 @@ def make_marquee_bar(width: int = 10) -> str:
     bar[pos] = "●"
     return "".join(bar)
 
+from urllib.parse import urlparse, parse_qs, unquote
+
+def format_magnet_display(magnet_url: str, max_len: int = 35) -> str:
+    cleaned = magnet_url.strip()
+    display_name = ""
+    try:
+        if "?" in cleaned:
+            qs = parse_qs(cleaned.split("?", 1)[1])
+            if "dn" in qs and qs["dn"]:
+                display_name = unquote(qs["dn"][0])
+            elif "xt" in qs and qs["xt"]:
+                xt_val = qs["xt"][0]
+                display_name = f"magnet:{xt_val}"
+    except Exception:
+        pass
+
+    if not display_name:
+        display_name = cleaned
+
+    if len(display_name) > max_len:
+        display_name = f"{display_name[:max_len-3]}..."
+
+    return f"[{display_name}]({cleaned})"
+
+def shorten_url_text(url: str, max_len: int = 35) -> str:
+    cleaned = url.strip()
+    if not (cleaned.startswith("http://") or cleaned.startswith("https://")):
+        if len(cleaned) > max_len:
+            return f"{cleaned[:max_len-3]}..."
+        return cleaned
+
+    try:
+        parsed = urlparse(cleaned)
+        domain = parsed.netloc or (parsed.path.split("/")[0] if parsed.path else "")
+        path = parsed.path.rstrip("/")
+        filename = path.split("/")[-1] if path else ""
+
+        if len(cleaned) <= max_len:
+            return cleaned
+
+        if filename:
+            short = f"{domain}/.../{filename}"
+            if len(short) <= max_len:
+                return short
+            ext = Path(filename).suffix
+            stem = Path(filename).stem
+            avail = max_len - len(domain) - len(ext) - 7
+            if avail >= 4:
+                short_fn = f"{stem[:avail]}..{ext}"
+            else:
+                short_fn = f"{filename[:8]}..{ext}" if len(filename) > 10 else filename
+            short = f"{domain}/.../{short_fn}"
+            if len(short) > max_len:
+                short = f"{short[:max_len-3]}..."
+            return short
+
+        short = f"{domain}{path}"
+        if len(short) > max_len:
+            return f"{short[:max_len-3]}..."
+        return short
+    except Exception:
+        if len(cleaned) > max_len:
+            return f"{cleaned[:max_len-3]}..."
+        return cleaned
+
+
 def format_url_display(url_json: str, current_url: Optional[str] = None) -> str:
     def _clean(u: str) -> str:
         u_str = str(u).strip()
@@ -31,7 +97,12 @@ def format_url_display(url_json: str, current_url: Optional[str] = None) -> str:
     def _format_single(u: str, suffix: str = "") -> str:
         clean_u = _clean(u)
         suffix_str = f" {suffix}" if suffix else ""
-        return f"{clean_u}{suffix_str}"
+        if clean_u.startswith("http://") or clean_u.startswith("https://"):
+            short_text = shorten_url_text(clean_u, max_len=35)
+            return f"[{short_text}]({clean_u}){suffix_str}"
+        else:
+            short_text = shorten_url_text(clean_u, max_len=35)
+            return f"`{short_text}`{suffix_str}"
 
     try:
         urls = json.loads(url_json)
@@ -100,10 +171,10 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
                 f"> • **__Engine__**: __`aria2c`__"
             )
         else:
+            magnet_display = format_magnet_display(cleaned_url)
             return (
                 f"**Task #{job_id} Queued**\n"
-                f"> • **__Magnet__**:\n"
-                f"**>**\n`{cleaned_url}`||\n"
+                f"> • **__Magnet__**: {magnet_display}\n"
                 f"> • **__Engine__**: __`aria2c`__"
             )
 
@@ -317,7 +388,8 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             name = Path(torrent_path).name
             lines.append(f"> • **__File__**: __`{name}`__")
         else:
-            lines.append(f"> • **__Magnet__**: `{cleaned_url}`")
+            magnet_display = format_magnet_display(cleaned_url)
+            lines.append(f"> • **__Magnet__**: {magnet_display}")
     else:
         cur_url = getattr(job_state, "current_download_url", None)
         lines.append(f"> • **__Target__**: {format_url_display(job.url, current_url=cur_url)}")
