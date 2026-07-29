@@ -17,3 +17,4 @@ tenacity
 psutil
 telegraph
 httpx
+prowlarr-py
