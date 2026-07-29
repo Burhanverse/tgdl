@@ -879,8 +879,13 @@ class QueueManager:
                     archive_prompt_msg_id = None
                     if job.id not in _archive_ids:
                         _archive_ids[job.id] = {}
-                    archive_id = f_rel
-                    if archive_id not in _archive_ids[job.id]:
+                    archive_id = None
+                    for aid, rel_path in _archive_ids[job.id].items():
+                        if rel_path == f_rel:
+                            archive_id = aid
+                            break
+                    if archive_id is None:
+                        archive_id = str(len(_archive_ids[job.id]) + 1)
                         _archive_ids[job.id][archive_id] = f_rel
 
                     if job.url.startswith("unzip:"):

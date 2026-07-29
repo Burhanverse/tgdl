@@ -210,6 +210,6 @@ async def handle_archive_choice(
         _archive_events[job_id][archive_id].set()
 
     choice_str = "Upload Archive Only" if choice == "only" else "Upload Archive + Extract Contents"
-    status_text = compile_archive_choice_status_text(job.id, filename, choice_str)
+    status_text = compile_archive_choice_status_text(job.id, Path(filename).name, choice_str)
     await callback_query.message.edit_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
     await callback_query.answer(f"Selected: {choice_str}")

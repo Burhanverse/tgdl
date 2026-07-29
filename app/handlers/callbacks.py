@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 
@@ -75,7 +76,7 @@ def register_choice_callback_handlers(app: Client) -> None:
         match = query.matches[0]
         choice = match.group(1)
         job_id = match.group(2)
-        filename = match.group(3)
+        archive_id = match.group(3)
 
         job = await store.get_job(job_id)
         if not job or not is_job_owner(query.message.chat.id, job):
@@ -85,15 +86,19 @@ def register_choice_callback_handlers(app: Client) -> None:
         choice_str = "Archive Only" if choice == "only" else "Extract & Upload Both"
         await query.answer(f"Selected: {choice_str}")
 
+        filename = _archive_ids.get(job.id, {}).get(archive_id, archive_id)
+        display_name = Path(filename).name if filename else archive_id
+
         try:
-            await query.message.edit_text(compile_archive_choice_status_text(job.id, filename, choice_str))
+            await query.message.edit_text(compile_archive_choice_status_text(job.id, display_name, choice_str))
         except Exception:
             pass
 
-        event = _archive_events.get(job.id)
-        if event:
-            _archive_choices[job.id] = choice
-            event.set()
+        if job.id in _archive_events and archive_id in _archive_events[job.id]:
+            if job.id not in _archive_choices:
+                _archive_choices[job.id] = {}
+            _archive_choices[job.id][archive_id] = choice
+            _archive_events[job.id][archive_id].set()
 
     @app.on_callback_query(filters.regex(r"^convert_(mp4|mp3|orig):(\w+):(.+)$"))
     async def conversion_choice_cb(_, query: CallbackQuery) -> None:
