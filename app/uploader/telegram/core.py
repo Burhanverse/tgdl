@@ -88,6 +88,25 @@ def is_photo_invalid_for_telegram(file_path: Path) -> bool:
     return False
 
 
+def _make_image_thumbnail(file_path: Path) -> Optional[Path]:
+    try:
+        import PIL.Image
+        thumb_path = file_path.with_name(f"thumb_{file_path.stem}.jpg")
+        with PIL.Image.open(file_path) as img:
+            img.thumbnail((320, 320))
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.save(thumb_path, "JPEG", quality=85)
+        return thumb_path
+    except Exception as e:
+        log.debug("Failed to create image thumbnail for %s: %s", file_path.name, e)
+        return None
+
+
+async def extract_image_thumbnail(file_path: Path) -> Optional[Path]:
+    return await asyncio.to_thread(_make_image_thumbnail, file_path)
+
+
 class TelegramUploader:
     """Stateful Telegram uploader module inspired by mirror-leech-telegram-bot's telegram_uploader.py."""
 
@@ -302,6 +321,8 @@ class TelegramUploader:
             if force_document or (not is_video and not is_audio and not is_image):
                 if is_video:
                     thumb_path = await extract_video_thumbnail(file_path)
+                elif is_image or ext in IMAGE_EXT or ext in CONVERTIBLE_IMAGE_EXT:
+                    thumb_path = await extract_image_thumbnail(file_path)
 
                 kwargs = {
                     "caption": cap_mono,
