@@ -161,14 +161,20 @@ def register_unzip_handlers(app: Client) -> None:
 
     @app.on_message(filters.text, group=-1)
     async def password_reply_listener(_, message: Message) -> None:
-        if not message.reply_to_message or message.reply_to_message.id not in _password_prompt_events:
+        if not message.reply_to_message:
             return
 
         prompt_msg_id = message.reply_to_message.id
-        event = _password_prompt_events.get(prompt_msg_id)
-        if event:
-            _password_prompt_messages[prompt_msg_id] = message.text.strip()
-            event.set()
+        if prompt_msg_id not in _password_prompt_messages:
+            return
+
+        info = _password_prompt_messages.get(prompt_msg_id)
+        if info:
+            job_id, archive_id, chat_id = info
+            if job_id in _password_prompt_events and archive_id in _password_prompt_events[job_id]:
+                event, data = _password_prompt_events[job_id][archive_id]
+                data["password"] = message.text.strip()
+                event.set()
 
     @app.on_message(group=-2)
     async def document_intercept_listener(_, message: Message) -> None:

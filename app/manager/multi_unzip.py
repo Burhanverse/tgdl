@@ -225,87 +225,153 @@ async def run_multi_archive_download_and_extract(
     archives: list[Message] = session["archives"]
     password: Optional[str] = session["password"]
     chat_id = status_msg.chat.id
-    total_archives = len(archives)
 
+    if not archives:
+        return
+
+    groups: list[dict] = []
+    group_map: dict[str, dict] = {}
+
+    for arch_msg in archives:
+        fn = arch_msg.document.file_name or "archive"
+        split_info = get_split_archive_info(fn)
+        if split_info:
+            prefix = split_info["prefix"]
+            part = split_info["part"]
+            if prefix in group_map:
+                group_map[prefix]["parts"].append((part, arch_msg))
+            else:
+                g = {
+                    "is_split": True,
+                    "prefix": prefix,
+                    "parts": [(part, arch_msg)]
+                }
+                group_map[prefix] = g
+                groups.append(g)
+        else:
+            groups.append({
+                "is_split": False,
+                "msg": arch_msg
+            })
+
+    total_groups = len(groups)
     args_json = json.dumps({"password": password}) if password else None
 
     try:
         await status_msg.edit_text(
-            f"**Multi Archive Pipeline Started** ({total_archives} archives)\n"
+            f"**Multi Archive Pipeline Started** ({total_groups} job(s), {len(archives)} file(s))\n"
             "------------------------------------\n"
-            "Downloading & processing each archive as it arrives..."
+            "Downloading & processing each archive..."
         )
     except Exception:
         pass
 
-    for idx, arch_msg in enumerate(archives, start=1):
-        arch_filename = arch_msg.document.file_name or f"archive_{idx}.zip"
-        display_name = f"unzip:{arch_filename}"
+    for idx, group in enumerate(groups, start=1):
+        if group["is_split"]:
+            parts_sorted = sorted(group["parts"], key=lambda x: x[0])
+            first_msg = parts_sorted[0][1]
+            arch_filename = first_msg.document.file_name or f"{group['prefix']}.part1.rar"
+            display_name = f"unzip:{arch_filename}"
 
-        job = await store.create_job(chat_id, display_name, split_large_files=1, args=args_json)
-        await store.update_progress(job.id, status=JobStatus.DOWNLOADING)
+            job = await store.create_job(chat_id, display_name, split_large_files=1, args=args_json)
+            await store.update_progress(job.id, status=JobStatus.DOWNLOADING)
 
-        dest_dir = (settings.downloads_dir / job.download_dir).resolve()
-        dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_dir = (settings.downloads_dir / job.download_dir).resolve()
+            dest_dir.mkdir(parents=True, exist_ok=True)
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
-        ])
+            try:
+                for part_num, p_msg in parts_sorted:
+                    p_filename = p_msg.document.file_name or f"part_{part_num}"
+                    target_file = dest_dir / p_filename
+                    log.info("Multi-unzip pipeline [%s/%s]: Downloading split part %s for job #%s...", idx, total_groups, p_filename, job.id)
+                    await p_msg.download(file_name=str(target_file))
 
-        try:
-            last_edit_time = 0.0
-            async def on_download_progress(current, total):
-                nonlocal last_edit_time
-                import time
-                now = time.time()
-                if now - last_edit_time < 2.5 and current != total:
-                    return
-                last_edit_time = now
-                try:
-                    progress_name = f"{arch_filename} ({idx}/{total_archives})"
-                    await status_msg.edit_text(
-                        compile_unzip_download_status_text(job.id, progress_name, current, total),
-                        reply_markup=keyboard
-                    )
-                except Exception:
-                    pass
+                log.info("Multi-unzip pipeline [%s/%s]: All parts downloaded for split archive job #%s. Enqueuing!", idx, total_groups, job.id)
+                await store.db.execute(
+                    "UPDATE jobs SET status = ?, split_large_files = ? WHERE id = ?",
+                    (JobStatus.QUEUED, 1, job.id)
+                )
+                await store.db.commit()
+                await queue_manager.add_job(job.id)
 
-            target_file = dest_dir / arch_filename
-            log.info("Multi-unzip pipeline [%s/%s]: Downloading %s for job #%s...", idx, total_archives, arch_filename, job.id)
-            await arch_msg.download(
-                file_name=str(target_file),
-                progress=on_download_progress
-            )
+                log.info("Multi-unzip pipeline [%s/%s]: Waiting for split job #%s to finish...", idx, total_groups, job.id)
+                while True:
+                    db_job = await store.get_job(job.id)
+                    if not db_job or db_job.status in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED):
+                        job_status = db_job.status if db_job else "UNKNOWN"
+                        log.info("Multi-unzip pipeline [%s/%s]: Job #%s finished with status %s", idx, total_groups, job.id, job_status)
+                        break
+                    await asyncio.sleep(1.5)
 
-            log.info("Multi-unzip pipeline [%s/%s]: %s downloaded. Enqueuing job #%s immediately!", idx, total_archives, arch_filename, job.id)
-            await store.db.execute(
-                "UPDATE jobs SET status = ?, split_large_files = ? WHERE id = ?",
-                (JobStatus.QUEUED, 1, job.id)
-            )
-            await store.db.commit()
+            except Exception as e:
+                log.exception("Multi-unzip pipeline [%s/%s]: Error processing split archive %s", idx, total_groups, arch_filename)
+                await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
 
-            # Enqueue to queue_manager so extraction & upload starts
-            await queue_manager.add_job(job.id)
+        else:
+            arch_msg = group["msg"]
+            arch_filename = arch_msg.document.file_name or f"archive_{idx}.zip"
+            display_name = f"unzip:{arch_filename}"
 
-            # Wait for this archive job to complete extraction and upload
-            # before starting the next archive to prevent intermixing uploaded files
-            log.info("Multi-unzip pipeline [%s/%s]: Waiting for job #%s to finish before starting next...", idx, total_archives, job.id)
-            while True:
-                db_job = await store.get_job(job.id)
-                if not db_job or db_job.status in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED):
-                    job_status = db_job.status if db_job else "UNKNOWN"
-                    log.info("Multi-unzip pipeline [%s/%s]: Job #%s finished with status %s", idx, total_archives, job.id, job_status)
-                    break
-                await asyncio.sleep(1.5)
+            job = await store.create_job(chat_id, display_name, split_large_files=1, args=args_json)
+            await store.update_progress(job.id, status=JobStatus.DOWNLOADING)
 
-        except Exception as e:
-            log.exception("Multi-unzip pipeline [%s/%s]: Error downloading archive %s", idx, total_archives, arch_filename)
-            await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
+            dest_dir = (settings.downloads_dir / job.download_dir).resolve()
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+            ])
+
+            try:
+                last_edit_time = 0.0
+                async def on_download_progress(current, total):
+                    nonlocal last_edit_time
+                    import time
+                    now = time.time()
+                    if now - last_edit_time < 2.5 and current != total:
+                        return
+                    last_edit_time = now
+                    try:
+                        progress_name = f"{arch_filename} ({idx}/{total_groups})"
+                        await status_msg.edit_text(
+                            compile_unzip_download_status_text(job.id, progress_name, current, total),
+                            reply_markup=keyboard
+                        )
+                    except Exception:
+                        pass
+
+                target_file = dest_dir / arch_filename
+                log.info("Multi-unzip pipeline [%s/%s]: Downloading %s for job #%s...", idx, total_groups, arch_filename, job.id)
+                await arch_msg.download(
+                    file_name=str(target_file),
+                    progress=on_download_progress
+                )
+
+                log.info("Multi-unzip pipeline [%s/%s]: %s downloaded. Enqueuing job #%s immediately!", idx, total_groups, arch_filename, job.id)
+                await store.db.execute(
+                    "UPDATE jobs SET status = ?, split_large_files = ? WHERE id = ?",
+                    (JobStatus.QUEUED, 1, job.id)
+                )
+                await store.db.commit()
+                await queue_manager.add_job(job.id)
+
+                log.info("Multi-unzip pipeline [%s/%s]: Waiting for job #%s to finish before starting next...", idx, total_groups, job.id)
+                while True:
+                    db_job = await store.get_job(job.id)
+                    if not db_job or db_job.status in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED):
+                        job_status = db_job.status if db_job else "UNKNOWN"
+                        log.info("Multi-unzip pipeline [%s/%s]: Job #%s finished with status %s", idx, total_groups, job.id, job_status)
+                        break
+                    await asyncio.sleep(1.5)
+
+            except Exception as e:
+                log.exception("Multi-unzip pipeline [%s/%s]: Error downloading archive %s", idx, total_groups, arch_filename)
+                await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
 
     try:
         await status_msg.edit_text(
             f"**Multi Archive Pipeline Complete**\n"
-            f"Successfully processed all {total_archives} archive(s) sequentially."
+            f"Successfully processed all {total_groups} job(s) sequentially."
         )
     except Exception:
         pass
