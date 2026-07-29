@@ -1,4 +1,4 @@
-from .gdl import (
+from .core import (
     run_with_progress,
     DownloadResult,
     GalleryDLNotFound,
