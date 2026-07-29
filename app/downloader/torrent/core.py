@@ -170,10 +170,10 @@ async def stop_aria2_daemon() -> None:
 async def download_torrent_async(
     torrent_or_magnet: str,
     dest_dir: Path,
-    on_progress: Optional[Callable[[float, float, float, Optional[str]], None]] = None,
-    register_proc: Optional[Callable[[Optional[Aria2DownloadTask]], None]] = None,
+    on_progress: Optional[Callable[..., None]] = None,
+    register_proc: Optional[Callable[[Any], None]] = None,
 ) -> DownloadResult:
-    """Download a torrent or magnet link asynchronously using the global aria2c RPC daemon."""
+    """Download a torrent or magnet link asynchronously using global aria2c RPC daemon."""
     global ARIA2_PORT, ARIA2_PROC
     if ARIA2_PROC is None or ARIA2_PORT is None:
         await start_aria2_daemon()

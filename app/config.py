@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     tg_max_concurrent_downloads: int = 1
     tg_max_concurrent_uploads: int = 1  # keep at 1 unless you know Telegram tolerates more
 
+    # --- Torrent Search settings ---
+    torrent_timeout: int = Field(default=120, description="Torrent download timeout in seconds for dead/stalled torrents")
+    search_api_link: str | None = Field(default=None, description="External Torrent Search API link")
+    search_limit: int = Field(default=20, description="Limit of search results to fetch")
+
     # --- misc ---
     max_upload_bytes: int = 2 * 1024 * 1024 * 1024  # 2GB, MTProto ceiling
     progress_edit_every_n: int = 25

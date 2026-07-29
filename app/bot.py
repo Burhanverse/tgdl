@@ -69,6 +69,8 @@ async def main() -> None:
             BotCommand("direct", "Download direct HTTP link"),
             BotCommand("dl", "Download direct HTTP link"),
             BotCommand("tor", "Download torrent or magnet link"),
+            BotCommand("torsearch", "Search torrents across indexers & plugins"),
+            BotCommand("ts", "Search torrents across indexers & plugins"),
             BotCommand("gdl", "Batch download URLs from replied .txt file"),
             BotCommand("gdlconf", "Manage user gallery-dl configuration"),
             BotCommand("gd2tg", "Download Google Drive link to Telegram"),
@@ -88,6 +90,8 @@ async def main() -> None:
         log.warning("Failed to set bot commands: %s", e)
 
     from .manager import queue_manager, store, cleanup_orphaned_directories
+    from .downloader.torrent import initiate_search_tools
+    await initiate_search_tools()
     await store.open()
     await cleanup_orphaned_directories()
     await queue_manager.start(app, store)

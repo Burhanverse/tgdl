@@ -9,6 +9,7 @@ from .download import register_download_handlers
 from .unzip import register_unzip_handlers
 from .callbacks import register_choice_callback_handlers
 from .gdlconf import register_gdlconf_handlers
+from .torrent_search import register_torrent_search_handlers
 
 
 def register_all_handlers(app: Client) -> None:
@@ -20,6 +21,7 @@ def register_all_handlers(app: Client) -> None:
     register_unzip_handlers(app)
     register_choice_callback_handlers(app)
     register_gdlconf_handlers(app)
+    register_torrent_search_handlers(app)
 
 
 __all__ = ["register_all_handlers"]
