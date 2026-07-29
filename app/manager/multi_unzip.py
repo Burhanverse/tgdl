@@ -284,9 +284,28 @@ async def run_multi_archive_download_and_extract(
             )
             await store.db.commit()
 
-            # Enqueue immediately to queue_manager so extraction & upload starts WITHOUT waiting for remaining archives!
+            # Enqueue to queue_manager so extraction & upload starts
             await queue_manager.add_job(job.id)
+
+            # Wait for this archive job to complete extraction and upload
+            # before starting the next archive to prevent intermixing uploaded files
+            log.info("Multi-unzip pipeline [%s/%s]: Waiting for job #%s to finish before starting next...", idx, total_archives, job.id)
+            while True:
+                db_job = await store.get_job(job.id)
+                if not db_job or db_job.status in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED):
+                    job_status = db_job.status if db_job else "UNKNOWN"
+                    log.info("Multi-unzip pipeline [%s/%s]: Job #%s finished with status %s", idx, total_archives, job.id, job_status)
+                    break
+                await asyncio.sleep(1.5)
 
         except Exception as e:
             log.exception("Multi-unzip pipeline [%s/%s]: Error downloading archive %s", idx, total_archives, arch_filename)
             await store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
+
+    try:
+        await status_msg.edit_text(
+            f"**Multi Archive Pipeline Complete**\n"
+            f"Successfully processed all {total_archives} archive(s) sequentially."
+        )
+    except Exception:
+        pass
