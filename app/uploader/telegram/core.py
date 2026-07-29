@@ -69,6 +69,25 @@ def probe_audio(audio_path: Path) -> dict[str, Any]:
     return info
 
 
+def is_photo_invalid_for_telegram(file_path: Path) -> bool:
+    try:
+        import PIL.Image
+        with PIL.Image.open(file_path) as img:
+            if img.mode in ("CMYK", "P", "1"):
+                return True
+            w, h = img.size
+            if w <= 0 or h <= 0:
+                return True
+            if w + h > 10000 or max(w, h) > 9900:
+                return True
+            ratio = w / h if h > 0 else 0.0
+            if ratio > 15.0 or ratio < (1.0 / 15.0):
+                return True
+    except Exception:
+        return True
+    return False
+
+
 class TelegramUploader:
     """Stateful Telegram uploader module inspired by mirror-leech-telegram-bot's telegram_uploader.py."""
 
@@ -269,6 +288,10 @@ class TelegramUploader:
         is_audio = ext in AUDIO_EXT
         is_image = ext in IMAGE_EXT and ext not in CONVERTIBLE_IMAGE_EXT
 
+        if is_image and not force_document and is_photo_invalid_for_telegram(file_path):
+            log.info("Image %s has dimensions/color space unsuited for Telegram photo API; uploading as document", file_path.name)
+            force_document = True
+
         thumb_path: Optional[Path] = None
         screenshots: List[Path] = []
         video_meta: Dict[str, Any] = {}
@@ -347,7 +370,12 @@ class TelegramUploader:
             err_msg = str(err)
             log.warning("BadRequest during upload of %s: %s", file_path.name, err_msg)
             if not force_document:
-                log.info("Retrying %s as document...", file_path.name)
+                if any(x in err_msg for x in ("PHOTO_SAVE_FILE_INVALID", "PHOTO_INVALID_DIMENSIONS", "MEDIA_INVALID")):
+                    log.info("Photo format invalid for Telegram photo API (%s). Enabling document upload mode for remaining files in batch.", err_msg)
+                    self.as_doc = True
+                else:
+                    log.info("Retrying %s as document...", file_path.name)
+                self.last_uploaded = 0
                 return await self._upload_file(cap_mono, file_path, force_document=True)
             raise err
         finally:
