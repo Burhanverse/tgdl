@@ -97,6 +97,7 @@ async def extract_archive_async(
 ) -> bool:
     """Extract files from archive using unzip, unrar, tar, or 7z commands."""
     ext = archive_path.suffix.lower()
+    extract_dir_str = f"{extract_dir}/"
 
     if ext == ".zip" and shutil.which("unzip"):
         try:
@@ -111,14 +112,14 @@ async def extract_archive_async(
             if code == 0:
                 return True
             log.warning("unzip command returned non-zero code: %s", code)
-            if "password" in output or "incorrect password" in output or "encrypted" in output:
+            if any(k in output for k in ("password", "incorrect", "encrypted", "bad password", "cannot decrypt")):
                 raise ArchivePasswordRequired()
         except ArchivePasswordRequired:
             raise
         except Exception:
             log.exception("unzip command failed")
 
-    if ext == ".rar" and shutil.which("unrar"):
+    if (ext == ".rar" or archive_path.name.lower().endswith(".rar")) and shutil.which("unrar"):
         try:
             log.info("Extracting %s using unrar command line tool", archive_path.name)
             args = ["unrar", "x", "-y"]
@@ -126,14 +127,14 @@ async def extract_archive_async(
                 args.append(f"-p{password}")
             else:
                 args.append("-p-")
-            args.extend([str(archive_path), str(extract_dir)])
+            args.extend([str(archive_path), extract_dir_str])
             
             code, stdout, stderr = await _run_subprocess_with_kill(*args)
             output = (stdout.decode(errors="ignore") + stderr.decode(errors="ignore")).lower()
             if code == 0:
                 return True
             log.warning("unrar command returned non-zero code: %s", code)
-            if "password" in output or "encrypted" in output:
+            if any(k in output for k in ("password", "incorrect", "encrypted", "crc failed", "checksum error")):
                 raise ArchivePasswordRequired()
         except ArchivePasswordRequired:
             raise
@@ -154,12 +155,15 @@ async def extract_archive_async(
         except Exception:
             log.exception("tar command failed")
 
-    if shutil.which("7z"):
+    cmd7z = shutil.which("7z") or shutil.which("7zz") or shutil.which("7za")
+    if cmd7z:
         try:
-            log.info("Extracting %s using 7z command line tool", archive_path.name)
-            args = ["7z", "x", "-y", f"-o{extract_dir}"]
+            log.info("Extracting %s using 7z command line tool (%s)", archive_path.name, cmd7z)
+            args = [cmd7z, "x", "-y", f"-o{extract_dir}"]
             if password:
                 args.append(f"-p{password}")
+            else:
+                args.append("-p-")
             args.append(str(archive_path))
             
             code, stdout, stderr = await _run_subprocess_with_kill(*args)
@@ -167,7 +171,7 @@ async def extract_archive_async(
             if code == 0:
                 return True
             log.warning("7z command returned non-zero code: %s", code)
-            if "password" in output or "encrypted" in output:
+            if any(k in output for k in ("password", "incorrect", "encrypted", "wrong password", "cannot open encrypted")):
                 raise ArchivePasswordRequired()
         except ArchivePasswordRequired:
             raise

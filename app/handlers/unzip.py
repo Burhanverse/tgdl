@@ -60,16 +60,20 @@ def register_unzip_handlers(app: Client) -> None:
 
     @app.on_message(filters.command("unzip"))
     async def unzip_cmd(_, message: Message) -> None:
-        tokens = (message.text or "").split()[1:]
-        lowered_tokens = [t.lower() for t in tokens]
+        raw_text = (message.text or "").strip()
+        parts = raw_text.split(maxsplit=1)
+        args_text = parts[1].strip() if len(parts) > 1 else ""
+        lowered_args = args_text.lower()
 
-        if "multi" in lowered_tokens:
-            password = next((t for t in tokens if t.lower() != "multi"), None)
+        if lowered_args == "multi" or lowered_args.startswith("multi "):
+            password = args_text[5:].strip() if len(args_text) > 5 else None
+            password = password or None
             await start_multi_unzip_session(message, password=password, split_archive_sessions=_split_archive_sessions)
             return
 
-        if "split" in lowered_tokens:
-            password = next((t for t in tokens if t.lower() != "split"), None)
+        if lowered_args == "split" or lowered_args.startswith("split "):
+            password = args_text[5:].strip() if len(args_text) > 5 else None
+            password = password or None
             chat_id = message.chat.id
             user_id = message.from_user.id if message.from_user else chat_id
             session_key = chat_id
@@ -130,7 +134,7 @@ def register_unzip_handlers(app: Client) -> None:
             await message.reply_text(f"File `{doc.file_name}` is not a supported archive format.")
             return
 
-        password = tokens[0] if tokens else None
+        password = args_text or None
         target_url = f"unzip:{doc.file_name}"
         import json
         args_json = json.dumps({"reply_message_id": message.reply_to_message.id, "password": password})
@@ -248,12 +252,16 @@ def register_unzip_handlers(app: Client) -> None:
             await query.answer("You are not authorized to start this session.", show_alert=True)
             return
 
-        session = _split_archive_sessions.get(chat_id)
+        session = _split_archive_sessions.pop(chat_id, None)
         if not session or not session["parts"]:
             await query.answer("No split archive parts received yet!", show_alert=True)
             return
 
+        if session.get("timeout_task"):
+            session["timeout_task"].cancel()
+
         await query.answer("Starting extraction...")
+        asyncio.create_task(run_split_archive_download_and_extract(session, query.message, store, queue_manager))
 
     @app.on_callback_query(filters.regex(r"^multi_cancel:(-?\d+):(-?\d+)$"))
     async def multi_cancel_cb(client: Client, query: CallbackQuery) -> None:
@@ -262,3 +270,66 @@ def register_unzip_handlers(app: Client) -> None:
     @app.on_callback_query(filters.regex(r"^multi_start:(-?\d+):(-?\d+)$"))
     async def multi_start_cb(client: Client, query: CallbackQuery) -> None:
         await handle_multi_start_cb(client, query, store, queue_manager)
+
+
+async def run_split_archive_download_and_extract(
+    session: dict,
+    status_msg: Message,
+    store,
+    queue_manager
+) -> None:
+    import json
+    from ..db import JobStatus
+    parts: dict[int, Message] = session["parts"]
+    password: Optional[str] = session["password"]
+    chat_id = status_msg.chat.id
+    sorted_part_nums = sorted(parts.keys())
+    total_parts = len(sorted_part_nums)
+
+    if not sorted_part_nums:
+        return
+
+    first_part_msg = parts[sorted_part_nums[0]]
+    first_filename = first_part_msg.document.file_name or "archive.001"
+    display_name = f"unzip:{first_filename}"
+
+    args_dict = {"reply_message_id": first_part_msg.id}
+    if password:
+        args_dict["password"] = password
+    args_json = json.dumps(args_dict)
+
+    job = await store.create_job(chat_id, display_name, split_large_files=1, args=args_json)
+    await store.update_progress(job.id, status=JobStatus.DOWNLOADING)
+
+    dest_dir = (settings.downloads_dir / job.download_dir).resolve()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+    ])
+
+    try:
+        await status_msg.edit_text(
+            f"**Split Archive Pipeline Started** ({total_parts} parts)\n"
+            "------------------------------------\n"
+            "Downloading all split archive parts..."
+        )
+    except Exception:
+        pass
+
+    for idx, part_num in enumerate(sorted_part_nums, start=1):
+        part_msg = parts[part_num]
+        part_filename = part_msg.document.file_name or f"part_{part_num}"
+        target_file = dest_dir / part_filename
+
+        log.info("Split-unzip pipeline [%s/%s]: Downloading %s for job #%s...", idx, total_parts, part_filename, job.id)
+        await part_msg.download(file_name=str(target_file))
+
+    log.info("Split-unzip pipeline: All %s parts downloaded for job #%s. Enqueuing for extraction...", total_parts, job.id)
+    await store.db.execute(
+        "UPDATE jobs SET status = ?, split_large_files = ? WHERE id = ?",
+        (JobStatus.QUEUED, 1, job.id)
+    )
+    await store.db.commit()
+    await queue_manager.add_job(job.id)
+
