@@ -755,6 +755,7 @@ class QueueManager:
             cleaned_url.startswith("mirror_tg:")
         )
 
+        is_unzip_job = cleaned_url.startswith("unzip:")
         has_archive_fmt = False
         upload_tg = False
         if job.args:
@@ -767,6 +768,8 @@ class QueueManager:
                         is_mirror_job = True
                     if args_dict.get("upload_tg"):
                         upload_tg = True
+                    if args_dict.get("unzip"):
+                        is_unzip_job = True
             except Exception:
                 pass
 
@@ -958,7 +961,7 @@ class QueueManager:
                         archive_id = str(len(_archive_ids[job.id]) + 1)
                         _archive_ids[job.id][archive_id] = f_rel
 
-                    if job.url.startswith("unzip:"):
+                    if is_unzip_job:
                         if job.id not in _archive_choices:
                             _archive_choices[job.id] = {}
                         _archive_choices[job.id][archive_id] = "ext"
@@ -1055,7 +1058,7 @@ class QueueManager:
                                 except Exception:
                                     pass
 
-                                if job.url.startswith("unzip:"):
+                                if is_unzip_job:
                                     try:
                                         f.unlink(missing_ok=True)
                                     except Exception:
@@ -1115,7 +1118,7 @@ class QueueManager:
                                     compile_extraction_failed_status_text(job.id, f.name),
                                     link_preview_options=LinkPreviewOptions(is_disabled=True)
                                 )
-                                if job.url.startswith("unzip:"):
+                                if is_unzip_job:
                                     raise Exception(f"Failed to extract archive {f.name}")
                                 if archive_prompt_msg_id:
                                     try:
@@ -1225,7 +1228,7 @@ class QueueManager:
                         if not base_ext or base_ext.lower() in ARCHIVE_EXT:
                             is_file_archive = True
 
-                if job.url.startswith("unzip:") and is_file_archive:
+                if is_unzip_job and is_file_archive:
                     try:
                         f.unlink(missing_ok=True)
                     except Exception:

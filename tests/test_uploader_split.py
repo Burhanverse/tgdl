@@ -56,3 +56,31 @@ async def test_handle_large_file_split_and_parts():
         # Check total size of split parts matches original content size
         total_split_size = sum(p.stat().st_size for p in parts)
         assert total_split_size == len(content)
+
+
+def test_parse_download_flags():
+    """Verify _parse_flags parses -uz, -p, -m, -tg flags correctly."""
+    from app.handlers.download import _parse_flags
+
+    # Simple -uz flag
+    tokens1 = ["/dl", "-uz", "https://example.com/file.zip"]
+    is_m, is_tg, uz, pwd, urls = _parse_flags(tokens1)
+    assert uz is True
+    assert pwd is None
+    assert urls == ["https://example.com/file.zip"]
+
+    # -uz and -p with space
+    tokens2 = ["/dl", "-uz", "-p", "secret123", "https://example.com/file.zip"]
+    is_m, is_tg, uz, pwd, urls = _parse_flags(tokens2)
+    assert uz is True
+    assert pwd == "secret123"
+    assert urls == ["https://example.com/file.zip"]
+
+    # -p=val syntax with -unzip and -m
+    tokens3 = ["/gdl", "-m", "-unzip", "-p=my_pass", "https://example.com/gallery"]
+    is_m, is_tg, uz, pwd, urls = _parse_flags(tokens3)
+    assert is_m is True
+    assert uz is True
+    assert pwd == "my_pass"
+    assert urls == ["https://example.com/gallery"]
+

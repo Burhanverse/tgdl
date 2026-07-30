@@ -19,6 +19,40 @@ from ..uploader import upload_to_pixeldrain, upload_to_gofile, upload_to_filedit
 log = logging.getLogger(__name__)
 
 
+def _parse_flags(text_tokens: list[str]) -> tuple[bool, bool, bool, Optional[str], list[str]]:
+    is_mirror = False
+    upload_tg = False
+    unzip = False
+    password = None
+    urls = []
+
+    i = 1
+    while i < len(text_tokens):
+        token = text_tokens[i].strip()
+        if not token:
+            i += 1
+            continue
+
+        low = token.lower()
+        if low in ("-m", "-mirror", "--mirror"):
+            is_mirror = True
+        elif low in ("-tg", "--tg"):
+            upload_tg = True
+        elif low in ("-uz", "-unzip", "--unzip"):
+            unzip = True
+        elif low in ("-p", "-pass", "--pass", "--password"):
+            if i + 1 < len(text_tokens) and not text_tokens[i + 1].startswith("-"):
+                password = text_tokens[i + 1].strip()
+                i += 1
+        elif any(low.startswith(prefix) for prefix in ("-p=", "-pass=", "--pass=", "--password=")):
+            password = token.split("=", 1)[1].strip() or None
+        elif token.startswith(("http://", "https://")):
+            urls.append(token)
+        i += 1
+
+    return is_mirror, upload_tg, unzip, password, urls
+
+
 async def _create_and_enqueue_job(
     client: Client,
     chat_id: int,
@@ -26,13 +60,19 @@ async def _create_and_enqueue_job(
     message: Message,
     display_text: str,
     is_mirror: bool = False,
-    upload_tg: bool = False
+    upload_tg: bool = False,
+    unzip: bool = False,
+    password: Optional[str] = None
 ) -> None:
     args_dict = {}
     if is_mirror:
         args_dict["is_mirror"] = True
     if upload_tg:
         args_dict["upload_tg"] = True
+    if unzip:
+        args_dict["unzip"] = True
+    if password:
+        args_dict["password"] = password
     args_json = json.dumps(args_dict) if args_dict else None
     job = await store.create_job(chat_id, target_url, split_large_files=1, args=args_json)
     await store.update_progress(job.id, status="queued")
@@ -124,10 +164,9 @@ def register_download_handlers(app: Client) -> None:
 
     @app.on_message(filters.command(["direct", "dl"]))
     async def direct_cmd(client: Client, message: Message) -> None:
-        urls = []
         text_tokens = message.text.split() if message.text else []
-        is_mirror = ("-m" in text_tokens) or ("-mirror" in text_tokens)
-        upload_tg = ("-tg" in text_tokens)
+        is_mirror, upload_tg, unzip, password, parsed_urls = _parse_flags(text_tokens)
+        urls = []
 
         if message.reply_to_message:
             reply_msg = message.reply_to_message
@@ -157,32 +196,35 @@ def register_download_handlers(app: Client) -> None:
                         urls.append(token)
 
         if not urls:
-            for token in text_tokens[1:]:
-                token = token.strip()
-                if token in ("-m", "-mirror", "-tg"):
-                    continue
-                if token.startswith(("http://", "https://")):
-                    urls.append(token)
+            urls = parsed_urls
 
         if not urls:
             await message.reply_text(
                 "Provide a direct URL or reply to a text/message containing URLs:\n"
-                "• `/direct [-m|-mirror] [-tg] <url>` or `/dl [-m] <url>`\n"
-                "• Reply with `/direct [-m]` or `/dl [-m]` to a text message or `.txt` file containing URLs."
+                "• `/direct [-m|-mirror] [-tg] [-uz] [-p password] <url>` or `/dl [-uz] [-p password] <url>`\n"
+                "• Reply with `/direct [-uz]` or `/dl [-uz]` to a text message or `.txt` file containing URLs."
             )
             return
 
         urls_json = json.dumps([f"direct:{u}" for u in urls]) if len(urls) > 1 else f"direct:{urls[0]}"
-        prefix = "direct [mirror]:" if is_mirror else "direct:"
+        prefix_parts = []
+        if is_mirror:
+            prefix_parts.append("mirror")
+        if unzip:
+            prefix_parts.append("unzip")
+        prefix_str = f" [{', '.join(prefix_parts)}]" if prefix_parts else ""
+        prefix = f"direct{prefix_str}:"
         display_text = f"{prefix} `{urls[0]}`" if len(urls) == 1 else f"{prefix} `{urls[0]}` (+ {len(urls) - 1} more)"
-        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror, upload_tg=upload_tg)
+        await _create_and_enqueue_job(
+            client, message.chat.id, urls_json, message, display_text,
+            is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
+        )
 
     @app.on_message(filters.command(["gallerydl", "gdl"]))
     async def gdl_cmd(client: Client, message: Message) -> None:
-        urls = []
         text_tokens = message.text.split() if message.text else []
-        is_mirror = ("-m" in text_tokens) or ("-mirror" in text_tokens)
-        upload_tg = ("-tg" in text_tokens)
+        is_mirror, upload_tg, unzip, password, parsed_urls = _parse_flags(text_tokens)
+        urls = []
 
         if message.reply_to_message:
             reply_msg = message.reply_to_message
@@ -212,25 +254,30 @@ def register_download_handlers(app: Client) -> None:
                         urls.append(token)
 
         if not urls:
-            for token in text_tokens[1:]:
-                token = token.strip()
-                if token in ("-m", "-mirror", "-tg"):
-                    continue
-                if token.startswith(("http://", "https://")):
-                    urls.append(token)
+            urls = parsed_urls
 
         if not urls:
             await message.reply_text(
                 "Provide a URL or reply to a text/message containing URLs:\n"
-                "• `/gdl [-m|-mirror] [-tg] <url>`\n"
-                "• Reply with `/gdl [-m]` to a text message or `.txt` file containing URLs."
+                "• `/gdl [-m|-mirror] [-tg] [-uz] [-p password] <url>`\n"
+                "• Reply with `/gdl [-uz]` to a text message or `.txt` file containing URLs."
             )
             return
 
         urls_json = json.dumps(urls) if len(urls) > 1 else urls[0]
-        prefix = "gallery-dl [mirror]:" if is_mirror else "gallery-dl:"
+        prefix_parts = []
+        if is_mirror:
+            prefix_parts.append("mirror")
+        if unzip:
+            prefix_parts.append("unzip")
+        prefix_str = f" [{', '.join(prefix_parts)}]" if prefix_parts else ""
+        prefix = f"gallery-dl{prefix_str}:"
         display_text = f"{prefix} `{urls[0]}`" if len(urls) == 1 else f"{prefix} `{urls[0]}` (+ {len(urls) - 1} more)"
-        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror, upload_tg=upload_tg)
+        await _create_and_enqueue_job(
+            client, message.chat.id, urls_json, message, display_text,
+            is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
+        )
+
 
     @app.on_message(filters.command("tor"))
     async def tor_cmd(client: Client, message: Message) -> None:
