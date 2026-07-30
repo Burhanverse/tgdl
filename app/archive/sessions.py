@@ -321,12 +321,36 @@ async def run_multi_archive_download_and_extract(
             dest_dir = (settings.downloads_dir / job.download_dir).resolve()
             dest_dir.mkdir(parents=True, exist_ok=True)
 
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
+            ])
+
             try:
-                for part_num, p_msg in parts_sorted:
+                import time
+                last_edit_time = 0.0
+                total_parts_in_group = len(parts_sorted)
+                for part_idx, (part_num, p_msg) in enumerate(parts_sorted, start=1):
                     p_filename = p_msg.document.file_name or f"part_{part_num}"
                     target_file = dest_dir / p_filename
+
+                    async def on_split_part_progress(current, total):
+                        nonlocal last_edit_time
+                        now = time.time()
+                        if now - last_edit_time < 2.0 and current != total:
+                            return
+                        last_edit_time = now
+                        try:
+                            from ..manager.status.compiler import compile_unzip_download_status_text
+                            progress_name = f"{p_filename} (part {part_idx}/{total_parts_in_group}, job {idx}/{total_groups})"
+                            await status_msg.edit_text(
+                                compile_unzip_download_status_text(job.id, progress_name, current, total),
+                                reply_markup=keyboard
+                            )
+                        except Exception:
+                            pass
+
                     log.info("Multi-unzip pipeline [%s/%s]: Downloading split part %s for job #%s...", idx, total_groups, p_filename, job.id)
-                    await p_msg.download(file_name=str(target_file))
+                    await p_msg.download(file_name=str(target_file), progress=on_split_part_progress)
 
                 from .split import normalize_split_archive_filenames
                 normalize_split_archive_filenames(dest_dir)

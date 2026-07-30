@@ -328,13 +328,30 @@ async def run_split_archive_download_and_extract(
     except Exception:
         pass
 
+    import time
+    last_edit_time = 0.0
     for idx, part_num in enumerate(sorted_part_nums, start=1):
         part_msg = parts[part_num]
         part_filename = part_msg.document.file_name or f"part_{part_num}"
         target_file = dest_dir / part_filename
 
+        async def on_part_download_progress(current, total):
+            nonlocal last_edit_time
+            now = time.time()
+            if now - last_edit_time < 2.0 and current != total:
+                return
+            last_edit_time = now
+            try:
+                progress_name = f"{part_filename} ({idx}/{total_parts})"
+                await status_msg.edit_text(
+                    compile_unzip_download_status_text(job.id, progress_name, current, total),
+                    reply_markup=keyboard
+                )
+            except Exception:
+                pass
+
         log.info("Split-unzip pipeline [%s/%s]: Downloading %s for job #%s...", idx, total_parts, part_filename, job.id)
-        await part_msg.download(file_name=str(target_file))
+        await part_msg.download(file_name=str(target_file), progress=on_part_download_progress)
 
     from ..archive import normalize_split_archive_filenames
     normalize_split_archive_filenames(dest_dir)
