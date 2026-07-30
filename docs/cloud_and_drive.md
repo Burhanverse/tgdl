@@ -40,6 +40,27 @@ If the bot owner places `token.pickle` or `accounts/*.json` files in the server 
 
 ---
 
+## MEGA User Authentication (`/mega -login`)
+
+Per-user MEGA account login allows downloading protected or private content using your personal account. Credentials are isolated under `auth/<user_id>/mega.json`.
+
+### Commands & Options
+- **Log into account**:
+  ```text
+  /mega -login email@domain.com:your_password
+  /mega -login email@domain.com your_password
+  ```
+- **Remove saved account**:
+  ```text
+  /mega -logout
+  ```
+- **View login status**:
+  ```text
+  /mega -account
+  ```
+
+---
+
 ## External Cloud Host Uploaders
 
 Upload Telegram media files directly to third-party file hosting services.

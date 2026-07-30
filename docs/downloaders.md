@@ -48,6 +48,33 @@ The `/gdl` (or `/gallerydl`) command uses `gallery-dl` to extract media albums, 
 
 ---
 
+## MEGA Downloader (`/mega`, `/meganz`)
+
+The `/mega` (or `/meganz`) command downloads files and full folder hierarchies from **mega.nz**, **mega.co.nz**, and **mega.io**.
+
+### Syntax
+```text
+/mega [flags] <mega_url>
+/meganz [flags] <mega_url>
+```
+
+### Examples
+- Download a public file or folder:
+  ```text
+  /mega https://mega.nz/file/ABC#123
+  /mega https://mega.nz/folder/XYZ#456
+  ```
+- Download and automatically extract archives inside MEGA folder:
+  ```text
+  /mega -uz -p secret123 https://mega.nz/folder/XYZ#456
+  ```
+- Mirror MEGA contents to server storage:
+  ```text
+  /mega -m https://mega.nz/file/ABC#123
+  ```
+
+---
+
 ## Mirror Mode (`/m`, `/mirror`)
 
 The `/m` (or `/mirror`) command downloads content and stores it on server storage.
@@ -64,7 +91,7 @@ The `/m` (or `/mirror`) command downloads content and stores it on server storag
 
 ## Supported Command Flags
 
-The following flags can be passed to `/dl`, `/gdl`, `/direct`, `/gallerydl`, and `/mirror`:
+The following flags can be passed to `/dl`, `/gdl`, `/mega`, `/direct`, `/gallerydl`, `/meganz`, and `/mirror`:
 
 | Flag | Aliases | Description |
 | :--- | :--- | :--- |
@@ -81,5 +108,7 @@ You can process multiple URLs in a single job:
 1. Paste space-separated URLs in the command:
    ```text
    /gdl https://example.com/album1 https://example.com/album2
+   /mega https://mega.nz/file/ABC#123 https://mega.nz/file/DEF#456
    ```
-2. Reply to a `.txt` file containing URLs (one per line) with `/dl` or `/gdl`.
+2. Reply to a `.txt` file containing URLs (one per line) with `/dl`, `/gdl`, or `/mega`.
+

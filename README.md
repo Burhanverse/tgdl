@@ -49,6 +49,8 @@ This project uses modular sub-documentation files located in the `docs/` directo
 | :--- | :--- | :--- | :--- |
 | `/dl [flags] <url>` | `/direct` | Download direct HTTP/HTTPS URLs. | [Downloaders](docs/downloaders.md) |
 | `/gdl [flags] <url>` | `/gallerydl` | Download albums/posts via gallery-dl. | [Downloaders](docs/downloaders.md) |
+| `/mega [flags] <url>` | `/meganz` | Download files & folders from mega.nz / mega.co.nz / mega.io. | [Downloaders](docs/downloaders.md) |
+| `/mega -login <email:pass>` | `/mega -logout`, `/mega -account` | Manage personal MEGA account credentials. | [Cloud & Drive](docs/cloud_and_drive.md) |
 | `/m [flags] <url>` | `/mirror` | Mirror links/files to server. | [Downloaders](docs/downloaders.md) |
 | `/tor <magnet/url>` | — | Download torrent magnet or `.torrent` file. | [Torrents](docs/torrents.md) |
 | `/ts <query>` | `/torsearch`, `/search` | Search torrents with inline pagination. | [Torrents](docs/torrents.md) |

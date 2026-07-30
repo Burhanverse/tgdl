@@ -66,3 +66,14 @@ Cancel active or queued jobs instantly.
   /cancel abc12345
   ```
 - Send `/cancel` without arguments to open an interactive selection menu of all your active/queued jobs.
+
+---
+
+## Global Environment Credentials
+
+You can set global fallback credentials in your `.env` file:
+- `MEGA_EMAIL`: Default global MEGA account email.
+- `MEGA_PASSWORD`: Default global MEGA account password.
+- `PIXELDRAIN_API_KEY`: API key for Pixeldrain uploads (`/pdup`).
+- `GOFILE_API_KEY`: API token for GoFile uploads (`/gfup`).
+
