@@ -936,8 +936,7 @@ class QueueManager:
                             is_archive = True
 
                 if f_split and f_split["part"] > 1:
-                    if job.url.startswith("unzip:"):
-                        continue
+                    continue
 
                 if is_archive:
                     archive_prompt_msg_id = None
@@ -1695,7 +1694,7 @@ class QueueManager:
                 final_text = compile_job_status_text(db_job, job_state)
                 await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None, force=True)
 
-            from .archive import _archive_ids, _archive_events, _archive_choices, _extracted_archives, _extracted_file_names
+            from ..archive import _archive_ids, _archive_events, _archive_choices, _extracted_archives, _extracted_file_names
             from ..conversion import _conversion_ids, _conversion_events, _conversion_choices, _converted_files
 
             _archive_ids.pop(job.id, None)

@@ -62,6 +62,13 @@ def test_split_archive_pattern_detection():
     assert info3_2 is not None
     assert info3_2["part"] == 2
 
+    # Pattern with custom suffix after part number (e.g. Yeonwoo – Panty-ra.part2-yJ4ELhGA.rar)
+    info_suffix = get_split_archive_info("Yeonwoo – Panty-ra.part2-yJ4ELhGA.rar")
+    assert info_suffix is not None
+    assert info_suffix["prefix"] == "Yeonwoo – Panty-ra"
+    assert info_suffix["part"] == 2
+    assert info_suffix["ext"] == "rar"
+
     # Normal non-split files
     assert get_split_archive_info("normal.zip") is None
     assert get_split_archive_info("archive.rar") is None
@@ -156,3 +163,32 @@ async def test_multi_part_split_archive_assembly():
     assert info1["prefix"] == info2["prefix"]
     assert info1["part"] == 1
     assert info2["part"] == 2
+
+
+@pytest.mark.asyncio
+async def test_password_protected_archive_handling():
+    """Test password-protected 7z archive extraction with correct password and raising ArchivePasswordRequired on wrong password."""
+    import py7zr
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        archive_path = tmp_path / "protected.7z"
+        
+        # Create an encrypted 7z archive
+        with py7zr.SevenZipFile(archive_path, "w", password="mysecretpassword") as archive:
+            archive.writestr("Top secret data content", "secret.txt")
+
+        extract_dir1 = tmp_path / "out_correct"
+        # Extraction with correct password should succeed
+        success = await extract_archive_async(archive_path, extract_dir1, password="mysecretpassword")
+        assert success
+        assert (extract_dir1 / "secret.txt").read_text() == "Top secret data content"
+
+        extract_dir2 = tmp_path / "out_wrong"
+        # Extraction with wrong password should raise ArchivePasswordRequired
+        with pytest.raises(ArchivePasswordRequired):
+            await extract_archive_async(archive_path, extract_dir2, password="wrongpassword")
+
+        extract_dir3 = tmp_path / "out_nopass"
+        # Extraction with missing password should raise ArchivePasswordRequired
+        with pytest.raises(ArchivePasswordRequired):
+            await extract_archive_async(archive_path, extract_dir3, password=None)
