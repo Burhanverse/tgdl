@@ -102,3 +102,57 @@ def is_split_archive(target: Union[str, Path, Sequence[Union[str, Path]]]) -> bo
         if get_split_archive_info(Path(item).name) is not None:
             return True
     return False
+
+
+def normalize_split_archive_filenames(directory: Path) -> dict[Path, Path]:
+    """Scans directory for split archive parts with non-standard suffixes (e.g. part1-hash.rar, part2-otherhash.rar)
+    and renames them into uniform, clean split part filenames (e.g. part1.rar, part2.rar).
+
+    Returns a mapping of original_path -> new_path.
+    """
+    directory = Path(directory)
+    if not directory.exists() or not directory.is_dir():
+        return {}
+
+    renamed_map: dict[Path, Path] = {}
+    groups: dict[tuple[str, str, str], list[tuple[int, Path, dict]]] = {}
+
+    for item in directory.iterdir():
+        if not item.is_file():
+            continue
+        info = get_split_archive_info(item.name)
+        if not info:
+            continue
+        key = (info["prefix"], info["type"], info.get("ext", ""))
+        if key not in groups:
+            groups[key] = []
+        groups[key].append((info["part"], item, info))
+
+    for (prefix, stype, ext), items in groups.items():
+        if len(items) <= 0:
+            continue
+
+        for part_num, item, info in items:
+            if stype == "part_infix":
+                clean_name = f"{prefix}.part{part_num}.{ext}" if ext else f"{prefix}.part{part_num}"
+            elif stype == "numeric_suffix":
+                clean_name = f"{prefix}.{ext}.{part_num:03d}"
+            elif stype == "numeric_suffix_no_ext":
+                clean_name = f"{prefix}.{part_num:03d}"
+            elif stype == "rar_r_suffix":
+                clean_name = f"{prefix}.r{part_num - 1:02d}"
+            elif stype == "zip_z_suffix":
+                clean_name = f"{prefix}.z{part_num - 1:02d}"
+            else:
+                continue
+
+            target_path = directory / clean_name
+            if item != target_path and not target_path.exists():
+                try:
+                    item.rename(target_path)
+                    log.info("Normalized split archive filename: %s -> %s", item.name, target_path.name)
+                    renamed_map[item] = target_path
+                except Exception as e:
+                    log.warning("Failed to normalize filename %s to %s: %s", item.name, target_path.name, e)
+
+    return renamed_map

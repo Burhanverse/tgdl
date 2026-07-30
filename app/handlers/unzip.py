@@ -336,6 +336,9 @@ async def run_split_archive_download_and_extract(
         log.info("Split-unzip pipeline [%s/%s]: Downloading %s for job #%s...", idx, total_parts, part_filename, job.id)
         await part_msg.download(file_name=str(target_file))
 
+    from ..archive import normalize_split_archive_filenames
+    normalize_split_archive_filenames(dest_dir)
+
     log.info("Split-unzip pipeline: All %s parts downloaded for job #%s. Enqueuing for extraction...", total_parts, job.id)
     await store.db.execute(
         "UPDATE jobs SET status = ?, split_large_files = ? WHERE id = ?",

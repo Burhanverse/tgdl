@@ -7,6 +7,7 @@ from .core import (
 from .split import (
     get_split_archive_info,
     is_split_archive,
+    normalize_split_archive_filenames,
 )
 from .archiver import (
     create_archive_async,
@@ -36,6 +37,7 @@ __all__ = [
     "is_archive",
     "get_split_archive_info",
     "is_split_archive",
+    "normalize_split_archive_filenames",
     "create_archive_async",
     "archive_folder_async",
     "archive_all_folders_in_dir",

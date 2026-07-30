@@ -62,10 +62,10 @@ def test_split_archive_pattern_detection():
     assert info3_2 is not None
     assert info3_2["part"] == 2
 
-    # Pattern with custom suffix after part number (e.g. Yeonwoo – Panty-ra.part2-yJ4ELhGA.rar)
-    info_suffix = get_split_archive_info("Yeonwoo – Panty-ra.part2-yJ4ELhGA.rar")
+    # Pattern with custom suffix after part number (e.g. xxyyzz -zzz.part2-yJ4ELhGA.rar)
+    info_suffix = get_split_archive_info("xxyyzz -zzz.part2-yJ4ELhGA.rar")
     assert info_suffix is not None
-    assert info_suffix["prefix"] == "Yeonwoo – Panty-ra"
+    assert info_suffix["prefix"] == "xxyyzz -zzz"
     assert info_suffix["part"] == 2
     assert info_suffix["ext"] == "rar"
 
@@ -163,6 +163,24 @@ async def test_multi_part_split_archive_assembly():
     assert info1["prefix"] == info2["prefix"]
     assert info1["part"] == 1
     assert info2["part"] == 2
+
+
+@pytest.mark.asyncio
+async def test_split_archive_filename_normalization():
+    """Test normalizing split filenames with random Telegram hash suffixes."""
+    from app.archive.split import normalize_split_archive_filenames
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        f1 = tmp_path / "xxyyzz -zzz.part1-tnfHAaap.rar"
+        f2 = tmp_path / "xxyyzz -zzz.part2-yJ4ELhGA.rar"
+        f1.write_text("dummy part 1")
+        f2.write_text("dummy part 2")
+
+        renamed = normalize_split_archive_filenames(tmp_path)
+        assert len(renamed) == 2
+        file_names = {p.name for p in tmp_path.iterdir()}
+        assert "xxyyzz -zzz.part1.rar" in file_names
+        assert "xxyyzz -zzz.part2.rar" in file_names
 
 
 @pytest.mark.asyncio

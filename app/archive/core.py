@@ -39,6 +39,13 @@ def is_archive(path_or_filename: Union[str, Path]) -> bool:
 
 def _is_password_err(err_text: str) -> bool:
     low = err_text.lower()
+    # Structural archive / missing volume errors are NOT password errors
+    if any(k in low for k in (
+        "cannot find volume", "volume missing", "volume not found",
+        "unexpected end of archive", "no files to extract", "cannot open volume"
+    )):
+        return False
+
     return any(k in low for k in (
         "password", "incorrect", "encrypted", "bad password",
         "cannot decrypt", "crc failed", "checksum error", "wrong password",
@@ -66,7 +73,12 @@ async def extract_archive_async(
         log.error("Archive path %s does not exist", archive_path)
         return False
 
-    from .split import get_split_archive_info
+    from .split import get_split_archive_info, normalize_split_archive_filenames
+    renamed_map = normalize_split_archive_filenames(archive_path.parent)
+    if archive_path in renamed_map:
+        archive_path = renamed_map[archive_path]
+        log.info("Archive path updated after normalization to %s", archive_path.name)
+
     split_info = get_split_archive_info(archive_path.name)
     if split_info and split_info["part"] > 1:
         log.info("Path %s is part %d of split archive prefix '%s'. Searching for part 1 in %s...",
