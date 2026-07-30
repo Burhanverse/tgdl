@@ -65,18 +65,13 @@ async def main() -> None:
         from pyrogram.types import BotCommand
         await app.set_bot_commands([
             BotCommand("m", "Mirror file/URL to GoFile, FileDitch & Pixeldrain"),
-            BotCommand("mirror", "Mirror file/URL to GoFile, FileDitch & Pixeldrain"),
-            BotCommand("direct", "Download direct HTTP link"),
             BotCommand("dl", "Download direct HTTP link"),
             BotCommand("tor", "Download torrent or magnet link"),
-            BotCommand("torsearch", "Search torrents across indexers & plugins"),
             BotCommand("ts", "Search torrents across indexers & plugins"),
             BotCommand("gdl", "Batch download URLs from replied .txt file"),
             BotCommand("gdlconf", "Manage user gallery-dl configuration"),
             BotCommand("gd2tg", "Download Google Drive link to Telegram"),
-            BotCommand("gfup", "Upload replied media to GoFile"),
             BotCommand("gofile", "Upload replied media to GoFile"),
-            BotCommand("fdup", "Upload replied media to FileDitch"),
             BotCommand("fileditch", "Upload replied media to FileDitch"),
             BotCommand("pdup", "Upload replied media to Pixeldrain"),
             BotCommand("unzip", "Download & extract archive"),

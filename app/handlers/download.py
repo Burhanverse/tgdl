@@ -25,9 +25,15 @@ async def _create_and_enqueue_job(
     target_url: str,
     message: Message,
     display_text: str,
-    is_mirror: bool = False
+    is_mirror: bool = False,
+    upload_tg: bool = False
 ) -> None:
-    args_json = json.dumps({"is_mirror": True}) if is_mirror else None
+    args_dict = {}
+    if is_mirror:
+        args_dict["is_mirror"] = True
+    if upload_tg:
+        args_dict["upload_tg"] = True
+    args_json = json.dumps(args_dict) if args_dict else None
     job = await store.create_job(chat_id, target_url, split_large_files=1, args=args_json)
     await store.update_progress(job.id, status="queued")
     await queue_manager.add_job(job.id)
@@ -69,6 +75,15 @@ def register_download_handlers(app: Client) -> None:
         target_url = None
         display_text = "Mirror"
 
+        text_tokens = message.text.split() if message.text else []
+        upload_tg = "-tg" in text_tokens
+
+        link_tokens = [
+            t.strip() for t in text_tokens[1:]
+            if t.strip() not in ("-tg", "-m", "-mirror")
+        ]
+        raw_link = link_tokens[0] if link_tokens else None
+
         if message.reply_to_message:
             reply_msg = message.reply_to_message
             media = (
@@ -84,26 +99,35 @@ def register_download_handlers(app: Client) -> None:
             if media:
                 target_url = f"mirror_tg:{reply_msg.chat.id}:{reply_msg.id}"
                 file_name = getattr(media, "file_name", None) or f"tg_media_{reply_msg.id}"
-                display_text = f"Mirror: Telegram file `{file_name}`"
+                prefix = "Mirror [TG]" if upload_tg else "Mirror"
+                display_text = f"{prefix}: Telegram file `{file_name}`"
+            elif not raw_link and (reply_msg.text or reply_msg.caption):
+                reply_text = reply_msg.text or reply_msg.caption
+                for token in reply_text.split():
+                    token = token.strip()
+                    if token.startswith(("http://", "https://")):
+                        raw_link = token
+                        break
+
+        if not target_url and raw_link:
+            target_url = f"mirror:{raw_link}"
+            prefix = "Mirror [TG]" if upload_tg else "Mirror"
+            display_text = f"{prefix}: {raw_link}"
 
         if not target_url:
-            parts = message.text.split(maxsplit=1)
-            if len(parts) >= 2:
-                raw_link = parts[1].strip()
-                target_url = f"mirror:{raw_link}"
-                display_text = f"Mirror: {raw_link}"
-
-        if not target_url:
-            await message.reply_text("Provide a URL or reply to a Telegram media message with `/m` or `/mirror`.")
+            await message.reply_text("Provide a URL or reply to a Telegram message with `/m [-tg]` or `/mirror [-tg]`.")
             return
 
-        await _create_and_enqueue_job(client, message.chat.id, target_url, message, display_text, is_mirror=True)
+        await _create_and_enqueue_job(
+            client, message.chat.id, target_url, message, display_text, is_mirror=True, upload_tg=upload_tg
+        )
 
     @app.on_message(filters.command(["direct", "dl"]))
     async def direct_cmd(client: Client, message: Message) -> None:
         urls = []
-        text_tokens = message.text.split()
+        text_tokens = message.text.split() if message.text else []
         is_mirror = ("-m" in text_tokens) or ("-mirror" in text_tokens)
+        upload_tg = ("-tg" in text_tokens)
 
         if message.reply_to_message:
             reply_msg = message.reply_to_message
@@ -135,7 +159,7 @@ def register_download_handlers(app: Client) -> None:
         if not urls:
             for token in text_tokens[1:]:
                 token = token.strip()
-                if token in ("-m", "-mirror"):
+                if token in ("-m", "-mirror", "-tg"):
                     continue
                 if token.startswith(("http://", "https://")):
                     urls.append(token)
@@ -143,7 +167,7 @@ def register_download_handlers(app: Client) -> None:
         if not urls:
             await message.reply_text(
                 "Provide a direct URL or reply to a text/message containing URLs:\n"
-                "• `/direct [-m|-mirror] <url>` or `/dl [-m] <url>`\n"
+                "• `/direct [-m|-mirror] [-tg] <url>` or `/dl [-m] <url>`\n"
                 "• Reply with `/direct [-m]` or `/dl [-m]` to a text message or `.txt` file containing URLs."
             )
             return
@@ -151,13 +175,14 @@ def register_download_handlers(app: Client) -> None:
         urls_json = json.dumps([f"direct:{u}" for u in urls]) if len(urls) > 1 else f"direct:{urls[0]}"
         prefix = "direct [mirror]:" if is_mirror else "direct:"
         display_text = f"{prefix} `{urls[0]}`" if len(urls) == 1 else f"{prefix} `{urls[0]}` (+ {len(urls) - 1} more)"
-        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror)
+        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror, upload_tg=upload_tg)
 
     @app.on_message(filters.command(["gallerydl", "gdl"]))
     async def gdl_cmd(client: Client, message: Message) -> None:
         urls = []
-        text_tokens = message.text.split()
+        text_tokens = message.text.split() if message.text else []
         is_mirror = ("-m" in text_tokens) or ("-mirror" in text_tokens)
+        upload_tg = ("-tg" in text_tokens)
 
         if message.reply_to_message:
             reply_msg = message.reply_to_message
@@ -189,7 +214,7 @@ def register_download_handlers(app: Client) -> None:
         if not urls:
             for token in text_tokens[1:]:
                 token = token.strip()
-                if token in ("-m", "-mirror"):
+                if token in ("-m", "-mirror", "-tg"):
                     continue
                 if token.startswith(("http://", "https://")):
                     urls.append(token)
@@ -197,7 +222,7 @@ def register_download_handlers(app: Client) -> None:
         if not urls:
             await message.reply_text(
                 "Provide a URL or reply to a text/message containing URLs:\n"
-                "• `/gdl [-m|-mirror] <url>`\n"
+                "• `/gdl [-m|-mirror] [-tg] <url>`\n"
                 "• Reply with `/gdl [-m]` to a text message or `.txt` file containing URLs."
             )
             return
@@ -205,7 +230,7 @@ def register_download_handlers(app: Client) -> None:
         urls_json = json.dumps(urls) if len(urls) > 1 else urls[0]
         prefix = "gallery-dl [mirror]:" if is_mirror else "gallery-dl:"
         display_text = f"{prefix} `{urls[0]}`" if len(urls) == 1 else f"{prefix} `{urls[0]}` (+ {len(urls) - 1} more)"
-        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror)
+        await _create_and_enqueue_job(client, message.chat.id, urls_json, message, display_text, is_mirror=is_mirror, upload_tg=upload_tg)
 
     @app.on_message(filters.command("tor"))
     async def tor_cmd(client: Client, message: Message) -> None:
