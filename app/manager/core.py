@@ -395,7 +395,8 @@ class QueueManager:
                     except Exception:
                         pass
 
-                if reply_msg_id:
+                existing_archive_files = [p for p in dest_dir.rglob("*") if p.is_file()]
+                if not existing_archive_files and reply_msg_id:
                     try:
                         reply_msg = await self.client.get_messages(chat_id, message_ids=reply_msg_id)
                         if reply_msg and (reply_msg.document or reply_msg.video or reply_msg.audio or reply_msg.photo):
