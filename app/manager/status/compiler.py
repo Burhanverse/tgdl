@@ -537,20 +537,20 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
                 st = info.get("status", "pending")
                 url = info.get("url") or info.get("link")
                 if st == "done" and url:
-                    lines.append(f"> {tree} **__[{label}]({url})__**: __`Uploaded`__")
+                    lines.append(f"> {tree} **__[{label}]({url})__**: `Uploaded`")
                 elif st == "uploading":
                     pct = info.get("pct", 0.0)
                     spd = info.get("speed", 0.0)
                     bar = make_progress_bar(pct)
                     spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
-                    lines.append(f"> {tree} **__{label}__**: __`{bar}` {pct:.1f}% ({spd_str})__")
+                    lines.append(f"> {tree} **__{label}__**: `{bar}` **{pct:.1f}%** ({spd_str})")
                 elif st == "skipped":
-                    lines.append(f"> {tree} **__{label}__**: __`Skipped (>10GB)`__")
+                    lines.append(f"> {tree} **__{label}__**: `Skipped (>10GB)`")
                 elif st == "failed":
                     err = info.get("error", "Failed")
-                    lines.append(f"> {tree} **__{label}__**: __`{err}`__")
+                    lines.append(f"> {tree} **__{label}__**: `{err}`")
                 else:
-                    lines.append(f"> {tree} **__{label}__**: __`Pending`__")
+                    lines.append(f"> {tree} **__{label}__**: `Pending`")
         else:
             lines.append(
                 f"**Uploader Metrics**\n"

@@ -21,7 +21,7 @@ def compile_mirror_status_text(
 ) -> str:
     lines = [
         f"**Mirroring Active**\n"
-        f"> • **__File__**: __`{file_name}` ({file_size_str})__",
+        f"> • **__File__**: `{file_name}` ({file_size_str})",
     ]
     host_labels = [
         ("gofile", "GoFile"),
@@ -34,24 +34,24 @@ def compile_mirror_status_text(
         info = hosts_info.get(key, {})
         st = info.get("status", "pending")
         if st == "pending":
-            lines.append(f"> {tree} **__{label}__**: __`Pending`__")
+            lines.append(f"> {tree} **__{label}__**: `Pending`")
         elif st == "uploading":
             pct = info.get("pct", 0.0)
             spd = info.get("speed", 0.0)
             bar = make_progress_bar(pct)
             spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
-            lines.append(f"> {tree} **__{label}__**: __`{bar}` {pct:.1f}% ({spd_str})__")
+            lines.append(f"> {tree} **__{label}__**: `{bar}` **{pct:.1f}%** ({spd_str})")
         elif st == "done":
-            url = info.get("url")
+            url = info.get("url") or info.get("link")
             if url:
-                lines.append(f"> {tree} **__[{label}]({url})__**: __`Uploaded`__")
+                lines.append(f"> {tree} **__[{label}]({url})__**: `Uploaded`")
             else:
-                lines.append(f"> {tree} **__{label}__**: __`Uploaded`__")
+                lines.append(f"> {tree} **__{label}__**: `Uploaded`")
         elif st == "skipped":
-            lines.append(f"> {tree} **__{label}__**: __`Skipped (>10GB)`__")
+            lines.append(f"> {tree} **__{label}__**: `Skipped (>10GB)`")
         elif st == "failed":
             err = info.get("error", "Failed")
-            lines.append(f"> {tree} **__{label}__**: __`{err}`__")
+            lines.append(f"> {tree} **__{label}__**: `{err}`")
 
     return "\n".join(lines)
 
@@ -102,19 +102,22 @@ async def mirror_file_to_web_hosts(
     start_gf = time.time()
     last_gf_t = start_gf
     last_gf_b = 0
+    last_gf_speed = 0.0
+    last_gf_notify = 0.0
 
     async def on_gofile_progress(current: int, total: int) -> None:
-        nonlocal last_gf_t, last_gf_b
+        nonlocal last_gf_t, last_gf_b, last_gf_speed, last_gf_notify
         now = time.time()
         elapsed = now - last_gf_t
-        speed = 0.0
         if elapsed >= 1.0:
-            speed = (current - last_gf_b) / elapsed
+            last_gf_speed = max(0.0, (current - last_gf_b) / elapsed)
             last_gf_t = now
             last_gf_b = current
         pct = (current / total * 100.0) if total > 0 else 0.0
-        hosts_info["gofile"].update({"status": "uploading", "pct": pct, "speed": speed})
-        await notify_update()
+        hosts_info["gofile"].update({"status": "uploading", "pct": pct, "speed": last_gf_speed})
+        if now - last_gf_notify >= 0.5 or current == total:
+            last_gf_notify = now
+            await notify_update()
 
     try:
         log.info("Uploading %s to GoFile...", file_path.name)
@@ -145,19 +148,22 @@ async def mirror_file_to_web_hosts(
     start_fd = time.time()
     last_fd_t = start_fd
     last_fd_b = 0
+    last_fd_speed = 0.0
+    last_fd_notify = 0.0
 
     async def on_fileditch_progress(current: int, total: int) -> None:
-        nonlocal last_fd_t, last_fd_b
+        nonlocal last_fd_t, last_fd_b, last_fd_speed, last_fd_notify
         now = time.time()
         elapsed = now - last_fd_t
-        speed = 0.0
         if elapsed >= 1.0:
-            speed = (current - last_fd_b) / elapsed
+            last_fd_speed = max(0.0, (current - last_fd_b) / elapsed)
             last_fd_t = now
             last_fd_b = current
         pct = (current / total * 100.0) if total > 0 else 0.0
-        hosts_info["fileditch"].update({"status": "uploading", "pct": pct, "speed": speed})
-        await notify_update()
+        hosts_info["fileditch"].update({"status": "uploading", "pct": pct, "speed": last_fd_speed})
+        if now - last_fd_notify >= 0.5 or current == total:
+            last_fd_notify = now
+            await notify_update()
 
     try:
         log.info("Uploading %s to FileDitch...", file_path.name)
@@ -193,19 +199,22 @@ async def mirror_file_to_web_hosts(
         start_pd = time.time()
         last_pd_t = start_pd
         last_pd_b = 0
+        last_pd_speed = 0.0
+        last_pd_notify = 0.0
 
         async def on_pixeldrain_progress(current: int, total: int) -> None:
-            nonlocal last_pd_t, last_pd_b
+            nonlocal last_pd_t, last_pd_b, last_pd_speed, last_pd_notify
             now = time.time()
             elapsed = now - last_pd_t
-            speed = 0.0
             if elapsed >= 1.0:
-                speed = (current - last_pd_b) / elapsed
+                last_pd_speed = max(0.0, (current - last_pd_b) / elapsed)
                 last_pd_t = now
                 last_pd_b = current
             pct = (current / total * 100.0) if total > 0 else 0.0
-            hosts_info["pixeldrain"].update({"status": "uploading", "pct": pct, "speed": speed})
-            await notify_update()
+            hosts_info["pixeldrain"].update({"status": "uploading", "pct": pct, "speed": last_pd_speed})
+            if now - last_pd_notify >= 0.5 or current == total:
+                last_pd_notify = now
+                await notify_update()
 
         try:
             log.info("Uploading %s to Pixeldrain...", file_path.name)

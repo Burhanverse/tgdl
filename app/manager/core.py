@@ -838,11 +838,6 @@ class QueueManager:
                 if not upload_tg:
                     from .mirror import mirror_file_to_web_hosts
                     log.info("Processing mirror upload to web hosts for job #%s", job.id)
-                    m_status = await safe_send(
-                        self.client,
-                        chat_id,
-                        f"**Mirroring Initiated** for job #{job.id}..."
-                    )
 
                     all_downloaded = [f for f in files if f.is_file() and not should_ignore_file(f)]
                     for f in all_downloaded:
@@ -855,49 +850,17 @@ class QueueManager:
                         job_state.current_upload_file = f.name
                         job_state.trigger_event.set()
 
-                        last_edit_time = 0.0
-
-                        async def on_mirror_progress(text: str) -> None:
-                            nonlocal last_edit_time
-                            now = time.time()
-                            if m_status and (now - last_edit_time >= 5.0):
-                                last_edit_time = now
-                                await safe_edit(self.client, chat_id, m_status.id, text)
-
                         async def on_hosts_info_update(h_info: dict) -> None:
                             job_state.web_mirror_info = dict(h_info)
                             job_state.trigger_event.set()
 
                         host_links = await mirror_file_to_web_hosts(
                             f,
-                            status_callback=on_mirror_progress,
                             hosts_info_callback=on_hosts_info_update
                         )
 
-                        links_display = []
-                        if "gofile" in host_links:
-                            links_display.append(f"• **[GoFile]({host_links['gofile']})**")
-                        if "fileditch" in host_links:
-                            links_display.append(f"• **[FileDitch]({host_links['fileditch']})**")
-                        if "pixeldrain" in host_links:
-                            links_display.append(f"• **[Pixeldrain]({host_links['pixeldrain']})**")
-
-                        if links_display:
-                            summary_msg = (
-                                f"**Mirror Complete**\n"
-                                f"**File**: `{f.name}` ({format_size(f.stat().st_size)})\n\n"
-                                + "\n".join(links_display)
-                            )
-                            await safe_send(self.client, chat_id, summary_msg)
-
                         if f_rel in job_state.uploading_files:
                             job_state.uploading_files.remove(f_rel)
-
-                    if m_status:
-                        try:
-                            await self.client.delete_messages(chat_id, m_status.id)
-                        except Exception:
-                            pass
                 else:
                     log.info("Mirror job #%s specified -tg flag: skipping web host mirror, will upload to Telegram", job.id)
 
