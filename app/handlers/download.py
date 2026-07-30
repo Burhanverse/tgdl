@@ -278,6 +278,132 @@ def register_download_handlers(app: Client) -> None:
             is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
         )
 
+    @app.on_message(filters.command(["mega", "meganz"]))
+    async def mega_cmd(client: Client, message: Message) -> None:
+        text_tokens = message.text.split() if message.text else []
+        user_id = message.from_user.id if message.from_user else message.chat.id
+
+        if len(text_tokens) > 1:
+            first_arg = text_tokens[1].strip()
+            low_arg = first_arg.lower()
+
+            if low_arg in ("-logout", "logout", "--logout", "-delete", "delete"):
+                from ..mega import delete_user_mega_credentials
+                deleted = delete_user_mega_credentials(user_id)
+                if deleted:
+                    await message.reply_text("**MEGA Login Credentials Removed**\nYour user-level account credentials have been deleted. Reverting to anonymous session.")
+                else:
+                    await message.reply_text("No saved user-level MEGA login credentials found.")
+                return
+
+            elif low_arg in ("-account", "account", "--account", "-me", "me", "-status", "status"):
+                from ..mega import get_user_mega_credentials
+                email, _ = get_user_mega_credentials(user_id)
+                if email:
+                    await message.reply_text(f"**MEGA Login Status**\n• **User ID**: `{user_id}`\n• **Email**: `{email}`\nSubsequent downloads will use this account.")
+                else:
+                    await message.reply_text("**MEGA Login Status**\nNo user-level account logged in. Using temporary anonymous session.\n\nUse `/mega -login email:password` to log into your account.")
+                return
+
+            elif low_arg in ("-login", "login", "--login") or low_arg.startswith(("-login=", "--login=", "login=")):
+                from ..mega import MegaClient, save_user_mega_credentials
+                raw_login_str = None
+                if "=" in first_arg:
+                    raw_login_str = first_arg.split("=", 1)[1].strip()
+                elif len(text_tokens) > 2:
+                    raw_login_str = text_tokens[2].strip()
+
+                email = None
+                password = None
+                if raw_login_str:
+                    if ":" in raw_login_str:
+                        email, password = raw_login_str.split(":", 1)
+                    elif len(text_tokens) > 3 and not raw_login_str.startswith("-"):
+                        email = raw_login_str
+                        password = text_tokens[3].strip()
+
+                if not email or not password:
+                    await message.reply_text(
+                        "Please provide your MEGA email and password:\n"
+                        "• `/mega -login email:password` or `/mega -login email password`\n"
+                        "• `/mega -logout` to remove credentials\n"
+                        "• `/mega -account` to check login status"
+                    )
+                    return
+
+                status_msg = await message.reply_text("Authenticating with MEGA servers...")
+                try:
+                    async with MegaClient() as mega:
+                        await mega.login(email.strip(), password.strip())
+
+                    save_user_mega_credentials(user_id, email.strip(), password.strip())
+                    await status_msg.edit_text(
+                        f"**MEGA Account Logged In**\n"
+                        f"• **User ID**: `{user_id}`\n"
+                        f"• **Email**: `{email.strip()}`\n\n"
+                        f"Saved user credentials. All subsequent `/mega` downloads will automatically use your account."
+                    )
+                except Exception as e:
+                    log.warning("Failed MEGA login for user %s (%s): %s", user_id, email, e)
+                    await status_msg.edit_text(f"**MEGA Login Failed**\n{e}")
+                return
+
+        is_mirror, upload_tg, unzip, password, parsed_urls = _parse_flags(text_tokens)
+        urls = []
+
+        if message.reply_to_message:
+            reply_msg = message.reply_to_message
+
+            if reply_msg.document and (
+                reply_msg.document.file_name.endswith(".txt") or
+                (reply_msg.document.mime_type and reply_msg.document.mime_type.startswith("text/"))
+            ):
+                temp_path = await reply_msg.download()
+                if temp_path and Path(temp_path).exists():
+                    try:
+                        content = Path(temp_path).read_text(encoding="utf-8", errors="ignore")
+                        for line in content.splitlines():
+                            line = line.strip()
+                            if line.startswith(("http://", "https://")):
+                                urls.append(line)
+                    except Exception as e:
+                        log.warning("Failed reading replied txt file for mega_cmd: %s", e)
+                    finally:
+                        Path(temp_path).unlink(missing_ok=True)
+
+            reply_text = reply_msg.text or reply_msg.caption
+            if reply_text and not urls:
+                for token in reply_text.split():
+                    token = token.strip()
+                    if token.startswith(("http://", "https://")):
+                        urls.append(token)
+
+        if not urls:
+            urls = parsed_urls
+
+        if not urls:
+            await message.reply_text(
+                "Provide a MEGA URL or reply to a text/message containing MEGA URLs:\n"
+                "• `/mega [-m|-mirror] [-tg] [-uz] [-p password] <mega_url>`\n"
+                "• `/mega -login <email:password>` to log into your account\n"
+                "• Reply with `/mega [-m] [-tg] [-uz]` to a text message or `.txt` file containing MEGA links."
+            )
+            return
+
+        urls_json = json.dumps([f"mega:{u}" for u in urls]) if len(urls) > 1 else f"mega:{urls[0]}"
+        prefix_parts = []
+        if is_mirror:
+            prefix_parts.append("mirror")
+        if unzip:
+            prefix_parts.append("unzip")
+        prefix_str = f" [{', '.join(prefix_parts)}]" if prefix_parts else ""
+        prefix = f"mega{prefix_str}:"
+        display_text = f"{prefix} `{urls[0]}`" if len(urls) == 1 else f"{prefix} `{urls[0]}` (+ {len(urls) - 1} more)"
+        await _create_and_enqueue_job(
+            client, message.chat.id, urls_json, message, display_text,
+            is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
+        )
+
 
     @app.on_message(filters.command("tor"))
     async def tor_cmd(client: Client, message: Message) -> None:

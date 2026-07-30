@@ -14,6 +14,10 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "> _Fast multi-connection direct HTTP/HTTPS file downloader via aria2c or direct HTTP streams._\n\n"
             "• `/gdl [flags] <url>` or `/gallerydl [flags] <url>`\n"
             "> _Download media albums, posts, and videos from 100+ sites via gallery-dl engine._\n\n"
+            "• `/mega [flags] <mega_url>` or `/meganz [flags] <mega_url>`\n"
+            "> _Download files and folders recursively from mega.nz with real-time speed & file metrics._\n\n"
+            "• `/mega -login <email:password>` or `/mega -logout` or `/mega -account`\n"
+            "> _Log into your personal MEGA account, manage credentials, or view status._\n\n"
             "• `/m [-tg] <url>` or `/mirror [-tg] <url>`\n"
             "> _Download and mirror link or Telegram media file to server storage (use `-tg` to re-upload to Telegram)._\n\n"
             "**Supported Flags:**\n"
@@ -22,7 +26,8 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "• `-uz` or `-unzip`: Automatically extract downloaded archives.\n"
             "• `-p <password>` or `-pass <password>`: Specify extraction password.\n\n"
             "**Batch Processing:**\n"
-            "• Reply to a `.txt` file containing URLs (one per line) with `/dl` or `/gdl`."
+            "• Reply to a `.txt` file containing URLs (one per line) with `/dl`, `/gdl`, or `/mega`."
+
         )
     elif page == "tor":
         text = (

@@ -247,6 +247,13 @@ class QueueManager:
                 "drive.google.com" in cleaned_url or
                 "docs.google.com" in cleaned_url
             )
+            is_mega = (
+                cleaned_url.startswith("mega:") or
+                "mega.nz" in cleaned_url or
+                "mega.co.nz" in cleaned_url or
+                "mega.io" in cleaned_url
+            )
+
 
             await self.store.update_progress(job.id, status=JobStatus.DOWNLOADING)
 
@@ -352,7 +359,7 @@ class QueueManager:
             def reg(proc):
                 job_state.active_process = proc
 
-            if not is_torrent and not is_unzip and not is_gdrive:
+            if not is_torrent and not is_unzip and not is_gdrive and not is_mega:
                 async def monitor_download_speed():
                     last_download_size = 0
                     last_download_time = time.time()
@@ -519,6 +526,26 @@ class QueueManager:
 
                 final_files = [p for p in dest_dir.rglob("*") if p.is_file()]
                 result = DownloadResult(ok=True, files=final_files)
+            elif is_mega:
+                from ..mega import MegaDownloader
+                from ..downloader import DownloadResult
+
+                mega_link = cleaned_url
+                if mega_link.startswith("mega:"):
+                    mega_link = mega_link[len("mega:"):]
+
+                def on_mega_progress(downloaded: int, speed: float, filename: str) -> None:
+                    job_state.total_downloaded_bytes = downloaded
+                    job_state.download_speed = speed
+                    job_state.current_download_file = filename
+                    job_state.trigger_event.set()
+
+                downloader = MegaDownloader(user_id=chat_id, progress_callback=on_mega_progress)
+                await downloader.download_link(mega_link, dest_dir)
+
+                final_files = [p for p in dest_dir.rglob("*") if p.is_file()]
+                result = DownloadResult(ok=True, files=final_files)
+
             elif is_torrent:
                 def on_torrent_progress(
                     pct: float,

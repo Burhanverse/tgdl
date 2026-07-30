@@ -197,6 +197,27 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
             f"> • **__Link__**: __`{gdrive_disp}`__{args_display}"
         )
 
+    is_mega = (
+        cleaned_url.startswith("mega:") or
+        '"mega:' in cleaned_url or
+        "['mega:" in cleaned_url or
+        "mega.nz" in cleaned_url or
+        "mega.co.nz" in cleaned_url or
+        "mega.io" in cleaned_url
+    )
+    if is_mega:
+        mega_disp = cleaned_url
+        if mega_disp.startswith("mega:"):
+            mega_disp = mega_disp[len("mega:"):]
+        mega_disp = mega_disp[:50] + "..." if len(mega_disp) > 50 else mega_disp
+        return (
+            f"**Task #{job_id} Queued**\n"
+            f"> • **__Type__**: __`Mega.nz Download`__\n"
+            f"> • **__Engine__**: __`Mega API`__\n"
+            f"> • **__Link__**: __`{mega_disp}`__{args_display}"
+        )
+
+
     is_direct = (
         cleaned_url.startswith("direct:") or
         '"direct:' in cleaned_url or
@@ -364,6 +385,16 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         "docs.google.com" in cleaned_url
     )
 
+    is_mega = (
+        cleaned_url.startswith("mega:") or
+        '"mega:' in cleaned_url or
+        "['mega:" in cleaned_url or
+        "mega.nz" in cleaned_url or
+        "mega.co.nz" in cleaned_url or
+        "mega.io" in cleaned_url
+    )
+
+
     is_direct = (
         cleaned_url.startswith("direct:") or
         '"direct:' in cleaned_url or
@@ -402,9 +433,9 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
     if not job_state.downloader_done.is_set():
         dl_speed_str = format_size(job_state.download_speed)
         dl_bytes_str = format_size(job_state.total_downloaded_bytes)
-        dl_tool = "Google Drive API" if is_gdrive else ("aria2c" if is_torrent else ("Direct HTTP Downloader" if is_direct else ("Pyrogram Downloader" if cleaned_url.startswith("unzip:") else "gallery-dl")))
+        dl_tool = "Google Drive API" if is_gdrive else ("Mega API" if is_mega else ("aria2c" if is_torrent else ("Direct HTTP Downloader" if is_direct else ("Pyrogram Downloader" if cleaned_url.startswith("unzip:") else "gallery-dl"))))
 
-        if is_gdrive:
+        if is_gdrive or is_mega:
             marquee = make_marquee_bar()
             lines.append(
                 f"**Downloader Metrics**\n"
@@ -415,6 +446,7 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             )
             if job_state.current_download_file:
                 lines.append(f"> • **__Current__**: __`{job_state.current_download_file}`__")
+
         elif is_torrent:
             bar = make_progress_bar(job_state.download_pct)
             seeders = getattr(job_state, "torrent_seeders", 0)

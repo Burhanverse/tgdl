@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     gdrive_accounts_dir: Path = Field(default=Path("./auth/accounts"))
     use_service_accounts: bool = Field(default=True)
 
+    # --- MEGA settings ---
+    mega_email: str | None = Field(default=None, description="Optional MEGA account email")
+    mega_password: str | None = Field(default=None, description="Optional MEGA account password")
 
     # --- gallery-dl config & pacing ---
     gdl_config_path: Path = Field(
