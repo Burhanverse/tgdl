@@ -928,16 +928,14 @@ class QueueManager:
                 except ValueError:
                     f_rel = str(f.relative_to(dest_dir))
 
-                is_archive = f.suffix.lower() in ARCHIVE_EXT
+                is_internal_split = (f_rel in job_state.split_parts_created or f.name in job_state.split_parts_created)
+                is_archive = (f.suffix.lower() in ARCHIVE_EXT) and not is_internal_split
                 f_split = get_split_archive_info(f.name)
-                if not is_archive and f_split:
+                if not is_archive and not is_internal_split and f_split:
                     if f_split["part"] == 1:
                         base_ext = f".{f_split.get('ext')}" if f_split.get("ext") else None
                         if not base_ext or base_ext.lower() in ARCHIVE_EXT:
                             is_archive = True
-
-                if f_split and f_split["part"] > 1:
-                    continue
 
                 if is_archive:
                     archive_prompt_msg_id = None
@@ -1211,8 +1209,8 @@ class QueueManager:
                         except Exception:
                             pass
 
-                is_file_archive = f.suffix.lower() in ARCHIVE_EXT
-                if not is_file_archive:
+                is_file_archive = (f.suffix.lower() in ARCHIVE_EXT) and not is_internal_split
+                if not is_file_archive and not is_internal_split:
                     f_split = get_split_archive_info(f.name)
                     if f_split:
                         base_ext = f".{f_split.get('ext')}" if f_split.get("ext") else None
@@ -1441,6 +1439,13 @@ class QueueManager:
                 if len(split_parts) == 1 and split_parts[0] == f:
                     pass
                 else:
+                    for p in split_parts:
+                        try:
+                            p_rel = str(p.relative_to(extract_dir))
+                        except ValueError:
+                            p_rel = str(p.relative_to(dest_dir))
+                        job_state.split_parts_created.add(p_rel)
+                        job_state.split_parts_created.add(p.name)
                     await self.store.mark_uploaded(job.id, f_rel)
                     break
 

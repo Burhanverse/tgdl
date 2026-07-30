@@ -2,7 +2,6 @@ data/
 auth/
 logs/
 scratch/
-tests/
 .venv
 .env
 **/__pycache__/
