@@ -12,7 +12,7 @@ from ..manager.status.compiler import (
     compile_archive_choice_status_text,
     compile_conversion_choice_status_text,
 )
-from ..manager.archive import (
+from ..archive import (
     _archive_ids,
     _archive_events,
     _archive_choices,

@@ -14,8 +14,11 @@ from ..manager.status.compiler import (
     compile_queued_status_text,
     compile_unzip_download_status_text,
 )
-from ..manager.archive import ARCHIVE_EXT, extract_archive_async, ArchivePasswordRequired
-from ..manager.multi_unzip import (
+from ..archive import (
+    ARCHIVE_EXT,
+    extract_archive_async,
+    ArchivePasswordRequired,
+    get_split_archive_info,
     start_multi_unzip_session,
     handle_multi_document,
     handle_multi_cancel_cb,
@@ -196,10 +199,12 @@ def register_unzip_handlers(app: Client) -> None:
         doc = message.document
         filename = doc.file_name
 
-        from ..manager.archive import get_split_archive_info
-        prefix, ext, part_num = get_split_archive_info(filename)
-        if part_num is None:
+        split_info = get_split_archive_info(filename)
+        if not split_info:
             return
+        prefix = split_info["prefix"]
+        ext = split_info.get("ext", "")
+        part_num = split_info["part"]
 
         if session["prefix"] is None:
             session["prefix"] = prefix

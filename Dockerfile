@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     unrar \
     p7zip-full \
+    tar \
+    gzip \
+    bzip2 \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

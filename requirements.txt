@@ -18,3 +18,8 @@ psutil
 telegraph
 httpx
 prowlarr-py
+patool
+pyunpack
+py7zr
+pytest
+pytest-asyncio

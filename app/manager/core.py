@@ -717,7 +717,7 @@ class QueueManager:
             _conversion_choices,
             _converted_files
         )
-        from .archive import (
+        from ..archive import (
             extract_archive_async,
             ARCHIVE_EXT,
             ArchivePasswordRequired,

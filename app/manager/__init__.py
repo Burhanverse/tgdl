@@ -25,7 +25,7 @@ from .status import (
     compile_extraction_success_status_text,
     compile_job_status_text,
 )
-from .archive import (
+from ..archive import (
     extract_archive_async,
     handle_archive_choice,
     _archive_ids,

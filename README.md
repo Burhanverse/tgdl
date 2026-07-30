@@ -72,7 +72,7 @@ If the bot owner places global credentials in `auth/token.pickle` or `auth/accou
 - Python 3.12+
 - `ffmpeg` & `ffprobe` (for video transcoding, screenshots, and metadata probing)
 - `aria2c` (for torrent and magnet link downloads)
-- `unzip`, `unrar`, `7z` (for archive extraction)
+- System archive utilities for `patool`: `unzip`, `unrar`, `p7zip-full` / `7z`, `tar`, `gzip`, `bzip2`, `xz-utils`
 
 ### Getting Started
 1. Copy `.env.example` to `.env` and fill in `TG_API_ID`, `TG_API_HASH`, and `TG_BOT_TOKEN`.

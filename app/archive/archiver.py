@@ -5,25 +5,104 @@ import logging
 import os
 import shutil
 import zipfile
-
 from pathlib import Path
 from typing import Optional
+
+import patoolib
+from patoolib.util import PatoolError
 
 from ..config import settings
 
 log = logging.getLogger(__name__)
 
 
-async def _run_cmd_in_cwd(cmd: list[str], cwd: Path) -> tuple[int, str]:
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=str(cwd),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await proc.communicate()
-    output = (stdout.decode(errors="ignore") + stderr.decode(errors="ignore")).strip()
-    return proc.returncode or 0, output
+async def create_archive_async(
+    folder_path: Path,
+    output_archive: Path,
+    archive_format: str = "zip",
+    password: Optional[str] = None
+) -> bool:
+    """Creates a compressed archive from folder_path using patoolib.create_archive.
+
+    Returns True if creation succeeded, False otherwise.
+    """
+    folder_path = Path(folder_path)
+    output_archive = Path(output_archive)
+    output_archive.parent.mkdir(parents=True, exist_ok=True)
+
+    if not folder_path.exists():
+        log.error("Source path %s does not exist for archive creation", folder_path)
+        return False
+
+    fmt = archive_format.lower().lstrip("-")
+    if not output_archive.name.lower().endswith(f".{fmt}"):
+        output_archive = output_archive.parent / f"{output_archive.name}.{fmt}"
+
+    # Collect files to archive
+    if folder_path.is_dir():
+        filenames = [str(p) for p in folder_path.rglob("*") if p.is_file()]
+    else:
+        filenames = [str(folder_path)]
+
+    if not filenames:
+        log.warning("No files found in %s to archive", folder_path)
+        return False
+
+    log.info("Creating %s archive at %s using patool", fmt, output_archive)
+
+    def _create() -> None:
+        kwargs = {
+            "verbosity": -1
+        }
+        if password:
+            kwargs["password"] = password
+
+        # patoolib.create_archive(archive, filenames, ...)
+        # Pass files relative to folder_path parent if dir
+        patoolib.create_archive(str(output_archive), filenames, **kwargs)
+
+    try:
+        await asyncio.to_thread(_create)
+        return output_archive.exists() and output_archive.stat().st_size > 0
+    except PatoolError as pe:
+        log.warning("patool creation failed (%s), attempting fallback: %s", fmt, pe)
+    except Exception as e:
+        log.warning("patool creation error (%s), attempting fallback: %s", fmt, e)
+
+    # Fallback 1: 7z CLI if available
+    cmd7z = shutil.which("7z") or shutil.which("7zz") or shutil.which("7za")
+    if cmd7z and folder_path.is_dir():
+        try:
+            type_flag = "-tzip" if fmt == "zip" else "-t7z"
+            proc = await asyncio.create_subprocess_exec(
+                cmd7z, "a", type_flag, "-y", str(output_archive), ".",
+                cwd=str(folder_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            if proc.returncode == 0 and output_archive.exists():
+                return True
+        except Exception as e:
+            log.warning("7z fallback failed: %s", e)
+
+    # Fallback 2: python zipfile if zip format
+    if fmt == "zip" and folder_path.is_dir():
+        try:
+            def _zipfile_create():
+                with zipfile.ZipFile(output_archive, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for root, _, files in os.walk(folder_path):
+                        for file in files:
+                            full_path = Path(root) / file
+                            arcname = full_path.relative_to(folder_path)
+                            zf.write(full_path, arcname)
+
+            await asyncio.to_thread(_zipfile_create)
+            return output_archive.exists() and output_archive.stat().st_size > 0
+        except Exception as ze:
+            log.exception("Python zipfile fallback failed: %s", ze)
+
+    return False
 
 
 async def archive_folder_async(
@@ -35,7 +114,7 @@ async def archive_folder_async(
 ) -> tuple[list[Path], list[tuple[str, str]]]:
     """Compresses a folder into single or split .zip / .7z archives.
 
-    If mirror_pixeldrain is True, uploads the original unsplit archive to Pixeldrain.
+    If mirror_pixeldrain is True, uploads the archive to Pixeldrain in the background.
     Returns (telegram_file_paths, pixeldrain_links).
     """
     pd_links: list[tuple[str, str]] = []
@@ -50,81 +129,55 @@ async def archive_folder_async(
         fmt = "zip"
 
     output_archive = parent_dir / f"{folder_name}.{fmt}"
-    has_7z = shutil.which("7z") is not None
-    has_zip = shutil.which("zip") is not None
 
-    log.info("Archiving folder '%s' into unsplit %s format...", folder_name, fmt)
+    log.info("Archiving folder '%s' into %s format...", folder_name, fmt)
 
-    success = False
-    if has_7z:
-        type_flag = "-tzip" if fmt == "zip" else "-t7z"
-        cmd = ["7z", "a", type_flag, "-y", str(output_archive), "."]
-        code, out = await _run_cmd_in_cwd(cmd, folder_path)
-        if code == 0 and output_archive.exists():
-            success = True
-        else:
-            log.warning("7z archive command failed (code %s): %s", code, out)
-
-    elif fmt == "zip" and has_zip:
-        cmd = ["zip", "-r", str(output_archive), "."]
-        code, out = await _run_cmd_in_cwd(cmd, folder_path)
-        if code == 0 and output_archive.exists():
-            success = True
-        else:
-            log.warning("zip command failed: %s", out)
-
-    elif fmt == "zip":
-        try:
-            log.info("7z and zip CLI tools not found. Using standard Python zipfile library for %s", output_archive.name)
-            def _create_zip():
-                with zipfile.ZipFile(output_archive, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for root, _, files in os.walk(folder_path):
-                        for file in files:
-                            full_path = Path(root) / file
-                            arcname = full_path.relative_to(folder_path)
-                            zf.write(full_path, arcname)
-
-            await asyncio.to_thread(_create_zip)
-            if output_archive.exists() and output_archive.stat().st_size > 0:
-                success = True
-        except Exception as ze:
-            log.exception("Python zipfile fallback failed: %s", ze)
+    success = await create_archive_async(folder_path, output_archive, archive_format=fmt)
 
     if not success or not output_archive.exists():
         log.error("Failed to archive folder %s. Keeping uncompressed files.", folder_path)
         return list(folder_path.rglob("*")), pd_links
 
     archive_size = output_archive.stat().st_size
-    pixeldrain_max_bytes = 10 * 1024 * 1024 * 1024  # 10 GB limit for free accounts
+    pixeldrain_max_bytes = 10 * 1024 * 1024 * 1024  # 10 GB limit
     limit_bytes = max_part_size_mb * 1024 * 1024
     is_split = archive_size > limit_bytes
     upload_unsplit_to_pd = mirror_pixeldrain and not is_split and archive_size <= pixeldrain_max_bytes
     upload_parts_to_pd = mirror_pixeldrain and is_split
 
-    # 1. Check if volume splitting is required for Telegram (> 1.95GB)
-    file_size = archive_size
-
     telegram_archives: list[Path] = []
-    if file_size > limit_bytes:
-        log.info("Archive '%s' (%.2f MB) exceeds %d MB limit. Splitting for Telegram upload...", output_archive.name, file_size / (1024*1024), max_part_size_mb)
-        if has_7z:
+    if is_split:
+        log.info("Archive '%s' (%.2f MB) exceeds %d MB limit. Splitting into volumes for Telegram upload...",
+                 output_archive.name, archive_size / (1024 * 1024), max_part_size_mb)
+        
+        cmd7z = shutil.which("7z") or shutil.which("7zz") or shutil.which("7za")
+        if cmd7z:
             type_flag = "-tzip" if fmt == "zip" else "-t7z"
-            cmd = ["7z", "a", type_flag, f"-v{max_part_size_mb}m", "-y", str(parent_dir / f"{folder_name}_parts.{fmt}"), str(output_archive)]
-            code, out = await _run_cmd_in_cwd(cmd, parent_dir)
-            if code == 0:
+            parts_prefix = parent_dir / f"{folder_name}_parts.{fmt}"
+            proc = await asyncio.create_subprocess_exec(
+                cmd7z, "a", type_flag, f"-v{max_part_size_mb}m", "-y", str(parts_prefix), str(output_archive),
+                cwd=str(parent_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            if proc.returncode == 0:
                 output_archive.unlink(missing_ok=True)
-                prefix = f"{folder_name}_parts.{fmt}"
+                prefix_name = f"{folder_name}_parts.{fmt}"
                 for p in sorted(parent_dir.iterdir()):
-                    if p.is_file() and (p.name == prefix or p.name.startswith(f"{prefix}.")):
+                    if p.is_file() and (p.name == prefix_name or p.name.startswith(f"{prefix_name}.")):
                         telegram_archives.append(p)
-            else:
-                log.warning("Failed to split archive with 7z: %s", out)
 
         if not telegram_archives and shutil.which("split"):
             split_prefix = f"{output_archive.name}."
-            cmd = ["split", "-b", f"{max_part_size_mb}m", "-d", str(output_archive), str(parent_dir / split_prefix)]
-            code, out = await _run_cmd_in_cwd(cmd, parent_dir)
-            if code == 0:
+            proc = await asyncio.create_subprocess_exec(
+                "split", "-b", f"{max_part_size_mb}m", "-d", str(output_archive), str(parent_dir / split_prefix),
+                cwd=str(parent_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            if proc.returncode == 0:
                 output_archive.unlink(missing_ok=True)
                 for p in sorted(parent_dir.iterdir()):
                     if p.is_file() and p.name.startswith(split_prefix):
@@ -133,14 +186,12 @@ async def archive_folder_async(
     if not telegram_archives:
         telegram_archives = [output_archive]
 
-    # 2. Upload to Pixeldrain in background to prevent blocking archiving / Telegram uploader
+    # Background Pixeldrain upload logic
     if (upload_unsplit_to_pd or upload_parts_to_pd) and telegram_archives:
         files_to_upload = telegram_archives if upload_parts_to_pd else [output_archive]
         log.info(
             "Archive '%s' (%.2f GB) requires mirroring. Spawning background task to upload %d file(s) to Pixeldrain...",
-            output_archive.name,
-            archive_size / (1024**3),
-            len(files_to_upload)
+            output_archive.name, archive_size / (1024**3), len(files_to_upload)
         )
         pd_temp_dir = parent_dir / f"{folder_name}_pd_temp"
         try:
@@ -165,10 +216,10 @@ async def archive_folder_async(
                             else:
                                 pd_links.append((path.name, pd_url))
                         else:
-                            log.warning("Pixeldrain upload response missing id in background for %s: %s", path.name, res)
+                            log.warning("Pixeldrain upload response missing id for %s: %s", path.name, res)
                     except Exception as pe:
                         log.exception("Failed to upload %s to Pixeldrain in background: %s", path.name, pe)
-                
+
                 try:
                     shutil.rmtree(pd_temp_dir, ignore_errors=True)
                 except Exception:
@@ -190,7 +241,7 @@ async def archive_all_folders_in_dir(
     job_state = None
 ) -> tuple[list[Path], list[tuple[str, str]]]:
     """Iterates through target_dir and archives each folder individually.
-    
+
     If top-level files exist alongside or without subfolders, they are also archived.
     Returns (telegram_file_paths, pixeldrain_links).
     """

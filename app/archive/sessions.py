@@ -7,24 +7,66 @@ from pathlib import Path
 from typing import Optional
 
 from pyrogram import Client
-from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, LinkPreviewOptions
 
 from ..config import settings
 from ..db import JobStatus, JobStore
-from .archive import ARCHIVE_EXT, get_split_archive_info
-from .status import (
-    compile_queued_status_text,
-    compile_split_prompt_text,
-    compile_unzip_download_status_text,
-)
-from .status.messaging import format_size
-
+from .core import ARCHIVE_EXT
+from .split import get_split_archive_info
 log = logging.getLogger(__name__)
 
+_archive_ids: dict[str, dict[str, str]] = {}
+_archive_events: dict[str, dict[str, asyncio.Event]] = {}
+_archive_choices: dict[str, dict[str, str]] = {}
+_extracted_archives: dict[str, set[str]] = {}
+_extracted_file_names: dict[str, set[str]] = {}
+
 _multi_archive_sessions: dict[int, dict] = {}
+_split_archive_sessions: dict[int, dict] = {}
+
+
+async def handle_archive_choice(
+    callback_query: CallbackQuery,
+    store: JobStore,
+    is_job_owner_func
+) -> None:
+    """Handles callback queries when user chooses whether to extract downloaded archives."""
+    data = callback_query.data
+    parts = data.split(":", 2)
+    choice = parts[0].split("_")[1]
+    job_id = parts[1]
+    archive_id = parts[2]
+
+    job = await store.get_job(job_id)
+    if not job:
+        await callback_query.answer("Job not found.", show_alert=True)
+        return
+
+    if not is_job_owner_func(callback_query.message.chat.id, job):
+        await callback_query.answer("Unauthorized: You cannot manage archive choices for this job.", show_alert=True)
+        return
+
+    filename = _archive_ids.get(job_id, {}).get(archive_id)
+    if not filename:
+        await callback_query.answer("Archive choice expired or not found.", show_alert=True)
+        return
+
+    if job_id not in _archive_choices:
+        _archive_choices[job_id] = {}
+    _archive_choices[job_id][archive_id] = choice
+
+    if job_id in _archive_events and archive_id in _archive_events[job_id]:
+        _archive_events[job_id][archive_id].set()
+
+    choice_str = "Upload Archive Only" if choice == "only" else "Upload Archive + Extract Contents"
+    from ..manager.status.compiler import compile_archive_choice_status_text
+    status_text = compile_archive_choice_status_text(job.id, Path(filename).name, choice_str)
+    await callback_query.message.edit_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+    await callback_query.answer(f"Selected: {choice_str}")
 
 
 def compile_multi_session_text(archives: list[Message]) -> str:
+    from ..manager.status.messaging import format_size
     if not archives:
         archives_str = "_Waiting for archive files..._"
     else:
@@ -126,8 +168,8 @@ async def handle_multi_document(message: Message) -> bool:
         return False
 
     ext = Path(filename).suffix.lower()
-    is_archive = ext in ARCHIVE_EXT or get_split_archive_info(filename) is not None
-    if not is_archive:
+    is_arch = ext in ARCHIVE_EXT or get_split_archive_info(filename) is not None
+    if not is_arch:
         log.debug("Filename %s not recognized as an archive in multi session", filename)
         return False
 
@@ -332,6 +374,7 @@ async def run_multi_archive_download_and_extract(
                         return
                     last_edit_time = now
                     try:
+                        from ..manager.status.compiler import compile_unzip_download_status_text
                         progress_name = f"{arch_filename} ({idx}/{total_groups})"
                         await status_msg.edit_text(
                             compile_unzip_download_status_text(job.id, progress_name, current, total),
