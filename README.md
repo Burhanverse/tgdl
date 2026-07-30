@@ -1,90 +1,84 @@
 # tgdl-bot
 
-A minimal Telegram bot that downloads media albums, videos, torrents, and Google Drive folders via `gallery-dl`, `aria2c`, and `Google Drive API`, uploading them directly to Telegram. Built on Kurigram (pyrogram fork) to support up to 2GB uploads.
+An all-in-one Telegram media & file downloader, archive extractor, cloud storage mirror, and torrent manager. Powered by `gallery-dl`, `aria2c`, `Google Drive API`, and Pyrogram to support up to 2GB uploads per file with real-time status management.
 
 ---
 
-## Features
-- **Concurrent Pipeline**: Downloads and uploads run in parallel to minimize latency.
-- **Google Drive to Telegram (`/gd2tg`)**: Download Google Drive files/folders directly to Telegram with individual folder archiving (`.zip` / `.7z`).
-- **Automatic Archiving & Splitting**: Archives downloaded folders into `.zip` or `.7z` format and automatically splits volumes if size exceeds 1.95GB to satisfy Telegram limits.
-- **Space Protection**: Completed uploads are deleted immediately to conserve disk space.
-- **Auto-Splitting**: Prompts to split video files larger than 1.95GB into sub-2GB segments or skip them.
-- **Live Status & Speed**: Real-time progress updates with monospace progress bars and throttled edit protection.
-- **Multi-URL Downloads**: Process a list of space-separated links or a `.txt` links file reply sequentially.
-- **Timeline Screenshots**: Generates and uploads timeline screenshots grouped in a separate album after the main video.
-- **Torrent/Magnet Support**: Download torrents or magnet links headless using `aria2c` with custom speed parsing.
-- **Lossless Media Transcoding**: Interactive video container conversions to MP4 (using FFmpeg stream copy) and image transcoding of WebP, BMP, HEIC, etc., to PNG for inline photo display.
-- **Interactive Decompression**: Pauses and prompts the user to select extraction choices when zip/rar/7z archives are downloaded.
+## Documentation Index
+
+This project uses modular sub-documentation files located in the `docs/` directory:
+
+- **[Direct & Gallery Downloader Reference](docs/downloaders.md)**
+  - Direct HTTP/HTTPS downloads (`/dl`, `/direct`).
+  - Gallery-dl media extraction from 100+ sites (`/gdl`, `/gallerydl`).
+  - Server mirroring (`/m`, `/mirror`).
+  - Command flags (`-m`, `-tg`, `-uz`, `-p <password>`) and batch `.txt` link file processing.
+
+- **[Torrent Downloads & Search Engine](docs/torrents.md)**
+  - Headless torrent and magnet downloading (`/tor`).
+  - Interactive multi-provider Torrent Search Engine (`/ts`, `/torsearch`, `/search`).
+
+- **[Archive Extraction & Volume Splitting](docs/archives.md)**
+  - Single archive decompression (`/unzip [password]`).
+  - Split archive collector sessions (`/unzip split`).
+  - Multi-archive batch extractions (`/unzip multi`).
+  - Interactive password prompts and Telegram 2GB upload limit safeguards.
+
+- **[Cloud Storage & Google Drive Integration](docs/cloud_and_drive.md)**
+  - Google Drive folder and file downloader (`/gd2tg`).
+  - Google Drive authentication guide (Service Accounts & OAuth tokens).
+  - External cloud host uploaders: Pixeldrain (`/pdup`), GoFile (`/gfup`), FileDitch (`/fdup`).
+
+- **[Custom Configuration, Cookies & Task Controls](docs/configuration.md)**
+  - Per-user `gallery-dl.conf` and `cookies.txt` manager (`/gdlconf`).
+  - Live task monitor, queue dashboard, and speed metrics (`/status`).
+  - Job cancellation (`/cancel [job_id]`).
+
+- **[Installation & System Requirements](docs/installation.md)**
+  - System prerequisites (FFmpeg, aria2, archive utilities).
+  - Local virtual environment setup and configuration.
+  - Docker deployment using `docker-compose`.
 
 ---
 
-## Usage
+## Quick Reference Overview
 
-### Commands
-- `/start` or `/help` — Display welcome message and command instructions.
-- `/gd2tg <gdrive_link> [-zip|-7z] [-pd]` — Download a Google Drive link, archive folders individually, and upload to Telegram. Use `-pd` to mirror the original unsplit archives to Pixeldrain.
-- `/gdl` — Process replied `.txt` links files.
-- `/tor` — Download magnet/torrent links or reply to a `.torrent` file.
-- `/unzip` — Reply to a compressed archive file to extract and upload its contents.
-- `/pdup` — Reply to a media file to upload it directly to Pixeldrain.
-- `/status` — View active job status or queue state.
-- `/cancel` — Instantly abort the active job or cancel queued jobs.
+### Core Commands
 
-### Input Formats
-- **Google Drive**: `/gd2tg https://drive.google.com/drive/folders/... -zip -pd` (or `-7z`)
-- **Single URL**: `https://example.com/album1`
-- **With Shorthands**: `https://example.com/album1 pages=1-16`
-- **Multiple URLs**: `https://example.com/album1 https://example.com/album2`
-- **Links File (.txt)**: Reply to a `.txt` file containing URLs (one per line) with `/gdl`.
-- **Torrents**: `/tor magnet:?xt=urn:...` or reply to a `.torrent` file with `/tor`.
-- **Archive Extract**: Reply to any `.zip`, `.rar`, `.7z`, etc., file with `/unzip`.
-
----
-
-## Google Drive Setup Guide (First Time Setup)
-
-To use `/gd2tg`, you need to provide Google Drive credentials under `auth/<user_id>/` (per-user credential isolation). You can use either **Service Accounts** or an **OAuth User Token**.
-
-### Method 1: Service Accounts (`auth/<user_id>/accounts/*.json`) [Recommended - 0 Browser Steps & 0 VPS Access Needed]
-Service Accounts bypass Google Drive's 750 GB/day download quota per account and require **zero browser login steps**:
-1. In your Google Cloud Console project, go to **IAM & Admin > Service Accounts**.
-2. Click **Create Service Account**, fill in a name, and click **Create and Continue**.
-3. Under **Keys**, click **Add Key > Create new key** and choose **JSON**.
-4. **Interactive In-Chat Setup**: Upload your Service Account `.json` file (any filename) to the Telegram bot chat and **reply to it with `/gd2tg`**. The bot automatically saves it to `auth/<user_id>/accounts/`!
-
-### Method 2: Upload `token.pickle` in Chat (`auth/<user_id>/token.pickle`) [0 VPS Access Needed]
-If you generate or possess a `token.pickle` file:
-1. Upload `token.pickle` directly to the Telegram bot chat.
-2. **Reply to the `token.pickle` file with `/gd2tg`**.
-3. The bot automatically saves it to `auth/<user_id>/token.pickle`!
-
-### Method 3: Global Credentials (Set up by Bot Owner)
-If the bot owner places global credentials in `auth/token.pickle` or `auth/accounts/*.json` on the server:
-- All users can use `/gd2tg <gdrive_link>` directly without uploading any files!
-
+| Command | Aliases | Description | Sub-Documentation |
+| :--- | :--- | :--- | :--- |
+| `/dl [flags] <url>` | `/direct` | Download direct HTTP/HTTPS URLs. | [Downloaders](docs/downloaders.md) |
+| `/gdl [flags] <url>` | `/gallerydl` | Download albums/posts via gallery-dl. | [Downloaders](docs/downloaders.md) |
+| `/m [flags] <url>` | `/mirror` | Mirror links/files to server. | [Downloaders](docs/downloaders.md) |
+| `/tor <magnet/url>` | — | Download torrent magnet or `.torrent` file. | [Torrents](docs/torrents.md) |
+| `/ts <query>` | `/torsearch`, `/search` | Search torrents with inline pagination. | [Torrents](docs/torrents.md) |
+| `/unzip [password]` | — | Extract archive files. | [Archives](docs/archives.md) |
+| `/unzip split` | — | Multi-part split archive collector session. | [Archives](docs/archives.md) |
+| `/unzip multi` | — | Multi-archive batch extraction session. | [Archives](docs/archives.md) |
+| `/gd2tg <gdrive_link>` | — | Download Google Drive link to Telegram. | [Cloud & Drive](docs/cloud_and_drive.md) |
+| `/pdup` | — | Upload replied media to Pixeldrain. | [Cloud & Drive](docs/cloud_and_drive.md) |
+| `/gfup` | `/gofile` | Upload replied media to GoFile. | [Cloud & Drive](docs/cloud_and_drive.md) |
+| `/fdup` | `/fileditch` | Upload replied media to FileDitch. | [Cloud & Drive](docs/cloud_and_drive.md) |
+| `/gdlconf` | `/gdl_config` | Manage custom gallery-dl config & cookies. | [Configuration](docs/configuration.md) |
+| `/status` | — | Interactive real-time task manager. | [Configuration](docs/configuration.md) |
+| `/cancel [job_id]` | — | Cancel active/queued job. | [Configuration](docs/configuration.md) |
+| `/help` | `/start` | Open interactive paged help menu. | — |
 
 ---
 
-## Setup & Running
+## Quick Start Example
 
-### Prerequisites
-- Python 3.12+
-- `ffmpeg` & `ffprobe` (for video transcoding, screenshots, and metadata probing)
-- `aria2c` (for torrent and magnet link downloads)
-- System archive utilities for `patool`: `unzip`, `unrar`, `p7zip-full` / `7z`, `tar`, `gzip`, `bzip2`, `xz-utils`
-
-### Getting Started
-1. Copy `.env.example` to `.env` and fill in `TG_API_ID`, `TG_API_HASH`, and `TG_BOT_TOKEN`.
-2. Install dependencies and run:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   python -m app.bot
-   ```
-
-### Docker
 ```bash
-docker compose up -d --build
+# 1. Clone repository
+git clone https://github.com/Burhanverse/tgdl.git
+cd tgdl
+
+# 2. Setup environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. Configure credentials in .env and launch
+cp .env.example .env
+python -m app.bot
 ```
