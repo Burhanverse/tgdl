@@ -535,7 +535,7 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
                 tree = "├" if idx < len(host_labels) - 1 else "└"
                 info = web_mirror_info.get(key, {})
                 st = info.get("status", "pending")
-                url = info.get("url")
+                url = info.get("url") or info.get("link")
                 if st == "done" and url:
                     lines.append(f"> {tree} **__[{label}]({url})__**: __`Uploaded`__")
                 elif st == "uploading":

@@ -864,9 +864,14 @@ class QueueManager:
                                 last_edit_time = now
                                 await safe_edit(self.client, chat_id, m_status.id, text)
 
+                        async def on_hosts_info_update(h_info: dict) -> None:
+                            job_state.web_mirror_info = dict(h_info)
+                            job_state.trigger_event.set()
+
                         host_links = await mirror_file_to_web_hosts(
                             f,
-                            status_callback=on_mirror_progress
+                            status_callback=on_mirror_progress,
+                            hosts_info_callback=on_hosts_info_update
                         )
 
                         links_display = []

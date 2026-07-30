@@ -58,7 +58,8 @@ def compile_mirror_status_text(
 
 async def mirror_file_to_web_hosts(
     file_path: Path,
-    status_callback: Optional[Callable[[str], Coroutine[None, None, None]]] = None
+    status_callback: Optional[Callable[[str], Coroutine[None, None, None]]] = None,
+    hosts_info_callback: Optional[Callable[[Dict[str, Dict[str, Any]]], Coroutine[None, None, None]]] = None
 ) -> Dict[str, str]:
     """
     Uploads a file sequentially to GoFile, FileDitch, and Pixeldrain with dynamic status updates.
@@ -82,6 +83,11 @@ async def mirror_file_to_web_hosts(
     log.info("Starting sequential web host mirroring for %s (size: %s)", file_path.name, file_size_str)
 
     async def notify_update() -> None:
+        if hosts_info_callback:
+            try:
+                await hosts_info_callback(hosts_info)
+            except Exception:
+                pass
         if status_callback:
             txt = compile_mirror_status_text(file_path.name, file_size_str, hosts_info)
             try:
