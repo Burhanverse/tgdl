@@ -87,8 +87,10 @@ async def async_rpc_call(port: int, method: str, params: list) -> dict:
     return await asyncio.to_thread(sync_rpc_call, port, method, params)
 
 
+from .trackers import add_trackers_to_magnet, fetch_latest_trackers, get_tracker_string
+
 async def start_aria2_daemon() -> None:
-    """Launch the global aria2c RPC daemon."""
+    """Launch the global aria2c RPC daemon with live trackers from ngosang/trackerslist."""
     global ARIA2_PORT, ARIA2_PROC
     if ARIA2_PROC is not None:
         return  # Already running
@@ -97,8 +99,12 @@ async def start_aria2_daemon() -> None:
         log.warning("aria2c is not installed. Torrent downloads will fail.")
         return
 
+    # Dynamically fetch latest trackers list asynchronously
+    await fetch_latest_trackers()
+
     port = get_free_port()
-    tracker_arg = f"--bt-tracker={','.join(TRACKERS)}"
+    tracker_str = get_tracker_string()
+    tracker_arg = f"--bt-tracker={tracker_str}"
     
     log_dir = Path("./logs").resolve()
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -118,7 +124,7 @@ async def start_aria2_daemon() -> None:
         "--enable-dht=true",
         "--bt-enable-lpd=true",
         "--enable-peer-exchange=true",
-        "--bt-max-peers=80",
+        "--bt-max-peers=120",
         "--max-overall-upload-limit=50K",
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         tracker_arg
@@ -184,9 +190,15 @@ async def download_torrent_async(
     proc = ARIA2_PROC
 
     target = torrent_or_magnet
-    is_torrent_file = (target.startswith("torrent:") or target.endswith(".torrent")) and not target.startswith(("http://", "https://"))
+    is_torrent_file = (target.startswith("torrent:") or target.endswith(".torrent")) and not target.startswith(("http://", "https://", "magnet:"))
     if target.startswith("torrent:"):
         target = target[len("torrent:"):]
+
+    tracker_str = get_tracker_string()
+    rpc_options = {
+        "dir": str(dest_dir),
+        "bt-tracker": tracker_str,
+    }
 
     gid = None
     try:
@@ -196,9 +208,13 @@ async def download_torrent_async(
                 raise FileNotFoundError(f"Torrent file not found: {torrent_path}")
             with open(torrent_path, "rb") as f:
                 b64_content = base64.b64encode(f.read()).decode("utf-8")
-            response = await async_rpc_call(port, "aria2.addTorrent", [b64_content, [], {"dir": str(dest_dir)}])
+            response = await async_rpc_call(port, "aria2.addTorrent", [b64_content, [], rpc_options])
         else:
-            response = await async_rpc_call(port, "aria2.addUri", [[target], {"dir": str(dest_dir)}])
+            # Inject live trackers into magnet URI if target is a magnet link
+            if target.startswith("magnet:"):
+                target = add_trackers_to_magnet(target)
+
+            response = await async_rpc_call(port, "aria2.addUri", [[target], rpc_options])
             
         if "error" in response:
             raise Exception(response["error"].get("message", "unknown error"))
