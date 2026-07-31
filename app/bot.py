@@ -15,9 +15,29 @@ from .telegram_helper import delete_status
 log = logging.getLogger("tgdl_bot")
 
 
+import json
+
+class JsonFormatter(logging.Formatter):
+    """JSON log formatter for production observability."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_obj = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            log_obj["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_obj)
+
+
 def setup_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if settings.log_format.lower() == "json":
+        fmt = JsonFormatter()
+    else:
+        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     root = logging.getLogger()
     root.setLevel(level)
@@ -48,6 +68,7 @@ async def log_upload(job_id: int, filename: str) -> None:
 
 async def main() -> None:
     setup_logging()
+    settings.validate_credentials()
     log.info("Starting TGDL Bot...")
 
     app = Client(

@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import os
 from pathlib import Path
 
 from pydantic import Field, field_validator
@@ -10,9 +9,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- Telegram / MTProto credentials ---
-    tg_api_id: int = Field(..., description="From https://my.telegram.org")
-    tg_api_hash: str = Field(..., min_length=1)
-    tg_bot_token: str = Field(..., min_length=1)
+    tg_api_id: int = Field(default_factory=lambda: int(os.getenv("TG_API_ID", "0")), description="From https://my.telegram.org")
+    tg_api_hash: str = Field(default_factory=lambda: os.getenv("TG_API_HASH", ""), description="API hash from Telegram")
+    tg_bot_token: str = Field(default_factory=lambda: os.getenv("TG_BOT_TOKEN", ""), description="Bot token from @BotFather")
     pixeldrain_api_key: str | None = Field(default=None, description="API key for Pixeldrain uploads")
     pixeldrain_domain: str = Field(default="pixeldrain.com", description="Domain to use for Pixeldrain uploads and links (pixeldrain.com or pixeldra.in)")
     gofile_api_key: str | None = Field(default=None, description="API token for GoFile uploads")
@@ -67,6 +66,7 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 2 * 1024 * 1024 * 1024  # 2GB, MTProto ceiling
     progress_edit_every_n: int = 25
     log_level: str = "INFO"
+    log_format: str = Field(default="text", description="Log format: 'text' or 'json'")
     log_dir: Path = Field(default=Path("./logs"))
 
     @field_validator("data_dir", "auth_dir", "log_dir")
@@ -74,7 +74,6 @@ class Settings(BaseSettings):
     def _ensure_dir(cls, v: Path) -> Path:
         v.mkdir(parents=True, exist_ok=True)
         return v
-
 
     @field_validator("pixeldrain_domain")
     @classmethod
@@ -98,5 +97,18 @@ class Settings(BaseSettings):
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def validate_credentials(self) -> None:
+        """Validate that Telegram credentials are provided before starting the bot."""
+        missing = []
+        if not self.tg_api_id:
+            missing.append("TG_API_ID")
+        if not self.tg_api_hash:
+            missing.append("TG_API_HASH")
+        if not self.tg_bot_token:
+            missing.append("TG_BOT_TOKEN")
+        if missing:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
 
-settings = Settings()  # type: ignore[call-arg]  # populated from env/.env at import time
+
+settings = Settings()
+
