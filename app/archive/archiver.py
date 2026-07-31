@@ -199,7 +199,7 @@ async def archive_folder_async(
             copied_files = []
             for p in files_to_upload:
                 copied_p = pd_temp_dir / p.name
-                shutil.copy2(p, copied_p)
+                await asyncio.to_thread(shutil.copy2, p, copied_p)
                 copied_files.append(copied_p)
 
             async def upload_bg():

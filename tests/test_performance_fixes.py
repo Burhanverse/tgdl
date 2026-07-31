@@ -51,3 +51,10 @@ async def test_db_wal_mode_and_synchronous(tmp_path: Path):
         assert row[0] == 1
 
     await store.close()
+
+
+def test_direct_url_json_parsing():
+    """Verify is_direct_url correctly parses JSON array URLs now that json is imported."""
+    from app.downloader.direct.core import is_direct_url
+    json_url_payload = '["https://example.com/video.mp4", "https://example.com/image.png"]'
+    assert is_direct_url(json_url_payload) is True
