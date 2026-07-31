@@ -34,14 +34,14 @@ def register_user_key_handlers(app: Client) -> None:
             if current:
                 masked = current[:4] + "*" * (len(current) - 4) if len(current) > 4 else "****"
                 await message.reply_text(
-                    f"**GoFile API Key**: `Set ({masked})`\n\n"
-                    f"To update: `/gofilekey <your_api_token>`\n"
+                    f"**GoFile API Key**: Set (`{masked}`)\n\n"
+                    f"To update: `/gofilekey your_api_token`\n"
                     f"To delete: `/gofilekey delete`"
                 )
             else:
                 await message.reply_text(
-                    "**GoFile API Key**: `Not Set`\n\n"
-                    "Provide your token: `/gofilekey <your_api_token>`"
+                    "**GoFile API Key**: Not Set\n\n"
+                    "Provide your token: `/gofilekey your_api_token`"
                 )
             return
 
@@ -71,14 +71,14 @@ def register_user_key_handlers(app: Client) -> None:
             if current:
                 masked = current[:4] + "*" * (len(current) - 4) if len(current) > 4 else "****"
                 await message.reply_text(
-                    f"**Pixeldrain API Key**: `Set ({masked})`\n\n"
-                    f"To update: `/pdkey <your_api_key>`\n"
+                    f"**Pixeldrain API Key**: Set (`{masked}`)\n\n"
+                    f"To update: `/pdkey your_api_key`\n"
                     f"To delete: `/pdkey delete`"
                 )
             else:
                 await message.reply_text(
-                    "**Pixeldrain API Key**: `Not Set`\n\n"
-                    "Provide your key: `/pdkey <your_api_key>`"
+                    "**Pixeldrain API Key**: Not Set\n\n"
+                    "Provide your key: `/pdkey your_api_key`"
                 )
             return
 
