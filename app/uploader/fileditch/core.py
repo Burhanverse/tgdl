@@ -1,77 +1,34 @@
 from __future__ import annotations
 
-import io
-import json
 import logging
 import time
 import asyncio
 from pathlib import Path
 from collections.abc import Callable, Coroutine
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-import aiohttp
-
-from urllib.parse import quote
+import webhost
+from webhost.exceptions import WebHostError
 
 log = logging.getLogger(__name__)
 
-FILEDITCH_PERMANENT_URL = "https://new.fileditch.com/upload.php"
-FILEDITCH_TEMP_URL = "https://temp.fileditch.com/upload.php"
 
+def _make_sync_progress_callback(
+    loop: asyncio.AbstractEventLoop,
+    async_cb: Callable[[int, int], Coroutine[None, None, None]] | Callable[[int, int], Any] | None,
+) -> Callable[[int, int], None] | None:
+    if not async_cb:
+        return None
 
-class FileDitchProgressReader(io.IOBase):
-    """
-    A file-like object wrapper that reports read progress to an async callback.
-    """
-    def __init__(
-        self,
-        file_path: Path,
-        progress_cb: Callable[[int, int], Coroutine[None, None, None]] | None = None
-    ):
-        super().__init__()
-        self.file_path = file_path
-        self.total_size = file_path.stat().st_size
-        self._progress_cb = progress_cb
-        self.read_bytes = 0
-        self.file = open(file_path, "rb")
-        self.last_update_time = 0.0
-        self.last_update_bytes = 0
+    def sync_cb(current: int, total: int) -> None:
+        try:
+            res = async_cb(current, total)
+            if asyncio.iscoroutine(res):
+                asyncio.run_coroutine_threadsafe(res, loop)
+        except Exception:
+            pass
 
-    def read(self, size: int = -1) -> bytes:
-        chunk = self.file.read(size)
-        if chunk:
-            self.read_bytes += len(chunk)
-            if self._progress_cb:
-                now = time.time()
-                if (
-                    now - self.last_update_time >= 1.0
-                    or self.read_bytes - self.last_update_bytes >= 1024 * 1024
-                    or self.read_bytes == self.total_size
-                ):
-                    self.last_update_time = now
-                    self.last_update_bytes = self.read_bytes
-                    try:
-                        loop = asyncio.get_running_loop()
-                        if loop.is_running():
-                            res = self._progress_cb(self.read_bytes, self.total_size)
-                            if asyncio.iscoroutine(res):
-                                loop.create_task(res)
-                    except RuntimeError:
-                        pass
-        return chunk
-
-    def close(self) -> None:
-        self.file.close()
-        super().close()
-
-    def readable(self) -> bool:
-        return True
-
-    def seekable(self) -> bool:
-        return False
-
-    def __len__(self) -> int:
-        return self.total_size
+    return sync_cb
 
 
 async def upload_to_fileditch(
@@ -80,7 +37,7 @@ async def upload_to_fileditch(
     progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
 ) -> Tuple[Dict[str, Any], List[str]]:
     """
-    Upload a single file to FileDitch.
+    Upload a single file to FileDitch using webhost package.
 
     Args:
         file_path: Path to the local file to upload
@@ -91,61 +48,39 @@ async def upload_to_fileditch(
         A tuple of (response_json_dict, log_messages_list)
     """
     logs: List[str] = []
-    file_path = Path(file_path)
+    path = Path(file_path)
 
-    if not file_path.exists():
-        logs.append(f"File not found: {file_path}")
+    if not path.exists():
+        logs.append(f"File not found: {path}")
         return {"error": "File not found"}, logs
 
-    file_size = file_path.stat().st_size
+    file_size = path.stat().st_size
     if file_size == 0:
-        logs.append(f"Cannot upload 0-byte file: {file_path}")
+        logs.append(f"Cannot upload 0-byte file: {path}")
         return {"error": "File is empty (0 bytes)"}, logs
 
-    upload_endpoint = FILEDITCH_TEMP_URL if is_temp else FILEDITCH_PERMANENT_URL
-    upload_url = f"{upload_endpoint}?filename={quote(file_path.name)}"
-    logs.append(f"Uploading file to FileDitch ({'temp' if is_temp else 'permanent'}): {file_path.name} ({file_size} bytes)")
+    logs.append(f"Uploading file to FileDitch ({'temp' if is_temp else 'permanent'}): {path.name} ({file_size} bytes)")
 
-    headers = {
-        "Content-Type": "application/octet-stream",
-        "X-Filename": file_path.name,
-        "Content-Length": str(file_size),
-    }
+    loop = asyncio.get_running_loop()
+    sync_cb = _make_sync_progress_callback(loop, progress_callback)
+
+    def _do_upload() -> Dict[str, Any]:
+        return webhost.fileditch.upload_file(
+            file_path=str(path),
+            filename=path.name,
+            progress_callback=sync_cb
+        )
 
     try:
-        async with aiohttp.ClientSession() as session:
-            reader = FileDitchProgressReader(file_path, progress_callback)
-            try:
-                async with session.post(
-                    upload_url,
-                    data=reader,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=None)
-                ) as response:
-                    if response.status >= 400:
-                        error_text = await response.text()
-                        logs.append(f"FileDitch upload failed with HTTP {response.status}: {error_text}")
-                        return {"error": f"HTTP {response.status}: {error_text}"}, logs
-
-                    try:
-                        response_data = await response.json()
-                    except Exception:
-                        text = await response.text()
-                        try:
-                            response_data = json.loads(text) if text else {"success": False}
-                        except Exception:
-                            logs.append(f"Could not parse FileDitch response as JSON: {text[:200]}")
-                            response_data = {"success": False, "raw": text}
-            finally:
-                reader.close()
-
-        if response_data.get("success") is True:
-            logs.append(f"Uploaded to FileDitch successfully: {response_data.get('url')}")
+        res = await asyncio.to_thread(_do_upload)
+        if res.get("success") is True:
+            logs.append(f"Uploaded to FileDitch successfully: {res.get('url')}")
         else:
-            logs.append(f"FileDitch API returned error status: {response_data}")
-
-        return response_data, logs
-
+            logs.append(f"FileDitch API returned error status: {res}")
+        return res, logs
+    except WebHostError as e:
+        logs.append(f"FileDitch upload failed: {e}")
+        return {"error": str(e)}, logs
     except Exception as e:
         log.exception("Unexpected error uploading to FileDitch")
         logs.append(f"Unexpected error: {e}")

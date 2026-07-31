@@ -1160,15 +1160,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pixeldrain"
-version = "1.1.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/9c/7e/91017156b6b4c21db57f96c1912793c9ad2e260509ebd4f1859f7f3ddf8a/Pixeldrain-1.1.2.tar.gz", hash = "sha256:bf9a7259b9acfd074d89088e4e2678deb121a3cc79e715804dbd7bc8dc164f52", size = 3177, upload-time = "2024-02-11T17:04:15.709Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/d7/9d0455ebd7f1b645b1fbe5834a0c81c8c9e50453a60f9b3d8ba5c7576a6f/Pixeldrain-1.1.2-py3-none-any.whl", hash = "sha256:43ea6f85fc1707ffbcbe1cde1c30bc5a3f75da5ade27c0a783af5ad56ced65a6", size = 3315, upload-time = "2024-02-11T17:04:14.055Z" },
-]
-
-[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1773,6 +1764,18 @@ wheels = [
 ]
 
 [[package]]
+name = "requests-toolbelt"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/61/d7545dafb7ac2230c70d38d31cbfe4cc64f7144dc41f6e4e4b78ecd9f5bb/requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6", size = 206888, upload-time = "2023-05-01T04:11:33.229Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
+]
+
+[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1819,7 +1822,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/33/59/7cf5ced989e3139a7
 
 [[package]]
 name = "tgdl-bot"
-version = "0.1.0"
+version = "0.2.17"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -1836,7 +1839,6 @@ dependencies = [
     { name = "patool" },
     { name = "pedalboard" },
     { name = "pillow" },
-    { name = "pixeldrain" },
     { name = "prowlarr-py" },
     { name = "psutil" },
     { name = "py7zr" },
@@ -1846,6 +1848,7 @@ dependencies = [
     { name = "telegraph" },
     { name = "tenacity" },
     { name = "tgcrypto" },
+    { name = "webhost" },
 ]
 
 [package.dev-dependencies]
@@ -1870,7 +1873,6 @@ requires-dist = [
     { name = "patool", specifier = ">=4.0.5" },
     { name = "pedalboard", specifier = ">=0.9.24" },
     { name = "pillow", specifier = ">=12.3.0" },
-    { name = "pixeldrain", specifier = ">=1.1.2" },
     { name = "prowlarr-py", specifier = ">=1.1.0" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "py7zr", specifier = ">=1.1.3" },
@@ -1880,12 +1882,25 @@ requires-dist = [
     { name = "telegraph", specifier = ">=2.2.0" },
     { name = "tenacity", specifier = ">=9.1.4" },
     { name = "tgcrypto", specifier = ">=1.2.5" },
+    { name = "webhost", git = "https://github.com/Burhanverse/webhost.git" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
+]
+
+[[package]]
+name = "tqdm"
+version = "4.70.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/21/3b/6c24bec5be5e743ffd99576daa5cc077722fc7d5bbc00bd133fa0c698dc6/tqdm-4.70.0.tar.gz", hash = "sha256:55b0b0dbd97462d06ebee91e4dac24ed4d4702be82b24f07e6c1d27e08cea220", size = 795438, upload-time = "2026-07-27T11:33:15.271Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/1c/01bfd571a64e7f270e6bab5e33777debe0edc56759233ce84f27dec92d14/tqdm-4.70.0-py3-none-any.whl", hash = "sha256:7f585706bfddbdebf89daac705b2dfcc16890130727d3197ca62c732b4310953", size = 80184, upload-time = "2026-07-27T11:33:13.167Z" },
 ]
 
 [[package]]
@@ -1925,6 +1940,16 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
+]
+
+[[package]]
+name = "webhost"
+version = "0.0.1"
+source = { git = "https://github.com/Burhanverse/webhost.git#45f0f8f5f94e8b30ce3f0d0052c063773e36bf01" }
+dependencies = [
+    { name = "requests" },
+    { name = "requests-toolbelt" },
+    { name = "tqdm" },
 ]
 
 [[package]]
