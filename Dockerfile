@@ -3,10 +3,10 @@ FROM ubuntu:latest
 # Avoid prompt dialogs during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Python, media tools, torrent client, and archive extraction libraries
+# Install media tools, torrent client, archive extraction libraries, and curl/ca-certificates
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
-    python3-pip \
+    ca-certificates \
     ffmpeg \
     aria2 \
     unzip \
@@ -18,11 +18,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv from official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+# Copy dependency specifications for layer caching
+COPY pyproject.toml uv.lock .python-version ./
 
+# Install dependencies using uv
+RUN uv sync --frozen --no-cache --no-dev
+
+# Copy application source code
 COPY app ./app
 
 RUN useradd -m botuser && mkdir -p /app/data /app/logs && chown -R botuser:botuser /app
@@ -30,4 +37,4 @@ USER botuser
 
 VOLUME ["/app/data", "/app/logs"]
 
-ENTRYPOINT ["python3", "-m", "app.bot"]
+ENTRYPOINT ["uv", "run", "python", "-m", "app.bot"]

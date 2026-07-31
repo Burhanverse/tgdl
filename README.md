@@ -75,12 +75,10 @@ This project uses modular sub-documentation files located in the `docs/` directo
 git clone https://github.com/Burhanverse/tgdl.git
 cd tgdl
 
-# 2. Setup environment
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# 2. Synchronize dependencies using uv
+uv sync
 
 # 3. Configure credentials in .env and launch
 cp .env.example .env
-python -m app.bot
+uv run python -m app.bot
 ```

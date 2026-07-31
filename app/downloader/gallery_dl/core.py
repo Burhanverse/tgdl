@@ -150,7 +150,7 @@ async def run_with_progress(
     if shutil.which("gallery-dl") is None:
         raise GalleryDLNotFound(
             "gallery-dl not found on PATH. Install with: "
-            "pip install gallery-dl --break-system-packages"
+            "uv add gallery-dl"
         )
 
     urls = []

@@ -9,6 +9,7 @@ This guide covers system prerequisites, manual local installation, environment v
 Before running TGDL Bot, ensure the following system dependencies are installed on your host OS:
 
 - **Python**: 3.12 or newer
+- **uv**: Modern, fast Python package and project manager.
 - **FFmpeg & FFprobe**: Required for video metadata extraction, thumbnail generation, and audio/video transcoding.
 - **aria2c**: Required for direct multi-connection HTTP downloads and torrent/magnet link handling.
 - **System Archive Utilities** (for `patool` archive support):
@@ -17,7 +18,8 @@ Before running TGDL Bot, ensure the following system dependencies are installed 
 ### Installing Prerequisites on Ubuntu / Debian
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip python3-venv ffmpeg aria2 unzip p7zip-full tar gzip bzip2 xz-utils
+sudo apt install -y python3 ffmpeg aria2 unzip p7zip-full tar gzip bzip2 xz-utils
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ---
@@ -30,18 +32,12 @@ sudo apt install -y python3 python3-pip python3-venv ffmpeg aria2 unzip p7zip-fu
    cd tgdl
    ```
 
-2. **Create & Activate Virtual Environment**:
+2. **Sync Dependencies**:
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
+   uv sync
    ```
 
-3. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure Environment Variables**:
+3. **Configure Environment Variables**:
    Copy `.env.example` to `.env` and fill in credentials:
    ```bash
    cp .env.example .env
@@ -51,9 +47,9 @@ sudo apt install -y python3 python3-pip python3-venv ffmpeg aria2 unzip p7zip-fu
    - `TG_API_HASH`: Telegram API Hash.
    - `TG_BOT_TOKEN`: Bot token from [@BotFather](https://t.me/BotFather).
 
-5. **Start Bot**:
+4. **Start Bot**:
    ```bash
-   python -m app.bot
+   uv run python -m app.bot
    ```
 
 ---
