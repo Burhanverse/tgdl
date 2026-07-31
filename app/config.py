@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     search_limit: int = Field(default=20, description="Limit of search results to fetch")
 
     # --- Authorization / Access Control ---
-    authorized_user_ids: list[int] = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")
+    authorized_user_ids: list[int] | str = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")
 
     # --- Job & Disk limits ---
     max_jobs_per_chat: int = Field(default=3, description="Maximum active+queued jobs per chat")

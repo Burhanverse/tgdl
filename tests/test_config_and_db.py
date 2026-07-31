@@ -23,6 +23,13 @@ async def test_settings_validation(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_settings_authorized_user_ids_env_string(monkeypatch):
+    monkeypatch.setenv("AUTHORIZED_USER_IDS", "12345678,98765432")
+    settings = Settings()
+    assert settings.authorized_user_ids == [12345678, 98765432]
+
+
+@pytest.mark.asyncio
 async def test_settings_missing_credentials():
     settings = Settings(tg_api_id=0, tg_api_hash="", tg_bot_token="")
     with pytest.raises(ValueError, match="Missing required environment variables"):
