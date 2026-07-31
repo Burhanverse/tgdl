@@ -23,7 +23,7 @@ def make_marquee_bar(width: int = 10) -> str:
 from urllib.parse import parse_qs, unquote, urlparse
 
 
-def format_magnet_display(magnet_url: str, max_len: int = 35) -> str:
+def format_magnet_display(magnet_url: str, max_len: int = 24) -> str:
     cleaned = magnet_url.strip()
     display_name = ""
     try:
@@ -45,7 +45,7 @@ def format_magnet_display(magnet_url: str, max_len: int = 35) -> str:
 
     return f"[{display_name}]({cleaned})"
 
-def shorten_url_text(url: str, max_len: int = 35) -> str:
+def shorten_url_text(url: str, max_len: int = 24) -> str:
     cleaned = url.strip()
     if not (cleaned.startswith("http://") or cleaned.startswith("https://")):
         if len(cleaned) > max_len:
@@ -100,10 +100,10 @@ def format_url_display(url_json: str, current_url: str | None = None) -> str:
         clean_u = _clean(u)
         suffix_str = f" {suffix}" if suffix else ""
         if clean_u.startswith("http://") or clean_u.startswith("https://"):
-            short_text = shorten_url_text(clean_u, max_len=35)
+            short_text = shorten_url_text(clean_u, max_len=24)
             return f"[{short_text}]({clean_u}){suffix_str}"
         else:
-            short_text = shorten_url_text(clean_u, max_len=35)
+            short_text = shorten_url_text(clean_u, max_len=24)
             return f"`{short_text}`{suffix_str}"
 
     try:

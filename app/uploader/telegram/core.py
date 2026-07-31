@@ -345,7 +345,7 @@ class TelegramUploader:
                 duration = video_meta.get("duration", 0)
                 thumb_path = await extract_video_thumbnail(file_path)
 
-                if duration >= 60:
+                if duration >= 120:
                     screenshots = await take_screenshots(file_path, duration)
 
                 kwargs = {
