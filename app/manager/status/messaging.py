@@ -44,7 +44,7 @@ async def safe_edit(client: Client, chat_id: int, message_id: int, text: str, re
     key = (chat_id, message_id)
     if not force:
         last_t = _last_edit_times.get(key, 0.0)
-        if now - last_t < 5.0:
+        if now - last_t < 10.0:
             return False
 
     await telegram_limiter.acquire(chat_id)

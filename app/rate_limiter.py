@@ -67,7 +67,7 @@ class TelegramRateLimiter:
     def __init__(
         self,
         global_rate_limit: float = 30.0,  # max requests per second globally
-        per_chat_interval: float = 1.0,    # min seconds between calls in same chat
+        per_chat_interval: float = 2.0,    # min seconds between calls in same chat
     ):
         self.global_rate_limit = global_rate_limit
         self.per_chat_interval = per_chat_interval
