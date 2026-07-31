@@ -22,6 +22,7 @@ from ..archive import (
     handle_multi_start_cb,
     start_multi_unzip_session,
 )
+from ..auth import authorized_filter
 from ..config import settings
 from ..manager import (
     _password_prompt_events,
