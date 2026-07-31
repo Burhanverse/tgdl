@@ -731,12 +731,21 @@ class QueueManager:
                 downloaded_paths = await download_direct(direct_url, dest_dir, progress_cb=on_direct_progress)
                 result = DownloadResult(ok=True, files=downloaded_paths)
             else:
-                extra_args = None
+                extra_args_list: list[str] = []
                 if job.args:
                     try:
-                        extra_args = json.loads(job.args)
-                    except Exception:
-                        pass
+                        args_data = json.loads(job.args)
+                        if isinstance(args_data, dict):
+                            pwd = args_data.get("password")
+                            if pwd:
+                                extra_args_list.extend(["--password", str(pwd)])
+                            raw_extra = args_data.get("extra_args")
+                            if isinstance(raw_extra, list):
+                                extra_args_list.extend([str(x) for x in raw_extra])
+                        elif isinstance(args_data, list):
+                            extra_args_list = [str(x) for x in args_data]
+                    except Exception as e:
+                        log.warning("Failed to parse job.args for job #%s: %s", job.id, e)
 
                 def on_download_progress(count: int, filename: str | None = None, current_url: str | None = None) -> None:
                     job_state.download_count = count
@@ -755,7 +764,7 @@ class QueueManager:
                     job.url,
                     dest_dir,
                     on_progress=on_download_progress,
-                    extra_args=extra_args,
+                    extra_args=extra_args_list if extra_args_list else None,
                     register_proc=reg,
                     user_id=job.chat_id,
                 )
