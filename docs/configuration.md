@@ -64,7 +64,6 @@ Cancel active or queued jobs instantly.
 
 Configure access control and security policies in `.env`:
 - `AUTHORIZED_USER_IDS`: Comma-separated list of allowed Telegram user IDs (e.g. `12345678,98765432`).
-- `AUTHORIZED_CHAT_IDS`: Comma-separated list of allowed Telegram group/channel IDs (e.g. `-100123456789`).
 - `MAX_JOBS_PER_CHAT`: Maximum concurrent active + queued jobs allowed per chat (default `3`).
 - `MAX_TOTAL_DOWNLOADS_BYTES`: Optional cap on total `downloads_dir` storage usage.
 - `ALLOW_SHARED_UPLOAD_KEYS`: Fall back to owner's global API keys for uploaders (default `false`).

@@ -67,7 +67,6 @@ class Settings(BaseSettings):
 
     # --- Authorization / Access Control ---
     authorized_user_ids: list[int] = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")
-    authorized_chat_ids: list[int] = Field(default_factory=list, description="List of allowed Telegram chat IDs (comma-separated env AUTHORIZED_CHAT_IDS)")
 
     # --- Job & Disk limits ---
     max_jobs_per_chat: int = Field(default=3, description="Maximum active+queued jobs per chat")
@@ -80,7 +79,7 @@ class Settings(BaseSettings):
     log_format: str = Field(default="text", description="Log format: 'text' or 'json'")
     log_dir: Path = Field(default=Path("./logs"))
 
-    @field_validator("authorized_user_ids", "authorized_chat_ids", mode="before")
+    @field_validator("authorized_user_ids", mode="before")
     @classmethod
     def _parse_id_list(cls, v: Any) -> list[int]:
         if isinstance(v, str):

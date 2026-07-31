@@ -66,42 +66,31 @@ def test_validate_gdl_conf_accepts_safe_postprocessors():
 
 
 def test_authorization_filter_logic():
-    """Verify is_authorized_user_or_chat behaves correctly for restricted and unrestricted modes."""
+    """Verify is_authorized_user behaves correctly for restricted and unrestricted modes."""
     class DummyUser:
         def __init__(self, uid: int):
             self.id = uid
 
-    class DummyChat:
-        def __init__(self, cid: int):
-            self.id = cid
-
     class DummyUpdate:
-        def __init__(self, uid: int, cid: int):
+        def __init__(self, uid: int):
             self.from_user = DummyUser(uid)
-            self.chat = DummyChat(cid)
 
-    # When lists are empty (unrestricted mode), all requests are authorized
+    # When list is empty (unrestricted mode), all requests are authorized
     settings.authorized_user_ids = []
-    settings.authorized_chat_ids = []
-    up1 = DummyUpdate(100, 200)
+    up1 = DummyUpdate(100)
     assert is_authorized_user_or_chat(up1) is True
 
-    # When restricted, only configured user_ids or chat_ids pass
+    # When restricted, only configured user_ids pass
     settings.authorized_user_ids = [12345]
-    settings.authorized_chat_ids = [-100999]
 
-    authorized_up = DummyUpdate(12345, 1111)
+    authorized_up = DummyUpdate(12345)
     assert is_authorized_user_or_chat(authorized_up) is True
 
-    unauthorized_up = DummyUpdate(99999, 1111)
+    unauthorized_up = DummyUpdate(99999)
     assert is_authorized_user_or_chat(unauthorized_up) is False
-
-    chat_auth_up = DummyUpdate(8888, -100999)
-    assert is_authorized_user_or_chat(chat_auth_up) is True
 
     # Reset
     settings.authorized_user_ids = []
-    settings.authorized_chat_ids = []
 
 
 def test_zip_slip_path_traversal_detection(tmp_path: Path):

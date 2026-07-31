@@ -9,35 +9,29 @@ from .config import settings
 log = logging.getLogger(__name__)
 
 
-def is_authorized_user_or_chat(update: Message | CallbackQuery) -> bool:
-    """Checks whether the user_id or chat_id is in AUTHORIZED_USER_IDS or AUTHORIZED_CHAT_IDS.
+def is_authorized_user(update: Message | CallbackQuery) -> bool:
+    """Checks whether the requesting user's Telegram user_id is in AUTHORIZED_USER_IDS.
     
-    If both AUTHORIZED_USER_IDS and AUTHORIZED_CHAT_IDS are empty/unset, returns True (unrestricted mode).
+    If AUTHORIZED_USER_IDS is empty/unset, returns True (unrestricted mode).
     """
     auth_users = settings.authorized_user_ids
-    auth_chats = settings.authorized_chat_ids
 
     # Unrestricted mode
-    if not auth_users and not auth_chats:
+    if not auth_users:
         return True
 
     user_id = getattr(update.from_user, "id", None) if hasattr(update, "from_user") and update.from_user else None
-    chat = getattr(update, "chat", None)
-    if not chat and hasattr(update, "message") and update.message:
-        chat = getattr(update.message, "chat", None)
-    chat_id = getattr(chat, "id", None) if chat else None
-
     if user_id is not None and user_id in auth_users:
-        return True
-
-    if chat_id is not None and chat_id in auth_chats:
         return True
 
     return False
 
 
+is_authorized_user_or_chat = is_authorized_user
+
+
 async def _authorized_check_func(_, __, update: Message | CallbackQuery) -> bool:
-    return is_authorized_user_or_chat(update)
+    return is_authorized_user(update)
 
 
 authorized_filter = filters.create(_authorized_check_func, name="AuthorizedFilter")
@@ -45,10 +39,10 @@ authorized_filter = filters.create(_authorized_check_func, name="AuthorizedFilte
 
 def check_auth_on_startup() -> None:
     """Logs a loud warning if the bot is running in unrestricted mode."""
-    if not settings.authorized_user_ids and not settings.authorized_chat_ids:
+    if not settings.authorized_user_ids:
         log.warning(
             "========================================================================\n"
-            "⚠️ WARNING: AUTHORIZED_USER_IDS / AUTHORIZED_CHAT_IDS IS NOT CONFIGURED!\n"
+            "⚠️ WARNING: AUTHORIZED_USER_IDS IS NOT CONFIGURED!\n"
             "   The bot is running in UNRESTRICTED / PUBLIC mode.\n"
             "   ANY Telegram user can issue commands and consume bot host resources.\n"
             "========================================================================"
