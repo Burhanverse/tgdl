@@ -11,6 +11,7 @@ from .unzip import register_unzip_handlers
 from .callbacks import register_choice_callback_handlers
 from .gdlconf import register_gdlconf_handlers
 from .torrent_search import register_torrent_search_handlers
+from .user_keys import register_user_key_handlers
 
 
 def register_all_handlers(app: Client) -> None:
@@ -24,6 +25,7 @@ def register_all_handlers(app: Client) -> None:
     register_choice_callback_handlers(app)
     register_gdlconf_handlers(app)
     register_torrent_search_handlers(app)
+    register_user_key_handlers(app)
     register_unauthorized_rejection_handler(app)
 
 

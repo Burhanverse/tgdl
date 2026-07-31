@@ -61,6 +61,8 @@ This project uses modular sub-documentation files located in the `docs/` directo
 | `/pdup` | — | Upload replied media to Pixeldrain. | [Cloud & Drive](docs/cloud_and_drive.md) |
 | `/gfup` | `/gofile` | Upload replied media to GoFile. | [Cloud & Drive](docs/cloud_and_drive.md) |
 | `/fdup` | `/fileditch` | Upload replied media to FileDitch. | [Cloud & Drive](docs/cloud_and_drive.md) |
+| `/gofilekey <token>` | `/gofile_key` | Manage personal GoFile API key. | [Cloud & Drive](docs/cloud_and_drive.md) |
+| `/pdkey <key>` | `/pixeldrainkey` | Manage personal Pixeldrain API key. | [Cloud & Drive](docs/cloud_and_drive.md) |
 | `/gdlconf` | `/gdl_config` | Manage custom gallery-dl config & cookies. | [Configuration](docs/configuration.md) |
 | `/status` | — | Interactive real-time task manager. | [Configuration](docs/configuration.md) |
 | `/cancel [job_id]` | — | Cancel active/queued job. | [Configuration](docs/configuration.md) |

@@ -19,17 +19,8 @@ Configure custom authentication, headers, or settings for `gallery-dl`.
 2. Upload `cookies.txt` to the Telegram bot chat.
 3. Reply to the `cookies.txt` file with `/gdlconf`.
 
-### Uploading Custom Configuration
-1. Create a custom JSON `.conf` file for gallery-dl.
-2. Upload the file to the bot chat and reply to it with `/gdlconf`.
-
-### Interactive Management Menu
-Send `/gdlconf` to open the control panel:
-- **View Active Config**: Inspect current user-level configuration JSON.
-- **View Default Config**: View global template configuration.
-- **Download Config File**: Receive your active `.conf` file as a document.
-- **Delete Cookies**: Remove stored `cookies.txt`.
-- **Reset Configuration**: Restore default settings.
+### Security & Postprocessor Sanitization
+All uploaded `gallery-dl.conf` files are automatically scanned and validated. Any dangerous postprocessors (e.g. `exec`, `python`, `cmd`, `shell`) are denied by default to ensure host security.
 
 ---
 
@@ -69,11 +60,13 @@ Cancel active or queued jobs instantly.
 
 ---
 
-## Global Environment Credentials
+## Authorization & Security Controls (`.env`)
 
-You can set global fallback credentials in your `.env` file:
-- `MEGA_EMAIL`: Default global MEGA account email.
-- `MEGA_PASSWORD`: Default global MEGA account password.
-- `PIXELDRAIN_API_KEY`: API key for Pixeldrain uploads (`/pdup`).
-- `GOFILE_API_KEY`: API token for GoFile uploads (`/gfup`).
+Configure access control and security policies in `.env`:
+- `AUTHORIZED_USER_IDS`: Comma-separated list of allowed Telegram user IDs (e.g. `12345678,98765432`).
+- `AUTHORIZED_CHAT_IDS`: Comma-separated list of allowed Telegram group/channel IDs (e.g. `-100123456789`).
+- `MAX_JOBS_PER_CHAT`: Maximum concurrent active + queued jobs allowed per chat (default `3`).
+- `MAX_TOTAL_DOWNLOADS_BYTES`: Optional cap on total `downloads_dir` storage usage.
+- `ALLOW_SHARED_UPLOAD_KEYS`: Fall back to owner's global API keys for uploaders (default `false`).
+- `ALLOW_PRIVATE_NETWORK_URLS`: Allow downloading URLs resolving to private/reserved IP ranges (default `false` for SSRF protection).
 

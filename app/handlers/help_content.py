@@ -57,18 +57,22 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
         )
     elif page == "cloud":
         text = (
-            "**Topic: Cloud Storage & Google Drive Integration**\n\n"
+            "**Topic: Cloud Storage & Upload Keys**\n\n"
             "**Google Drive:**\n"
             "• `/gd2tg <gdrive_link>`\n"
             "> _Download Google Drive files or folders directly to Telegram._\n"
-            "> _Supports per-user Service Accounts (`auth/<user_id>/accounts/*.json`) and OAuth tokens._\n\n"
-            "**External Cloud Uploaders:**\n"
+            "> _Supports per-user Service Accounts (`auth/<user_id>/accounts/*.json`) and OAuth tokens (`token.json`)._\n\n"
+            "**External Cloud Uploaders & Per-User Keys:**\n"
             "• `/pdup` (Reply to media)\n"
             "> _Upload Telegram media file directly to Pixeldrain._\n\n"
             "• `/gfup` or `/gofile` (Reply to media)\n"
             "> _Upload Telegram media file directly to GoFile._\n\n"
             "• `/fdup` or `/fileditch` (Reply to media)\n"
-            "> _Upload Telegram media file directly to FileDitch._"
+            "> _Upload Telegram media file directly to FileDitch._\n\n"
+            "• `/gofilekey <token>` or `/gofilekey del`\n"
+            "> _Set, view, or remove your personal GoFile API token._\n\n"
+            "• `/pdkey <key>` or `/pdkey del`\n"
+            "> _Set, view, or remove your personal Pixeldrain API key._"
         )
     elif page == "config":
         text = (
@@ -76,7 +80,7 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "**Commands:**\n"
             "• `/gdlconf` or `/gdl_config`\n"
             "> _Manage per-user `gallery-dl.conf` and `cookies.txt` for auth-protected or subscriber-only sites._\n"
-            "> _Reply to `.conf` or `cookies.txt` with `/gdlconf` to upload._\n\n"
+            "> _Reply to `.conf` or `cookies.txt` with `/gdlconf` to upload (sanitized against dangerous postprocessor commands)._\n\n"
             "• `/status [user_id | me]`\n"
             "> _Real-time task dashboard showing speeds, progress bars, active downloads/uploads, queue, overview, and pagination._\n\n"
             "• `/cancel [job_id]`\n"
