@@ -74,6 +74,8 @@ class JobStore:
     async def open(self) -> None:
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
+        await self._db.execute("PRAGMA journal_mode=WAL")
+        await self._db.execute("PRAGMA synchronous=NORMAL")
 
         # Check if table jobs exists and check its 'id' column type to see if we should migrate.
         try:

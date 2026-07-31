@@ -44,8 +44,6 @@ AUDIO_EXT = {
 }
 CONVERTIBLE_IMAGE_EXT = {".webp", ".bmp", ".tiff", ".heic", ".heif", ".ico"}
 
-_upload_semaphore = asyncio.Semaphore(1)
-
 
 class UploadTooLarge(Exception):
     pass
@@ -86,6 +84,14 @@ def is_photo_invalid_for_telegram(file_path: Path) -> bool:
     except Exception:
         return True
     return False
+
+
+async def probe_audio_async(audio_path: Path) -> dict[str, Any]:
+    return await asyncio.to_thread(probe_audio, audio_path)
+
+
+async def is_photo_invalid_for_telegram_async(file_path: Path) -> bool:
+    return await asyncio.to_thread(is_photo_invalid_for_telegram, file_path)
 
 
 def _make_image_thumbnail(file_path: Path) -> Optional[Path]:
@@ -213,23 +219,21 @@ class TelegramUploader:
         else:
             single_files = files_to_upload
 
-        async with _upload_semaphore:
-            for group_key, group_files in split_groups.items():
-                if self.is_cancelled:
-                    return
-                if len(group_files) > 1:
-                    log.info("Uploading %s split parts as media group for %s", len(group_files), group_key)
-                    await self._upload_media_group_batch(group_files)
-                else:
-                    single_files.extend(group_files)
+        for group_key, group_files in split_groups.items():
+            if self.is_cancelled:
+                return
+            if len(group_files) > 1:
+                log.info("Uploading %s split parts as media group for %s", len(group_files), group_key)
+                await self._upload_media_group_batch(group_files)
+            else:
+                single_files.extend(group_files)
 
-            single_files.sort(key=lambda x: natural_sort_key(x.name))
-            for f in single_files:
-                if self.is_cancelled:
-                    return
-                self.last_uploaded = 0
-                await self._upload_single_file_with_retry(f)
-                await asyncio.sleep(1.0)
+        single_files.sort(key=lambda x: natural_sort_key(x.name))
+        for f in single_files:
+            if self.is_cancelled:
+                return
+            self.last_uploaded = 0
+            await self._upload_single_file_with_retry(f)
 
     async def _upload_media_group_batch(self, group_files: List[Path]) -> None:
         """Batch upload up to 10 split files in a media group."""
@@ -307,7 +311,7 @@ class TelegramUploader:
         is_audio = ext in AUDIO_EXT
         is_image = ext in IMAGE_EXT and ext not in CONVERTIBLE_IMAGE_EXT
 
-        if is_image and not force_document and is_photo_invalid_for_telegram(file_path):
+        if is_image and not force_document and await is_photo_invalid_for_telegram_async(file_path):
             log.info("Image %s has dimensions/color space unsuited for Telegram photo API; uploading as document", file_path.name)
             force_document = True
 
@@ -363,7 +367,7 @@ class TelegramUploader:
                     await self._send_screenshots(screenshots, file_path.name)
 
             elif is_audio:
-                audio_meta = probe_audio(file_path)
+                audio_meta = await probe_audio_async(file_path)
                 kwargs = {
                     "caption": cap_mono,
                     "duration": audio_meta.get("duration", 0),

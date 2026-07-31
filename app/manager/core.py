@@ -363,12 +363,49 @@ class QueueManager:
                 async def monitor_download_speed():
                     last_download_size = 0
                     last_download_time = time.time()
+                    stable_file_sizes: dict[Path, int] = {}
+                    last_known_sizes: dict[Path, int] = {}
+                    cached_file_list: list[Path] = []
+                    scan_tick = 0
+
                     while not job_state.downloader_done.is_set():
                         await asyncio.sleep(1.0)
                         if not dest_dir.exists():
                             continue
                         try:
-                            on_disk = sum(p.stat().st_size for p in dest_dir.rglob("*") if p.is_file())
+                            scan_tick += 1
+                            if scan_tick % 3 == 1 or not cached_file_list:
+                                cached_file_list = [p for p in dest_dir.rglob("*") if p.is_file()]
+
+                            current_paths = set(cached_file_list)
+                            # Remove stale paths
+                            stale_stable = set(stable_file_sizes.keys()) - current_paths
+                            for sp in stale_stable:
+                                stable_file_sizes.pop(sp, None)
+                            stale_last = set(last_known_sizes.keys()) - current_paths
+                            for lp in stale_last:
+                                last_known_sizes.pop(lp, None)
+
+                            on_disk = 0
+                            part_files: list[str] = []
+
+                            for p in cached_file_list:
+                                if p.name.endswith(".part"):
+                                    part_files.append(p.name)
+
+                                if p in stable_file_sizes:
+                                    on_disk += stable_file_sizes[p]
+                                else:
+                                    try:
+                                        sz = p.stat().st_size
+                                        on_disk += sz
+                                        if not p.name.endswith(".part") and p in last_known_sizes and last_known_sizes[p] == sz:
+                                            stable_file_sizes[p] = sz
+                                        else:
+                                            last_known_sizes[p] = sz
+                                    except Exception:
+                                        pass
+
                             current_size = on_disk + job_state.deleted_bytes
                         except Exception:
                             continue
@@ -383,12 +420,8 @@ class QueueManager:
                             job_state.total_downloaded_bytes = current_size
                             job_state.trigger_event.set()
 
-                        try:
-                            part_files = sorted(p.name for p in dest_dir.rglob("*.part") if p.is_file())
-                            if part_files:
-                                job_state.current_download_file = part_files[0]
-                        except Exception:
-                            pass
+                        if part_files:
+                            job_state.current_download_file = sorted(part_files)[0]
 
                 monitor_task = asyncio.create_task(monitor_download_speed())
 
@@ -1626,13 +1659,21 @@ class QueueManager:
                     if dest_dir.exists():
                         try:
                             files = [p for p in dest_dir.rglob("*") if p.is_file() and not p.name.endswith(".part") and not should_ignore_file(p)]
-                            for f in files:
-                                sz1 = f.stat().st_size
+                            if files:
+                                snapshots = {}
+                                for f in files:
+                                    try:
+                                        snapshots[f] = f.stat().st_size
+                                    except Exception:
+                                        pass
                                 await asyncio.sleep(0.5)
-                                sz2 = f.stat().st_size
-                                if sz1 == sz2 and sz1 > 0:
-                                    has_completed_file = True
-                                    break
+                                for f, sz1 in snapshots.items():
+                                    try:
+                                        if f.exists() and sz1 > 0 and f.stat().st_size == sz1:
+                                            has_completed_file = True
+                                            break
+                                    except Exception:
+                                        pass
                         except Exception:
                             pass
                     if has_completed_file:
