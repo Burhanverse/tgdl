@@ -61,7 +61,7 @@ def compile_split_session_text(prefix: str, ext: str, parts: dict[int, Message])
 
 def register_unzip_handlers(app: Client) -> None:
 
-    @app.on_message(filters.command("unzip"))
+    @app.on_message(filters.command("unzip") & authorized_filter)
     async def unzip_cmd(_, message: Message) -> None:
         raw_text = (message.text or "").strip()
         parts = raw_text.split(maxsplit=1)

@@ -35,18 +35,19 @@ class TelegraphHelper:
             size = html.escape(str(result.get("size") or "N/A"))
             seeders = result.get("seeders", 0)
             leechers = result.get("leechers", 0)
-            torrent_link = result.get("torrent") or result.get("url") or "#"
-            magnet_link = result.get("magnet")
+            raw_torrent_link = str(result.get("torrent") or result.get("url") or "#")
+            raw_magnet_link = str(result.get("magnet") or "")
+            safe_torrent_link = html.escape(raw_torrent_link, quote=True)
 
-            item_html = f"<h4>{idx}. <a href='{torrent_link}'>{name}</a></h4>"
+            item_html = f"<h4>{idx}. <a href='{safe_torrent_link}'>{name}</a></h4>"
             item_html += f"<p><b>Size:</b> <code>{size}</code> &nbsp;•&nbsp; <b>Seeders:</b> {seeders} &nbsp;•&nbsp; <b>Leechers:</b> {leechers}</p>"
 
             links_html = []
-            if magnet_link:
-                quoted_mag = urllib.parse.quote(magnet_link)
+            if raw_magnet_link:
+                quoted_mag = html.escape(urllib.parse.quote(raw_magnet_link), quote=True)
                 links_html.append(f"<a href='http://t.me/share/url?url={quoted_mag}'>Share Magnet to Telegram</a>")
-            if torrent_link and torrent_link != "#" and not torrent_link.startswith("magnet:"):
-                links_html.append(f"<a href='{torrent_link}'>Direct Link</a>")
+            if raw_torrent_link and raw_torrent_link != "#" and not raw_torrent_link.startswith("magnet:"):
+                links_html.append(f"<a href='{safe_torrent_link}'>Direct Link</a>")
 
             if links_html:
                 item_html += f"<blockquote>{' &nbsp;•&nbsp; '.join(links_html)}</blockquote>"

@@ -5,8 +5,8 @@ Usage:
     python3 -m app.gdrive.setup <path_to_client_secret.json> [user_id]
 """
 
+import os
 import sys
-import pickle
 from pathlib import Path
 
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -33,7 +33,7 @@ def main():
         target_dir = settings.auth_dir
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    token_path = target_dir / "token.pickle"
+    token_path = target_dir / "token.json"
 
     print(f"Reading OAuth credentials from: {json_path}")
     print("Starting local OAuth authorization server...")
@@ -41,8 +41,9 @@ def main():
     flow = InstalledAppFlow.from_client_secrets_file(str(json_path), SCOPES)
     creds = flow.run_local_server(port=8080, prompt="consent")
 
-    with open(token_path, "wb") as token_file:
-        pickle.dump(creds, token_file)
+    with open(token_path, "w", encoding="utf-8") as token_file:
+        token_file.write(creds.to_json())
+    os.chmod(token_path, 0o600)
 
     print(f"\nSuccess! Saved OAuth token to: {token_path}")
     print("You can now use /gd2tg <gdrive_link> in Telegram!")

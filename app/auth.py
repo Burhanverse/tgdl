@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import logging
+from pyrogram import Client, filters
+from pyrogram.types import CallbackQuery, Message
+
+from .config import settings
+
+log = logging.getLogger(__name__)
+
+
+def is_authorized_user_or_chat(update: Message | CallbackQuery) -> bool:
+    """Checks whether the user_id or chat_id is in AUTHORIZED_USER_IDS or AUTHORIZED_CHAT_IDS.
+    
+    If both AUTHORIZED_USER_IDS and AUTHORIZED_CHAT_IDS are empty/unset, returns True (unrestricted mode).
+    """
+    auth_users = settings.authorized_user_ids
+    auth_chats = settings.authorized_chat_ids
+
+    # Unrestricted mode
+    if not auth_users and not auth_chats:
+        return True
+
+    user_id = getattr(update.from_user, "id", None) if hasattr(update, "from_user") and update.from_user else None
+    chat = getattr(update, "chat", None)
+    if not chat and hasattr(update, "message") and update.message:
+        chat = getattr(update.message, "chat", None)
+    chat_id = getattr(chat, "id", None) if chat else None
+
+    if user_id is not None and user_id in auth_users:
+        return True
+
+    if chat_id is not None and chat_id in auth_chats:
+        return True
+
+    return False
+
+
+async def _authorized_check_func(_, __, update: Message | CallbackQuery) -> bool:
+    return is_authorized_user_or_chat(update)
+
+
+authorized_filter = filters.create(_authorized_check_func, name="AuthorizedFilter")
+
+
+def check_auth_on_startup() -> None:
+    """Logs a loud warning if the bot is running in unrestricted mode."""
+    if not settings.authorized_user_ids and not settings.authorized_chat_ids:
+        log.warning(
+            "========================================================================\n"
+            "⚠️ WARNING: AUTHORIZED_USER_IDS / AUTHORIZED_CHAT_IDS IS NOT CONFIGURED!\n"
+            "   The bot is running in UNRESTRICTED / PUBLIC mode.\n"
+            "   ANY Telegram user can issue commands and consume bot host resources.\n"
+            "========================================================================"
+        )
+
+
+def register_unauthorized_rejection_handler(app: Client) -> None:
+    """Registers fallback handlers that send a polite rejection message to unauthorized users."""
+
+    @app.on_message(~authorized_filter, group=100)
+    async def reject_unauthorized_message(_, message: Message) -> None:
+        if message.text or message.caption:
+            try:
+                await message.reply_text("You are not authorized to use this bot.")
+            except Exception:
+                pass
+
+    @app.on_callback_query(~authorized_filter, group=100)
+    async def reject_unauthorized_callback(_, query: CallbackQuery) -> None:
+        try:
+            await query.answer("You are not authorized to use this bot.", show_alert=True)
+        except Exception:
+            pass

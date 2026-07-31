@@ -147,7 +147,10 @@ async def handle_torrent_search_callback(client: Client, callback: CallbackQuery
         await callback.message.edit_text(f"<b>Search error:</b> {e}")
 
 
+from ..auth import authorized_filter
+
+
 def register_torrent_search_handlers(app: Client) -> None:
     """Registers torrent search handlers on Pyrogram Client."""
-    app.add_handler(MessageHandler(handle_torrent_search, filters.command(["torsearch", "ts", "search"])))
-    app.add_handler(CallbackQueryHandler(handle_torrent_search_callback, filters.regex(r"^torser:")))
+    app.add_handler(MessageHandler(handle_torrent_search, filters.command(["torsearch", "ts", "search"]) & authorized_filter))
+    app.add_handler(CallbackQueryHandler(handle_torrent_search_callback, filters.regex(r"^torser:") & authorized_filter))

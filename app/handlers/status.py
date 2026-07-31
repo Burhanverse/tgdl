@@ -4,6 +4,8 @@ import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery
 
+from ..auth import authorized_filter
+
 from ..telegram_helper import (
     ButtonMaker,
     send_message,
@@ -28,7 +30,7 @@ log = logging.getLogger(__name__)
 
 def register_status_handlers(app: Client) -> None:
 
-    @app.on_message(filters.command("status"))
+    @app.on_message(filters.command("status") & authorized_filter)
     async def status_cmd(_, message: Message) -> None:
         text = message.text.split()
         if len(text) > 1:

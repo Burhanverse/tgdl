@@ -12,6 +12,10 @@ from urllib.parse import unquote, urlparse
 import aiohttp
 from aiofiles import open as aiopen
 
+import ipaddress
+import socket
+from ...config import settings
+
 log = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 1024 * 1024  # 1MB chunks
@@ -19,6 +23,36 @@ _CHUNK_SIZE = 1024 * 1024  # 1MB chunks
 
 class DirectDownloadError(Exception):
     pass
+
+
+async def is_url_private_ip(url: str) -> bool:
+    """Resolves URL hostname and checks if resolved IP address falls in private/reserved ranges."""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return True
+
+        def _resolve():
+            return socket.getaddrinfo(hostname, None)
+
+        addr_info = await asyncio.to_thread(_resolve)
+        for family, socktype, proto, canonname, sockaddr in addr_info:
+            ip_str = sockaddr[0]
+            ip_obj = ipaddress.ip_address(ip_str)
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_reserved
+                or ip_obj.is_multicast
+                or ip_obj.is_unspecified
+            ):
+                return True
+        return False
+    except Exception as e:
+        log.warning("SSRF DNS resolution check failed for %s: %s", url, e)
+        return True
 
 
 DIRECT_FILE_EXTENSIONS = {
@@ -126,6 +160,11 @@ class DirectDownloader:
     ) -> Path:
         if self.is_cancelled:
             raise asyncio.CancelledError("Download cancelled before starting item.")
+
+        if not settings.allow_private_network_urls:
+            if await is_url_private_ip(url):
+                log.warning("SSRF protection blocked URL %s (resolves to private/reserved IP)", url)
+                raise DirectDownloadError(f"Access to private/internal network URL '{url}' is prohibited.")
 
         save_dir = self.dest_dir
         if subpath:

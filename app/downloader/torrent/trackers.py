@@ -8,6 +8,8 @@ from typing import List, Optional
 
 import aiohttp
 
+from ...config import settings
+
 log = logging.getLogger(__name__)
 
 # Primary sources from XIU2/TrackersListCollection (updated daily)
@@ -19,7 +21,7 @@ JSDELIVR_BEST_URL = "https://fastly.jsdelivr.net/gh/XIU2/TrackersListCollection/
 JSDELIVR_ALL_URL = "https://fastly.jsdelivr.net/gh/XIU2/TrackersListCollection/all.txt"
 NGOSANG_BEST_URL = "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt"
 
-CACHE_FILE = Path("./data/trackers_cache.txt")
+CACHE_FILE = settings.data_dir / "trackers_cache.txt"
 
 # High quality fallback list in case network fetch fails completely
 DEFAULT_TRACKERS: List[str] = [

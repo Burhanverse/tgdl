@@ -7,9 +7,11 @@ import socket
 import json
 import base64
 import urllib.request
+import secrets
 from pathlib import Path
 from typing import Callable, Optional
 
+from ...config import settings
 from ..gallery_dl import DownloadResult
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,7 @@ TRACKERS = [
 
 ARIA2_PORT: Optional[int] = None
 ARIA2_PROC: Optional[asyncio.subprocess.Process] = None
+ARIA2_SECRET: Optional[str] = None
 
 
 class Aria2DownloadTask:
@@ -63,11 +66,15 @@ def get_free_port() -> int:
 def sync_rpc_call(port: int, method: str, params: list) -> dict:
     """Synchronous JSON-RPC client call using urllib, bypassing system proxies."""
     url = f"http://127.0.0.1:{port}/jsonrpc"
+    final_params = list(params) if params else []
+    if ARIA2_SECRET and (not final_params or not str(final_params[0]).startswith("token:")):
+        final_params.insert(0, f"token:{ARIA2_SECRET}")
+
     payload = {
         "jsonrpc": "2.0",
         "id": "tgdl",
         "method": method,
-        "params": params
+        "params": final_params
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -91,7 +98,7 @@ from .trackers import add_trackers_to_magnet, fetch_latest_trackers, get_tracker
 
 async def start_aria2_daemon() -> None:
     """Launch the global aria2c RPC daemon with live trackers from ngosang/trackerslist."""
-    global ARIA2_PORT, ARIA2_PROC
+    global ARIA2_PORT, ARIA2_PROC, ARIA2_SECRET
     if ARIA2_PROC is not None:
         return  # Already running
 
@@ -103,18 +110,20 @@ async def start_aria2_daemon() -> None:
     await fetch_latest_trackers()
 
     port = get_free_port()
+    ARIA2_SECRET = secrets.token_urlsafe(32)
     tracker_str = get_tracker_string()
     tracker_arg = f"--bt-tracker={tracker_str}"
     
-    log_dir = Path("./logs").resolve()
+    log_dir = settings.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "aria2c_daemon.log"
 
     cmd = [
         "aria2c",
         "--enable-rpc",
-        "--rpc-listen-all=true",
+        "--rpc-listen-all=false",
         f"--rpc-listen-port={port}",
+        f"--rpc-secret={ARIA2_SECRET}",
         f"--log={log_file}",
         "--log-level=notice",
         "--seed-time=0",

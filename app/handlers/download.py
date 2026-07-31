@@ -9,6 +9,7 @@ from pathlib import Path
 from pyrogram import Client, filters
 from pyrogram.types import Message, LinkPreviewOptions, InlineKeyboardMarkup, InlineKeyboardButton
 
+from ..auth import authorized_filter
 from ..config import settings
 from ..middleware import is_job_owner
 from ..manager import queue_manager, store
@@ -64,6 +65,14 @@ async def _create_and_enqueue_job(
     unzip: bool = False,
     password: Optional[str] = None
 ) -> None:
+    active_jobs = queue_manager.get_active_jobs_for_chat(chat_id)
+    if settings.max_jobs_per_chat > 0 and len(active_jobs) >= settings.max_jobs_per_chat:
+        await message.reply_text(
+            f"**Queue Limit Reached**: You have {len(active_jobs)} active or queued job(s). "
+            f"Maximum allowed per chat is {settings.max_jobs_per_chat}."
+        )
+        return
+
     args_dict = {}
     if is_mirror:
         args_dict["is_mirror"] = True
@@ -110,7 +119,7 @@ async def _create_and_enqueue_job(
 
 def register_download_handlers(app: Client) -> None:
 
-    @app.on_message(filters.command(["m", "mirror"]))
+    @app.on_message(filters.command(["m", "mirror"]) & authorized_filter)
     async def mirror_cmd(client: Client, message: Message) -> None:
         target_url = None
         display_text = "Mirror"
@@ -162,7 +171,7 @@ def register_download_handlers(app: Client) -> None:
             client, message.chat.id, target_url, message, display_text, is_mirror=True, upload_tg=upload_tg
         )
 
-    @app.on_message(filters.command(["direct", "dl"]))
+    @app.on_message(filters.command(["direct", "dl"]) & authorized_filter)
     async def direct_cmd(client: Client, message: Message) -> None:
         text_tokens = message.text.split() if message.text else []
         is_mirror, upload_tg, unzip, password, parsed_urls = _parse_flags(text_tokens)
@@ -220,7 +229,7 @@ def register_download_handlers(app: Client) -> None:
             is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
         )
 
-    @app.on_message(filters.command(["gallerydl", "gdl"]))
+    @app.on_message(filters.command(["gallerydl", "gdl"]) & authorized_filter)
     async def gdl_cmd(client: Client, message: Message) -> None:
         text_tokens = message.text.split() if message.text else []
         is_mirror, upload_tg, unzip, password, parsed_urls = _parse_flags(text_tokens)
@@ -278,7 +287,7 @@ def register_download_handlers(app: Client) -> None:
             is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
         )
 
-    @app.on_message(filters.command(["mega", "meganz"]))
+    @app.on_message(filters.command(["mega", "meganz"]) & authorized_filter)
     async def mega_cmd(client: Client, message: Message) -> None:
         text_tokens = message.text.split() if message.text else []
         user_id = message.from_user.id if message.from_user else message.chat.id
@@ -405,7 +414,7 @@ def register_download_handlers(app: Client) -> None:
         )
 
 
-    @app.on_message(filters.command("tor"))
+    @app.on_message(filters.command("tor") & authorized_filter)
     async def tor_cmd(client: Client, message: Message) -> None:
         target_url = None
 
@@ -449,7 +458,7 @@ def register_download_handlers(app: Client) -> None:
 
         await _create_and_enqueue_job(client, message.chat.id, target_url, message, url_display)
 
-    @app.on_message(filters.command("pdup"))
+    @app.on_message(filters.command("pdup") & authorized_filter)
     async def pdup_cmd(_, message: Message) -> None:
         if not message.reply_to_message:
             await message.reply_text("Please reply to a media message to upload it to Pixeldrain.")
@@ -496,7 +505,7 @@ def register_download_handlers(app: Client) -> None:
             if local_path.exists():
                 local_path.unlink(missing_ok=True)
 
-    @app.on_message(filters.command(["gfup", "gofile"]))
+    @app.on_message(filters.command(["gfup", "gofile"]) & authorized_filter)
     async def gfup_cmd(_, message: Message) -> None:
         if not message.reply_to_message:
             await message.reply_text("Please reply to a media message with `/gfup` or `/gofile` to upload it to GoFile.")
@@ -538,7 +547,7 @@ def register_download_handlers(app: Client) -> None:
             if local_path.exists():
                 local_path.unlink(missing_ok=True)
 
-    @app.on_message(filters.command(["fdup", "fileditch"]))
+    @app.on_message(filters.command(["fdup", "fileditch"]) & authorized_filter)
     async def fdup_cmd(_, message: Message) -> None:
         if not message.reply_to_message:
             await message.reply_text("Please reply to a media message with `/fdup` or `/fileditch` to upload it to FileDitch.")
@@ -580,7 +589,7 @@ def register_download_handlers(app: Client) -> None:
             if local_path.exists():
                 local_path.unlink(missing_ok=True)
 
-    @app.on_message(filters.command(["gd2tg"]))
+    @app.on_message(filters.command(["gd2tg"]) & authorized_filter)
     async def gd2tg_cmd(client: Client, message: Message) -> None:
         parts = message.text.split(maxsplit=1)
         if len(parts) < 2:

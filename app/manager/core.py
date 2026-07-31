@@ -168,6 +168,28 @@ class QueueManager:
                     continue
                     
                 dest_dir = (settings.downloads_dir / job.download_dir).resolve()
+                
+                # Disk limit safeguards
+                if settings.max_total_downloads_bytes is not None:
+                    try:
+                        total_used = sum(p.stat().st_size for p in settings.downloads_dir.rglob("*") if p.is_file())
+                        if total_used >= settings.max_total_downloads_bytes:
+                            log.warning("Total downloads disk usage (%.2f GB) exceeds limit (%.2f GB). Failing job #%s.",
+                                        total_used / (1024**3), settings.max_total_downloads_bytes / (1024**3), job_id)
+                            await self.store.update_progress(job_id, status=JobStatus.FAILED, error="Total downloads disk usage limit exceeded")
+                            continue
+                    except Exception as de:
+                        log.warning("Error checking downloads dir size: %s", de)
+
+                try:
+                    usage = shutil.disk_usage(settings.downloads_dir)
+                    if usage.free < 500 * 1024 * 1024:
+                        log.warning("Host disk free space critically low (%.2f MB). Failing job #%s.", usage.free / (1024*1024), job_id)
+                        await self.store.update_progress(job_id, status=JobStatus.FAILED, error="Host disk space critically low")
+                        continue
+                except Exception:
+                    pass
+
                 job_state = JobState(job, dest_dir)
                 if job.status_message_id:
                     job_state.msg_id = job.status_message_id

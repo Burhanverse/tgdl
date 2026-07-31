@@ -6,7 +6,7 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from pyrogram import Client, filters
 from pyrogram.types import (
@@ -17,6 +17,7 @@ from pyrogram.types import (
     Message,
 )
 
+from ..auth import authorized_filter
 from ..config import settings
 from ..downloader import (
     get_cookies_path,
@@ -26,6 +27,47 @@ from ..downloader import (
 )
 
 log = logging.getLogger(__name__)
+
+SAFE_POSTPROCESSOR_NAMES = {
+    "metadata", "mtime", "content", "zip", "ugoira",
+    "directory", "filename", "classify", "squeezer", "db"
+}
+DANGEROUS_KEYS_OR_NAMES = {
+    "exec", "python", "cmd", "command", "subprocess", "shell", "script"
+}
+
+
+def _scan_obj_for_dangerous_directives(obj: Any) -> Optional[str]:
+    """Recursively checks a dict/list structure for dangerous keys or non-allowlisted postprocessors."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            k_lower = str(k).lower()
+            if k_lower in DANGEROUS_KEYS_OR_NAMES:
+                return f"Forbidden configuration key directive '{k}' detected."
+
+            if k_lower in ("postprocessor", "postprocessors"):
+                pp_list = v if isinstance(v, list) else [v] if isinstance(v, dict) else []
+                for item in pp_list:
+                    if isinstance(item, dict):
+                        name = str(item.get("name", "")).lower()
+                        if not name:
+                            return "Postprocessor entry missing required 'name' field."
+                        if name in DANGEROUS_KEYS_OR_NAMES:
+                            return f"Forbidden postprocessor '{name}' detected. Executable/script postprocessors are prohibited."
+                        if name not in SAFE_POSTPROCESSOR_NAMES:
+                            return f"Unrecognized or unsafe postprocessor '{name}' detected. Only safe postprocessors ({', '.join(sorted(SAFE_POSTPROCESSOR_NAMES))}) are allowed."
+
+            err = _scan_obj_for_dangerous_directives(v)
+            if err:
+                return err
+
+    elif isinstance(obj, list):
+        for elem in obj:
+            err = _scan_obj_for_dangerous_directives(elem)
+            if err:
+                return err
+
+    return None
 
 
 def _strip_comments(json_str: str) -> str:
@@ -42,7 +84,7 @@ def _strip_comments(json_str: str) -> str:
 
 
 def validate_gdl_conf(content: str) -> tuple[bool, str, Optional[dict]]:
-    """Validates if content is a valid gallery-dl configuration structure."""
+    """Validates if content is a valid gallery-dl configuration structure and checks for dangerous directives."""
     if not content.strip():
         return False, "Configuration file is empty.", None
 
@@ -54,6 +96,10 @@ def validate_gdl_conf(content: str) -> tuple[bool, str, Optional[dict]]:
 
     if not isinstance(data, dict):
         return False, "Root element of gallery-dl configuration must be a JSON object (`{...}`).", None
+
+    err = _scan_obj_for_dangerous_directives(data)
+    if err:
+        return False, f"Security Validation Error: {err}", None
 
     return True, "Valid gallery-dl configuration.", data
 
@@ -184,7 +230,7 @@ def _get_default_template_path() -> Optional[Path]:
 
 def register_gdlconf_handlers(app: Client) -> None:
 
-    @app.on_message(filters.command(["gdlconf", "gdl_config"]))
+    @app.on_message(filters.command(["gdlconf", "gdl_config"]) & authorized_filter)
     async def gdlconf_cmd(_, message: Message) -> None:
         user_id = message.from_user.id if message.from_user else message.chat.id
         args = message.text.split(maxsplit=1)
@@ -221,6 +267,7 @@ def register_gdlconf_handlers(app: Client) -> None:
                     user_cookies_path = get_user_cookies_path(user_id)
                     user_cookies_path.parent.mkdir(parents=True, exist_ok=True)
                     user_cookies_path.write_text(content, encoding="utf-8")
+                    os.chmod(user_cookies_path, 0o600)
 
                     await status_msg.edit_text(
                         f"**Saved user cookies file!**\n"
@@ -238,6 +285,7 @@ def register_gdlconf_handlers(app: Client) -> None:
                 user_conf_path = get_user_gdl_config_path(user_id)
                 user_conf_path.parent.mkdir(parents=True, exist_ok=True)
                 user_conf_path.write_text(content, encoding="utf-8")
+                os.chmod(user_conf_path, 0o600)
 
                 await status_msg.edit_text(
                     f"**Saved user gallery-dl configuration!**\n"
@@ -309,7 +357,7 @@ def register_gdlconf_handlers(app: Client) -> None:
         text, keyboard = build_gdlconf_text(user_id)
         await message.reply_text(text, reply_markup=keyboard, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
-    @app.on_callback_query(filters.regex(r"^gdlconf:"))
+    @app.on_callback_query(filters.regex(r"^gdlconf:") & authorized_filter)
     async def gdlconf_callback(_, query: CallbackQuery) -> None:
         user_id = query.from_user.id if query.from_user else query.message.chat.id
         action = query.data.split(":")[1]

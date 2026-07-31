@@ -1,4 +1,5 @@
-FROM ubuntu:latest
+# Pinned to specific LTS version for build reproducibility. Update deliberately when upgrading base image.
+FROM ubuntu:24.04
 
 # Avoid prompt dialogs during package installation
 ENV DEBIAN_FRONTEND=noninteractive

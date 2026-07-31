@@ -5,6 +5,7 @@ from pathlib import Path
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 
+from ..auth import authorized_filter
 from ..middleware import is_job_owner
 from ..manager import queue_manager, store
 from ..manager.status.compiler import (
@@ -28,7 +29,7 @@ log = logging.getLogger(__name__)
 
 def register_choice_callback_handlers(app: Client) -> None:
 
-    @app.on_callback_query(filters.regex(r"^split_(yes|no):(\w+)$"))
+    @app.on_callback_query(filters.regex(r"^split_(yes|no):(\w+)$") & authorized_filter)
     async def split_choice_cb(_, query: CallbackQuery) -> None:
         match = query.matches[0]
         choice = match.group(1)
@@ -71,7 +72,7 @@ def register_choice_callback_handlers(app: Client) -> None:
 
         await queue_manager.add_job(job.id)
 
-    @app.on_callback_query(filters.regex(r"^archive_(only|ext):(\w+):(.+)$"))
+    @app.on_callback_query(filters.regex(r"^archive_(only|ext):(\w+):(.+)$") & authorized_filter)
     async def archive_choice_cb(_, query: CallbackQuery) -> None:
         match = query.matches[0]
         choice = match.group(1)
@@ -100,7 +101,7 @@ def register_choice_callback_handlers(app: Client) -> None:
             _archive_choices[job.id][archive_id] = choice
             _archive_events[job.id][archive_id].set()
 
-    @app.on_callback_query(filters.regex(r"^convert_(mp4|mp3|orig):(\w+):(.+)$"))
+    @app.on_callback_query(filters.regex(r"^convert_(mp4|mp3|orig):(\w+):(.+)$") & authorized_filter)
     async def conversion_choice_cb(_, query: CallbackQuery) -> None:
         match = query.matches[0]
         choice = match.group(1)

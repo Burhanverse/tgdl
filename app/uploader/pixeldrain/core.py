@@ -30,11 +30,14 @@ def _make_sync_progress_callback(
     return sync_cb
 
 
+from ..user_keys import resolve_upload_api_key
+
 async def upload_to_pixeldrain(
     file_path: Path | str,
     api_key: str | None = None,
     progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
-    domain: str = "pixeldrain.com"
+    domain: str = "pixeldrain.com",
+    user_id: int | str | None = None,
 ) -> Tuple[dict[str, Any], list[str]]:
     """
     Upload a file to Pixeldrain using the webhost package.
@@ -44,6 +47,7 @@ async def upload_to_pixeldrain(
         api_key: Optional Pixeldrain API Key for authenticated uploads
         progress_callback: Optional async function called with (current_bytes, total_bytes)
         domain: Domain to use for upload API
+        user_id: Optional user ID to look up user-specific API keys
 
     Returns:
         A tuple of (response_json_dict, log_messages_list)
@@ -54,6 +58,8 @@ async def upload_to_pixeldrain(
     if not path.exists():
         logs.append(f"File not found: {path}")
         return {"error": "File not found"}, logs
+
+    api_key = (api_key or resolve_upload_api_key(user_id, "pixeldrain") or "").strip() or None
 
     logs.append(f"Uploading file: {path.name}")
     if not api_key:

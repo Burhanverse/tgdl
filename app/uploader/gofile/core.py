@@ -33,10 +33,13 @@ def _make_sync_progress_callback(
     return sync_cb
 
 
+from ..user_keys import resolve_upload_api_key
+
 async def upload_to_gofile(
     file_path: Path | str,
     api_token: str | None = None,
     progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
+    user_id: int | str | None = None,
 ) -> Tuple[Dict[str, Any], List[str]]:
     """
     Upload a single file to GoFile using webhost package.
@@ -45,6 +48,7 @@ async def upload_to_gofile(
         file_path: Path to the local file to upload
         api_token: Optional GoFile API Token for authenticated uploads
         progress_callback: Optional async function called with (current_bytes, total_bytes)
+        user_id: Optional user ID to look up user-specific API keys
 
     Returns:
         A tuple of (response_json_dict, log_messages_list)
@@ -56,7 +60,7 @@ async def upload_to_gofile(
         logs.append(f"File not found: {path}")
         return {"error": "File not found"}, logs
 
-    token = (api_token or getattr(settings, "gofile_api_key", None) or "").strip() or None
+    token = (api_token or resolve_upload_api_key(user_id, "gofile") or "").strip() or None
     logs.append(f"Uploading file to GoFile: {path.name}")
 
     loop = asyncio.get_running_loop()

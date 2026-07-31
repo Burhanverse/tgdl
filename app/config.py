@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
     pixeldrain_api_key: str | None = Field(default=None, description="API key for Pixeldrain uploads")
     pixeldrain_domain: str = Field(default="pixeldrain.com", description="Domain to use for Pixeldrain uploads and links (pixeldrain.com or pixeldra.in)")
     gofile_api_key: str | None = Field(default=None, description="API token for GoFile uploads")
+    allow_shared_upload_keys: bool = Field(default=False, description="Allow falling back to global bot owner API keys for webhost uploads")
+    allow_private_network_urls: bool = Field(default=False, description="Allow downloading URLs resolving to private/reserved IP ranges")
 
 
     # --- Storage locations ---
@@ -22,7 +25,7 @@ class Settings(BaseSettings):
     auth_dir: Path = Field(default=Path("./auth"))
 
     # --- Google Drive settings ---
-    gdrive_token_path: Path = Field(default=Path("./auth/token.pickle"))
+    gdrive_token_path: Path = Field(default=Path("./auth/token.json"))
     gdrive_accounts_dir: Path = Field(default=Path("./auth/accounts"))
     use_service_accounts: bool = Field(default=True)
 
@@ -62,12 +65,34 @@ class Settings(BaseSettings):
     prowlarr_api_key: str | None = Field(default=None, description="Prowlarr API key")
     search_limit: int = Field(default=20, description="Limit of search results to fetch")
 
+    # --- Authorization / Access Control ---
+    authorized_user_ids: list[int] = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")
+    authorized_chat_ids: list[int] = Field(default_factory=list, description="List of allowed Telegram chat IDs (comma-separated env AUTHORIZED_CHAT_IDS)")
+
+    # --- Job & Disk limits ---
+    max_jobs_per_chat: int = Field(default=3, description="Maximum active+queued jobs per chat")
+    max_total_downloads_bytes: int | None = Field(default=None, description="Optional cap on total download folder disk usage in bytes")
+
     # --- misc ---
     max_upload_bytes: int = 2 * 1024 * 1024 * 1024  # 2GB, MTProto ceiling
     progress_edit_every_n: int = 25
     log_level: str = "INFO"
     log_format: str = Field(default="text", description="Log format: 'text' or 'json'")
     log_dir: Path = Field(default=Path("./logs"))
+
+    @field_validator("authorized_user_ids", "authorized_chat_ids", mode="before")
+    @classmethod
+    def _parse_id_list(cls, v: Any) -> list[int]:
+        if isinstance(v, str):
+            v_clean = v.strip()
+            if not v_clean:
+                return []
+            return [int(x.strip()) for x in v_clean.split(",") if x.strip().lstrip("-").isdigit()]
+        if isinstance(v, (int, float)):
+            return [int(v)]
+        if isinstance(v, list):
+            return [int(x) for x in v if str(x).strip().lstrip("-").isdigit()]
+        return []
 
     @field_validator("data_dir", "auth_dir", "log_dir")
     @classmethod

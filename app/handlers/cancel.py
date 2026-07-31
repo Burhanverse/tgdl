@@ -4,6 +4,7 @@ import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
+from ..auth import authorized_filter
 from ..middleware import is_job_owner
 from ..manager import queue_manager, store
 from ..db import JobStatus
@@ -13,7 +14,7 @@ log = logging.getLogger(__name__)
 
 def register_cancel_handlers(app: Client) -> None:
 
-    @app.on_message(filters.command("cancel"))
+    @app.on_message(filters.command("cancel") & authorized_filter)
     async def cancel_cmd(_, message: Message) -> None:
         chat_id = message.chat.id
         

@@ -189,6 +189,12 @@ async def extract_archive_async(
             import py7zr
             def _py7zr_extract():
                 with py7zr.SevenZipFile(archive_path, mode='r', password=password) as z:
+                    target_dir = extract_dir.resolve()
+                    for name in z.getnames():
+                        member_path = (target_dir / name).resolve()
+                        if not member_path.is_relative_to(target_dir):
+                            log.warning("Zip-slip path traversal attempt detected in 7z member '%s' of %s. Skipping.", name, archive_path.name)
+                            raise ValueError(f"Path traversal detected in archive member '{name}'")
                     z.extractall(path=extract_dir)
 
             await asyncio.to_thread(_py7zr_extract)
@@ -233,7 +239,13 @@ async def extract_archive_async(
             def _zip_extract():
                 with zipfile.ZipFile(archive_path) as zf:
                     pwd_bytes = password.encode("utf-8") if password else None
-                    zf.extractall(path=extract_dir, pwd=pwd_bytes)
+                    target_dir = extract_dir.resolve()
+                    for member in zf.infolist():
+                        member_path = (target_dir / member.filename).resolve()
+                        if not member_path.is_relative_to(target_dir):
+                            log.warning("Zip-slip path traversal attempt detected in zip member '%s' of %s. Skipping.", member.filename, archive_path.name)
+                            continue
+                        zf.extract(member, path=extract_dir, pwd=pwd_bytes)
 
             await asyncio.to_thread(_zip_extract)
             return True
@@ -247,7 +259,7 @@ async def extract_archive_async(
 
     # 5. Final check: if password was explicitly provided but all extractions failed, raise ArchivePasswordRequired
     if password:
-        log.warning("Extraction failed with provided password '%s' for %s. Requesting password retry.", password, archive_path.name)
+        log.warning("Extraction failed with provided password <redacted, length=%d> for %s. Requesting password retry.", len(password), archive_path.name)
         raise ArchivePasswordRequired(f"Incorrect password for {archive_path.name}")
 
     return False

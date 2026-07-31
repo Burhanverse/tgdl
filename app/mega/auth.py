@@ -10,6 +10,8 @@ from ..config import settings
 log = logging.getLogger(__name__)
 
 
+import os
+
 def get_user_auth_dir(user_id: int | str) -> Path:
     """Returns directory path for user-specific auth credentials."""
     user_dir = settings.auth_dir / str(user_id)
@@ -39,6 +41,7 @@ def save_user_mega_credentials(user_id: int | str, email: str, password: str) ->
     creds_file = user_dir / "mega.json"
     data = {"email": email, "password": password}
     creds_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.chmod(creds_file, 0o600)
 
 
 def delete_user_mega_credentials(user_id: int | str) -> bool:
