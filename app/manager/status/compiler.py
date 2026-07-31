@@ -538,52 +538,54 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         uploaded_count = len(uploaded_count)
     skipped_count = len(getattr(job_state, "skipped", [])) if isinstance(getattr(job_state, "skipped", []), (list, set)) else getattr(job_state, "skipped", 0)
 
-    is_uploader_active = (
-        not job_state.uploader_done.is_set() and (
-            job_state.downloader_done.is_set() or
-            uploaded_count > 0 or
-            len(job_state.uploaded_filenames) > 0 or
-            len(job_state.uploading_files) > 0 or
-            bool(job_state.current_upload_file) or
-            web_mirror_info is not None
-        )
-    )
-
-    if is_uploader_active:
+    if web_mirror_info:
         if not job_state.downloader_done.is_set() or getattr(job_state, "is_archiving", False) or getattr(job_state, "is_converting", False):
             lines.append("")
 
-        ul_speed_str = format_size(job_state.upload_speed)
-        total_files_disp = job.total_files if job.total_files > 0 else 'Calculating'
+        lines.append("**Mirror Metrics**")
+        host_labels = [
+            ("gofile", "GoFile"),
+            ("fileditch", "FileDitch"),
+            ("pixeldrain", "Pixeldrain")
+        ]
+        for idx, (key, label) in enumerate(host_labels):
+            tree = "├" if idx < len(host_labels) - 1 else "└"
+            info = web_mirror_info.get(key, {})
+            st = info.get("status", "pending")
+            url = info.get("url") or info.get("link")
+            if st == "done" and url:
+                lines.append(f"> {tree} **__[{label}]({url})__**: `{url}`")
+            elif st == "uploading":
+                pct = info.get("pct", 0.0)
+                spd = info.get("speed", 0.0)
+                bar = make_progress_bar(pct)
+                spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
+                lines.append(f"> {tree} **__{label}__**: `{bar}` **{pct:.1f}%** ({spd_str})")
+            elif st == "skipped":
+                lines.append(f"> {tree} **__{label}__**: `Skipped (>10GB)`")
+            elif st == "failed":
+                err = info.get("error", "Failed")
+                lines.append(f"> {tree} **__{label}__**: `{err}`")
+            else:
+                lines.append(f"> {tree} **__{label}__**: `Pending`")
+    else:
+        is_uploader_active = (
+            not job_state.uploader_done.is_set() and (
+                job_state.downloader_done.is_set() or
+                uploaded_count > 0 or
+                len(job_state.uploaded_filenames) > 0 or
+                len(job_state.uploading_files) > 0 or
+                bool(job_state.current_upload_file)
+            )
+        )
 
-        if web_mirror_info:
-            lines.append("**Mirror Metrics**")
-            host_labels = [
-                ("gofile", "GoFile"),
-                ("fileditch", "FileDitch"),
-                ("pixeldrain", "Pixeldrain")
-            ]
-            for idx, (key, label) in enumerate(host_labels):
-                tree = "├" if idx < len(host_labels) - 1 else "└"
-                info = web_mirror_info.get(key, {})
-                st = info.get("status", "pending")
-                url = info.get("url") or info.get("link")
-                if st == "done" and url:
-                    lines.append(f"> {tree} **__[{label}]({url})__**: `Uploaded`")
-                elif st == "uploading":
-                    pct = info.get("pct", 0.0)
-                    spd = info.get("speed", 0.0)
-                    bar = make_progress_bar(pct)
-                    spd_str = f"{format_size(spd)}/s" if spd > 0 else "0 B/s"
-                    lines.append(f"> {tree} **__{label}__**: `{bar}` **{pct:.1f}%** ({spd_str})")
-                elif st == "skipped":
-                    lines.append(f"> {tree} **__{label}__**: `Skipped (>10GB)`")
-                elif st == "failed":
-                    err = info.get("error", "Failed")
-                    lines.append(f"> {tree} **__{label}__**: `{err}`")
-                else:
-                    lines.append(f"> {tree} **__{label}__**: `Pending`")
-        else:
+        if is_uploader_active:
+            if not job_state.downloader_done.is_set() or getattr(job_state, "is_archiving", False) or getattr(job_state, "is_converting", False):
+                lines.append("")
+
+            ul_speed_str = format_size(job_state.upload_speed)
+            total_files_disp = job.total_files if job.total_files > 0 else 'Calculating'
+
             lines.append(
                 f"**Uploader Metrics**\n"
                 f"> • **__Engine__**: __`Pyrogram Uploader`__\n"

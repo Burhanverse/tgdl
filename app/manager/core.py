@@ -1715,7 +1715,8 @@ class QueueManager:
                 link_lines = [f"• `{fname}`: {url}" for fname, url in job_state.pixeldrain_links]
                 summary += f"\n\n**Pixeldrain Mirror Links:**\n" + "\n".join(link_lines)
 
-            await report(summary)
+            if not (is_mirror_job and not upload_tg):
+                await report(summary)
 
             shutil.rmtree(dest_dir, ignore_errors=True)
             shutil.rmtree(extract_dir, ignore_errors=True)
