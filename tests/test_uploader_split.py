@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+
 import pytest
 
 from app.db import Job
 from app.manager.state import JobState
-from app.uploader.split import handle_large_file, split_binary
+from app.uploader.split import split_binary
 
 
 def test_jobstate_split_parts_tracking():

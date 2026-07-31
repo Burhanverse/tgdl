@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+
 from .db import Job
 
 log = logging.getLogger(__name__)

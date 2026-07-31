@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ...db import Job
     from ..state import JobState
 
 from .messaging import format_size, make_progress_bar
+
 
 def make_marquee_bar(width: int = 10) -> str:
     import time
@@ -19,7 +20,8 @@ def make_marquee_bar(width: int = 10) -> str:
     bar[pos] = "●"
     return "".join(bar)
 
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import parse_qs, unquote, urlparse
+
 
 def format_magnet_display(magnet_url: str, max_len: int = 35) -> str:
     cleaned = magnet_url.strip()
@@ -27,9 +29,9 @@ def format_magnet_display(magnet_url: str, max_len: int = 35) -> str:
     try:
         if "?" in cleaned:
             qs = parse_qs(cleaned.split("?", 1)[1])
-            if "dn" in qs and qs["dn"]:
+            if qs.get("dn"):
                 display_name = unquote(qs["dn"][0])
-            elif "xt" in qs and qs["xt"]:
+            elif qs.get("xt"):
                 xt_val = qs["xt"][0]
                 display_name = f"magnet:{xt_val}"
     except Exception:
@@ -85,7 +87,7 @@ def shorten_url_text(url: str, max_len: int = 35) -> str:
         return cleaned
 
 
-def format_url_display(url_json: str, current_url: Optional[str] = None) -> str:
+def format_url_display(url_json: str, current_url: str | None = None) -> str:
     def _clean(u: str) -> str:
         u_str = str(u).strip()
         if u_str.startswith("direct:"):
@@ -187,8 +189,7 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
     if is_gdrive:
         gdrive_disp = cleaned_url
         for prefix in ("gdrive:", "gd2tg:"):
-            if gdrive_disp.startswith(prefix):
-                gdrive_disp = gdrive_disp[len(prefix):]
+            gdrive_disp = gdrive_disp.removeprefix(prefix)
         gdrive_disp = gdrive_disp[:50] + "..." if len(gdrive_disp) > 50 else gdrive_disp
         return (
             f"**Task #{job_id} Queued**\n"
@@ -207,8 +208,7 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
     )
     if is_mega:
         mega_disp = cleaned_url
-        if mega_disp.startswith("mega:"):
-            mega_disp = mega_disp[len("mega:"):]
+        mega_disp = mega_disp.removeprefix("mega:")
         mega_disp = mega_disp[:50] + "..." if len(mega_disp) > 50 else mega_disp
         return (
             f"**Task #{job_id} Queued**\n"
@@ -335,7 +335,7 @@ def compile_extraction_success_status_text(job_id: str, filename: str) -> str:
     )
 
 
-def format_user_args(args_raw: Optional[str]) -> str:
+def format_user_args(args_raw: str | None) -> str:
     if not args_raw:
         return ""
     try:

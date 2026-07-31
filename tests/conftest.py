@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import pytest
+
 
 @pytest.fixture(autouse=True)
 def setup_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

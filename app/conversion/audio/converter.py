@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import os
-import av
+import asyncio
 import logging
+import os
 import tempfile
 from pathlib import Path
-import asyncio
+
+import av
+from pedalboard import Compressor, HighpassFilter, Pedalboard
 from pedalboard.io import AudioFile
-from pedalboard import Pedalboard, HighpassFilter, Compressor
 
 log = logging.getLogger(__name__)
 

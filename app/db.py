@@ -1,9 +1,8 @@
-import time
 import logging
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Optional
 
 import aiosqlite
 
@@ -49,17 +48,17 @@ class JobStatus(StrEnum):
 class Job:
     id: str
     chat_id: int
-    status_message_id: Optional[int]
+    status_message_id: int | None
     url: str
     status: str
     total_files: int
     sent_files: int
     skipped_files: int
-    error: Optional[str]
+    error: str | None
     created_at: float
     updated_at: float
     split_large_files: int = 1
-    args: Optional[str] = None
+    args: str | None = None
 
     @property
     def download_dir(self) -> str:
@@ -69,7 +68,7 @@ class Job:
 class JobStore:
     def __init__(self, db_path: Path):
         self._db_path = db_path
-        self._db: Optional[aiosqlite.Connection] = None
+        self._db: aiosqlite.Connection | None = None
 
     async def open(self) -> None:
         self._db = await aiosqlite.connect(self._db_path)
@@ -136,7 +135,7 @@ class JobStore:
         assert self._db is not None, "JobStore not opened — call await store.open() first"
         return self._db
 
-    async def create_job(self, chat_id: int, url: str, split_large_files: int = 1, args: Optional[str] = None) -> Job:
+    async def create_job(self, chat_id: int, url: str, split_large_files: int = 1, args: str | None = None) -> Job:
         import secrets
         while True:
             job_id = secrets.token_hex(4)
@@ -155,7 +154,7 @@ class JobStore:
         assert job is not None
         return job
 
-    async def get_job(self, job_id: str) -> Optional[Job]:
+    async def get_job(self, job_id: str) -> Job | None:
         cur = await self.db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = await cur.fetchone()
         return self._row_to_job(row) if row else None
@@ -171,12 +170,12 @@ class JobStore:
         self,
         job_id: str,
         *,
-        status: Optional[str] = None,
-        total_files: Optional[int] = None,
-        sent_files: Optional[int] = None,
-        skipped_files: Optional[int] = None,
-        error: Optional[str] = None,
-        url: Optional[str] = None,
+        status: str | None = None,
+        total_files: int | None = None,
+        sent_files: int | None = None,
+        skipped_files: int | None = None,
+        error: str | None = None,
+        url: str | None = None,
     ) -> None:
         fields, values = [], []
         for col, val in (

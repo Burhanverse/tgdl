@@ -6,16 +6,22 @@ import logging
 import shutil
 import uuid
 from pathlib import Path
+from typing import Optional
+
 from pyrogram import Client, filters
-from pyrogram.types import Message, LinkPreviewOptions, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    Message,
+)
 
 from ..auth import authorized_filter
 from ..config import settings
-from ..middleware import is_job_owner
 from ..manager import queue_manager, store
 from ..manager.status.compiler import compile_queued_status_text
 from ..manager.status.messaging import safe_send
-from ..uploader import upload_to_pixeldrain, upload_to_gofile, upload_to_fileditch
+from ..uploader import upload_to_fileditch, upload_to_gofile, upload_to_pixeldrain
 
 log = logging.getLogger(__name__)
 

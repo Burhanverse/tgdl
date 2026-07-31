@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import asyncio
-import os
-import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
+
 from app.archive import (
-    ARCHIVE_EXT,
     ArchivePasswordRequired,
     archive_folder_async,
     create_archive_async,

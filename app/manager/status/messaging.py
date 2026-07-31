@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+
 from pyrogram import Client
 from pyrogram.types import LinkPreviewOptions, Message
 
+from ...rate_limiter import telegram_limiter
 from ...telegram_helper.message_utils import (
     send_message as helper_send_message,
 )
-from ...rate_limiter import telegram_limiter
 
 log = logging.getLogger(__name__)
 
@@ -37,8 +37,9 @@ _last_edit_times: dict[tuple[int, int], float] = {}
 
 
 async def safe_edit(client: Client, chat_id: int, message_id: int, text: str, reply_markup=None, force: bool = False) -> bool:
-    from pyrogram.errors import FloodWait, MessageNotModified
     import time
+
+    from pyrogram.errors import FloodWait, MessageNotModified
 
     now = time.time()
     key = (chat_id, message_id)

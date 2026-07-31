@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import re
+import socket
 import time
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Union
 from urllib.parse import unquote, urlparse
 
 import aiohttp
 from aiofiles import open as aiopen
 
-import ipaddress
-import socket
 from ...config import settings
 
 log = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ def is_direct_url(url: str) -> bool:
     return False
 
 
-def get_filename_from_url(url: str, headers: Optional[Dict[str, str]] = None) -> str:
+def get_filename_from_url(url: str, headers: dict[str, str] | None = None) -> str:
     """Extract filename from Content-Disposition header or URL path."""
     if headers:
         cd = headers.get("Content-Disposition") or headers.get("content-disposition")
@@ -125,8 +125,8 @@ class DirectDownloader:
     def __init__(
         self,
         dest_dir: Path,
-        progress_cb: Optional[Callable[[int, int, str], Coroutine[None, None, None]]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        progress_cb: Callable[[int, int, str], Coroutine[None, None, None]] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.dest_dir = dest_dir
         self.progress_cb = progress_cb
@@ -138,7 +138,7 @@ class DirectDownloader:
         self.is_downloading = False
         self.is_cancelled = False
         self.failed_count = 0
-        self.downloaded_files: List[Path] = []
+        self.downloaded_files: list[Path] = []
         self.current_filename = ""
 
     @property
@@ -155,8 +155,8 @@ class DirectDownloader:
         self,
         session: aiohttp.ClientSession,
         url: str,
-        filename: Optional[str] = None,
-        subpath: Optional[str] = None,
+        filename: str | None = None,
+        subpath: str | None = None,
     ) -> Path:
         if self.is_cancelled:
             raise asyncio.CancelledError("Download cancelled before starting item.")
@@ -231,8 +231,8 @@ class DirectDownloader:
 
     async def download(
         self,
-        contents: Union[str, List[Dict[str, str]]],
-    ) -> List[Path]:
+        contents: str | list[dict[str, str]],
+    ) -> list[Path]:
         """
         Download direct link(s).
         `contents` can be a single URL string or a list of content dicts:
@@ -242,7 +242,7 @@ class DirectDownloader:
         self.start_time = time.time()
         self.dest_dir.mkdir(parents=True, exist_ok=True)
 
-        items: List[Dict[str, str]] = []
+        items: list[dict[str, str]] = []
         if isinstance(contents, str):
             try:
                 parsed = json.loads(contents)
@@ -308,11 +308,11 @@ class DirectDownloader:
 
 
 async def download_direct(
-    url_or_contents: Union[str, List[Dict[str, str]]],
+    url_or_contents: str | list[dict[str, str]],
     dest_dir: Path,
-    progress_cb: Optional[Callable[[int, int, str], Coroutine[None, None, None]]] = None,
-    headers: Optional[Dict[str, str]] = None,
-) -> List[Path]:
+    progress_cb: Callable[[int, int, str], Coroutine[None, None, None]] | None = None,
+    headers: dict[str, str] | None = None,
+) -> list[Path]:
     """Helper function to execute direct link download."""
     downloader = DirectDownloader(dest_dir=dest_dir, progress_cb=progress_cb, headers=headers)
     return await downloader.download(url_or_contents)

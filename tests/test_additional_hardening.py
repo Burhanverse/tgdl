@@ -3,17 +3,18 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+
 import pytest
 
-from app.downloader.direct.core import is_url_private_ip
-from app.uploader.user_keys import (
-    save_user_upload_key,
-    get_user_upload_keys,
-    delete_user_upload_key,
-    resolve_upload_api_key,
-)
-from app.downloader.torrent.telegraph_helper import TelegraphHelper
 from app.config import settings
+from app.downloader.direct.core import is_url_private_ip
+from app.downloader.torrent.telegraph_helper import TelegraphHelper
+from app.uploader.user_keys import (
+    delete_user_upload_key,
+    get_user_upload_keys,
+    resolve_upload_api_key,
+    save_user_upload_key,
+)
 
 
 @pytest.mark.asyncio

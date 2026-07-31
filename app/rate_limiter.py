@@ -5,7 +5,6 @@ import logging
 import random
 import re
 import time
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +86,7 @@ class TelegramRateLimiter:
             self._chat_locks[chat_id] = asyncio.Lock()
         return self._chat_locks[chat_id]
 
-    async def acquire(self, chat_id: Optional[int] = None) -> None:
+    async def acquire(self, chat_id: int | None = None) -> None:
         """Paces execution according to Telegram rate limits."""
         now = time.time()
 
@@ -125,7 +124,7 @@ class TelegramRateLimiter:
                     await asyncio.sleep(self.per_chat_interval - elapsed)
                 self._chat_last_call[chat_id] = time.time()
 
-    async def acquire_upload(self, chat_id: Optional[int] = None) -> None:
+    async def acquire_upload(self, chat_id: int | None = None) -> None:
         """Paces execution specifically for Telegram file & media uploads (3.0s min gap)."""
         await self.acquire(chat_id)
         if chat_id is not None:
@@ -137,7 +136,7 @@ class TelegramRateLimiter:
                     await asyncio.sleep(self.per_upload_interval - elapsed)
                 self._chat_last_upload[chat_id] = time.time()
 
-    def notify_floodwait(self, seconds: int, chat_id: Optional[int] = None) -> None:
+    def notify_floodwait(self, seconds: int, chat_id: int | None = None) -> None:
         """Register a FloodWait penalty so subsequent calls wait out the penalty."""
         until = time.time() + seconds + 1.0
         if chat_id is not None:

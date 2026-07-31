@@ -1,3 +1,3 @@
-from .splitter import split_video, split_binary, handle_large_file
+from .splitter import handle_large_file, split_binary, split_video
 
-__all__ = ["split_video", "split_binary", "handle_large_file"]
+__all__ = ["handle_large_file", "split_binary", "split_video"]

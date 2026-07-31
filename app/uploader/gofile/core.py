@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-import asyncio
-from pathlib import Path
 from collections.abc import Callable, Coroutine
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any
 
 import webhost
 from webhost.exceptions import WebHostError
@@ -35,12 +35,13 @@ def _make_sync_progress_callback(
 
 from ..user_keys import resolve_upload_api_key
 
+
 async def upload_to_gofile(
     file_path: Path | str,
     api_token: str | None = None,
     progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
     user_id: int | str | None = None,
-) -> Tuple[Dict[str, Any], List[str]]:
+) -> tuple[dict[str, Any], list[str]]:
     """
     Upload a single file to GoFile using webhost package.
 
@@ -53,7 +54,7 @@ async def upload_to_gofile(
     Returns:
         A tuple of (response_json_dict, log_messages_list)
     """
-    logs: List[str] = []
+    logs: list[str] = []
     path = Path(file_path)
 
     if not path.exists():
@@ -66,7 +67,7 @@ async def upload_to_gofile(
     loop = asyncio.get_running_loop()
     sync_cb = _make_sync_progress_callback(loop, progress_callback)
 
-    def _do_upload() -> Dict[str, Any]:
+    def _do_upload() -> dict[str, Any]:
         return webhost.gofile.upload_file(
             file_path=str(path),
             token=token,
@@ -95,8 +96,8 @@ class GoFileUploader:
     def __init__(
         self,
         path: Path,
-        api_token: Optional[str] = None,
-        progress_callback: Optional[Callable[[int, int], Coroutine[None, None, None]]] = None,
+        api_token: str | None = None,
+        progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
     ) -> None:
         self.path = path
         self.api_token = api_token or getattr(settings, "gofile_api_key", None)
@@ -112,9 +113,9 @@ class GoFileUploader:
             return self.processed_bytes / elapsed
         return 0.0
 
-    async def upload(self) -> Tuple[List[str], Dict[str, Any]]:
+    async def upload(self) -> tuple[list[str], dict[str, Any]]:
         """Uploads files in self.path to GoFile and returns (page_links, summary_dict)."""
-        files: List[Path] = []
+        files: list[Path] = []
         if self.path.is_file():
             files.append(self.path)
         else:
@@ -125,7 +126,7 @@ class GoFileUploader:
         if not files:
             return [], {"error": "No files found to upload"}
 
-        page_links: List[str] = []
+        page_links: list[str] = []
         uploaded_count = 0
         failed_count = 0
 

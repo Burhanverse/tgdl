@@ -1,3 +1,3 @@
-from .core import upload_to_gofile, GoFileUploader
+from .core import GoFileUploader, upload_to_gofile
 
-__all__ = ["upload_to_gofile", "GoFileUploader"]
+__all__ = ["GoFileUploader", "upload_to_gofile"]

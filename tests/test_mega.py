@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
-from app.mega import MegaClient, MegaDownloader, is_mega_url
 from app.handlers.download import _parse_flags
+from app.mega import MegaClient, MegaDownloader, is_mega_url
 
 
 def test_is_mega_url():

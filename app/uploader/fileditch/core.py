@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-import asyncio
-from pathlib import Path
 from collections.abc import Callable, Coroutine
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any
 
 import webhost
 from webhost.exceptions import WebHostError
@@ -35,7 +35,7 @@ async def upload_to_fileditch(
     file_path: Path | str,
     is_temp: bool = False,
     progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
-) -> Tuple[Dict[str, Any], List[str]]:
+) -> tuple[dict[str, Any], list[str]]:
     """
     Upload a single file to FileDitch using webhost package.
 
@@ -47,7 +47,7 @@ async def upload_to_fileditch(
     Returns:
         A tuple of (response_json_dict, log_messages_list)
     """
-    logs: List[str] = []
+    logs: list[str] = []
     path = Path(file_path)
 
     if not path.exists():
@@ -64,7 +64,7 @@ async def upload_to_fileditch(
     loop = asyncio.get_running_loop()
     sync_cb = _make_sync_progress_callback(loop, progress_callback)
 
-    def _do_upload() -> Dict[str, Any]:
+    def _do_upload() -> dict[str, Any]:
         return webhost.fileditch.upload_file(
             file_path=str(path),
             filename=path.name,
@@ -94,7 +94,7 @@ class FileDitchUploader:
         self,
         path: Path,
         is_temp: bool = False,
-        progress_callback: Optional[Callable[[int, int], Coroutine[None, None, None]]] = None,
+        progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
     ) -> None:
         self.path = path
         self.is_temp = is_temp
@@ -110,9 +110,9 @@ class FileDitchUploader:
             return self.processed_bytes / elapsed
         return 0.0
 
-    async def upload(self) -> Tuple[List[str], Dict[str, Any]]:
+    async def upload(self) -> tuple[list[str], dict[str, Any]]:
         """Uploads files in self.path to FileDitch and returns (file_urls, summary_dict)."""
-        files: List[Path] = []
+        files: list[Path] = []
         if self.path.is_file():
             files.append(self.path)
         else:
@@ -123,7 +123,7 @@ class FileDitchUploader:
         if not files:
             return [], {"error": "No files found to upload"}
 
-        file_urls: List[str] = []
+        file_urls: list[str] = []
         uploaded_count = 0
         failed_count = 0
 

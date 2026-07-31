@@ -4,8 +4,8 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional, Union
 
 from mega import progress
 
@@ -19,9 +19,9 @@ class MegaDownloader:
 
     def __init__(
         self,
-        client: Optional[MegaClient] = None,
-        user_id: Optional[Union[int, str]] = None,
-        progress_callback: Optional[Callable[[int, float, str], None]] = None,
+        client: MegaClient | None = None,
+        user_id: int | str | None = None,
+        progress_callback: Callable[[int, float, str], None] | None = None,
     ) -> None:
         self.client = client or MegaClient()
         self.user_id = user_id
@@ -55,10 +55,10 @@ class MegaDownloader:
 
         return factory
 
-    async def download_link(self, link_or_json: str, dest_dir: Path) -> List[Path]:
+    async def download_link(self, link_or_json: str, dest_dir: Path) -> list[Path]:
         """Download MEGA link(s) to destination directory."""
         dest_dir.mkdir(parents=True, exist_ok=True)
-        urls: List[str] = []
+        urls: list[str] = []
 
         if not link_or_json:
             return []
@@ -78,9 +78,7 @@ class MegaDownloader:
         if not urls:
             lines = [u.strip() for u in link_or_json.split() if u.strip()]
             for u in lines:
-                if u.startswith("mega:") or is_mega_url(u):
-                    urls.append(u)
-                elif u.startswith(("http://", "https://")):
+                if u.startswith("mega:") or is_mega_url(u) or u.startswith(("http://", "https://")):
                     urls.append(u)
 
         if not urls:
@@ -96,8 +94,7 @@ class MegaDownloader:
             await self.client.ensure_logged_in(user_id=self.user_id)
             for raw_url in urls:
                 clean_url = raw_url
-                if clean_url.startswith("mega:"):
-                    clean_url = clean_url[len("mega:"):]
+                clean_url = clean_url.removeprefix("mega:")
                 
                 log.info("Downloading MEGA url '%s' to %s", clean_url, dest_dir)
                 try:

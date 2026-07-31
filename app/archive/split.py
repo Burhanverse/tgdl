@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Union, Sequence
 
 log = logging.getLogger(__name__)
 
 
-def get_split_archive_info(filename: str) -> Optional[dict]:
+def get_split_archive_info(filename: str) -> dict | None:
     """Detects multi-part / split archive naming patterns.
 
     Supported patterns:
@@ -93,7 +93,7 @@ def get_split_archive_info(filename: str) -> Optional[dict]:
     return None
 
 
-def is_split_archive(target: Union[str, Path, Sequence[Union[str, Path]]]) -> bool:
+def is_split_archive(target: str | Path | Sequence[str | Path]) -> bool:
     """Returns True if the file name or any file in target list matches a split archive pattern."""
     if isinstance(target, (str, Path)):
         return get_split_archive_info(Path(target).name) is not None

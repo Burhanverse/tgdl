@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
+from typing import Any
 
 from ...config import settings
 from ..status import format_size, make_progress_bar
@@ -17,7 +17,7 @@ TEN_GB_BYTES = 10 * 1024 * 1024 * 1024
 def compile_mirror_status_text(
     file_name: str,
     file_size_str: str,
-    hosts_info: Dict[str, Dict[str, Any]]
+    hosts_info: dict[str, dict[str, Any]]
 ) -> str:
     lines = [
         f"**Mirroring Active**\n"
@@ -58,23 +58,23 @@ def compile_mirror_status_text(
 
 async def mirror_file_to_web_hosts(
     file_path: Path,
-    status_callback: Optional[Callable[[str], Coroutine[None, None, None]]] = None,
-    hosts_info_callback: Optional[Callable[[Dict[str, Dict[str, Any]]], Coroutine[None, None, None]]] = None
-) -> Dict[str, str]:
+    status_callback: Callable[[str], Coroutine[None, None, None]] | None = None,
+    hosts_info_callback: Callable[[dict[str, dict[str, Any]]], Coroutine[None, None, None]] | None = None
+) -> dict[str, str]:
     """
     Uploads a file sequentially to GoFile, FileDitch, and Pixeldrain with dynamic status updates.
 
     Returns:
         Dict mapping host name ("gofile", "fileditch", "pixeldrain") to link or status string.
     """
-    from ...uploader import upload_to_gofile, upload_to_pixeldrain, upload_to_fileditch
+    from ...uploader import upload_to_fileditch, upload_to_gofile, upload_to_pixeldrain
 
     file_path = Path(file_path)
     file_size = file_path.stat().st_size if file_path.exists() else 0
     file_size_str = format_size(file_size)
-    results: Dict[str, str] = {}
+    results: dict[str, str] = {}
 
-    hosts_info: Dict[str, Dict[str, Any]] = {
+    hosts_info: dict[str, dict[str, Any]] = {
         "gofile": {"status": "pending"},
         "fileditch": {"status": "pending"},
         "pixeldrain": {"status": "skipped" if file_size > TEN_GB_BYTES else "pending"}

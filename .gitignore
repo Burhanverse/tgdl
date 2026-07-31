@@ -2,6 +2,10 @@ data/
 auth/
 logs/
 scratch/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.vscode/
 .venv
 .env
 **/__pycache__/

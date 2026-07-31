@@ -3,9 +3,9 @@ from unittest.mock import patch
 
 import pytest
 
+from app.uploader.fileditch import FileDitchUploader, upload_to_fileditch
+from app.uploader.gofile import GoFileUploader, upload_to_gofile
 from app.uploader.pixeldrain import upload_to_pixeldrain
-from app.uploader.gofile import upload_to_gofile, GoFileUploader
-from app.uploader.fileditch import upload_to_fileditch, FileDitchUploader
 
 
 @pytest.mark.asyncio

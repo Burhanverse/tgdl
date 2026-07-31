@@ -4,15 +4,21 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 from pyrogram import Client
-from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, LinkPreviewOptions
+from pyrogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    Message,
+)
 
 from ..config import settings
 from ..db import JobStatus, JobStore
 from .core import ARCHIVE_EXT
 from .split import get_split_archive_info
+
 log = logging.getLogger(__name__)
 
 _archive_ids: dict[str, dict[str, str]] = {}
@@ -100,8 +106,8 @@ def get_multi_session_keyboard(chat_id: int, user_id: int) -> InlineKeyboardMark
 
 async def start_multi_unzip_session(
     message: Message,
-    password: Optional[str] = None,
-    split_archive_sessions: Optional[dict] = None
+    password: str | None = None,
+    split_archive_sessions: dict | None = None
 ) -> None:
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else chat_id
@@ -265,7 +271,7 @@ async def run_multi_archive_download_and_extract(
     queue_manager
 ) -> None:
     archives: list[Message] = session["archives"]
-    password: Optional[str] = session["password"]
+    password: str | None = session["password"]
     chat_id = status_msg.chat.id
 
     if not archives:
@@ -340,7 +346,9 @@ async def run_multi_archive_download_and_extract(
                             return
                         last_edit_time = now
                         try:
-                            from ..manager.status.compiler import compile_unzip_download_status_text
+                            from ..manager.status.compiler import (
+                                compile_unzip_download_status_text,
+                            )
                             progress_name = f"{p_filename} (part {part_idx}/{total_parts_in_group}, job {idx}/{total_groups})"
                             await status_msg.edit_text(
                                 compile_unzip_download_status_text(job.id, progress_name, current, total),
@@ -401,7 +409,9 @@ async def run_multi_archive_download_and_extract(
                         return
                     last_edit_time = now
                     try:
-                        from ..manager.status.compiler import compile_unzip_download_status_text
+                        from ..manager.status.compiler import (
+                            compile_unzip_download_status_text,
+                        )
                         progress_name = f"{arch_filename} ({idx}/{total_groups})"
                         await status_msg.edit_text(
                             compile_unzip_download_status_text(job.id, progress_name, current, total),

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import urllib.parse
-from pathlib import Path
-from typing import List, Optional
 
 import aiohttp
 
@@ -24,7 +21,7 @@ NGOSANG_BEST_URL = "https://raw.githubusercontent.com/ngosang/trackerslist/maste
 CACHE_FILE = settings.data_dir / "trackers_cache.txt"
 
 # High quality fallback list in case network fetch fails completely
-DEFAULT_TRACKERS: List[str] = [
+DEFAULT_TRACKERS: list[str] = [
     "http://1337.abcvg.info:80/announce",
     "http://bt1.archive.org:6969/announce",
     "http://bt2.archive.org:6969/announce",
@@ -47,10 +44,10 @@ DEFAULT_TRACKERS: List[str] = [
     "udp://tracker.dler.org:6969/announce",
 ]
 
-_CACHED_TRACKERS: List[str] = []
+_CACHED_TRACKERS: list[str] = []
 
 
-def load_cached_trackers() -> List[str]:
+def load_cached_trackers() -> list[str]:
     """Loads trackers from local cache file or returns DEFAULT_TRACKERS."""
     global _CACHED_TRACKERS
     if _CACHED_TRACKERS:
@@ -70,7 +67,7 @@ def load_cached_trackers() -> List[str]:
     return _CACHED_TRACKERS
 
 
-async def fetch_latest_trackers() -> List[str]:
+async def fetch_latest_trackers() -> list[str]:
     """Fetches the latest daily trackers from XIU2/TrackersListCollection."""
     global _CACHED_TRACKERS
     fetched: set[str] = set()
@@ -114,7 +111,7 @@ async def fetch_latest_trackers() -> List[str]:
     return load_cached_trackers()
 
 
-def get_trackers() -> List[str]:
+def get_trackers() -> list[str]:
     """Returns currently loaded trackers."""
     return load_cached_trackers()
 
@@ -125,7 +122,7 @@ def get_tracker_string() -> str:
     return ",".join(trackers)
 
 
-def add_trackers_to_magnet(magnet_url: str, extra_trackers: Optional[List[str]] = None) -> str:
+def add_trackers_to_magnet(magnet_url: str, extra_trackers: list[str] | None = None) -> str:
     """Appends live trackers to a magnet URI string."""
     if not magnet_url.startswith("magnet:"):
         return magnet_url

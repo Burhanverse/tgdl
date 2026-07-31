@@ -17,7 +17,7 @@ async def split_video(video_path: Path, max_size_bytes: int) -> list[Path]:
         parts = await split_video_async(video_path, max_size_bytes)
         if parts:
             return parts
-    except Exception as e:
+    except Exception:
         log.exception("Failed to split video using PyAV segmenter: %s", video_path.name)
 
     return await split_binary(video_path, max_size_bytes)

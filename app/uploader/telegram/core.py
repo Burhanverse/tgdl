@@ -4,29 +4,30 @@ import asyncio
 import logging
 import re
 import time
+from collections.abc import Callable, Coroutine
 from html import escape
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple, Union
+from typing import Any
 
+import av
 from pyrogram import Client
-from pyrogram.errors import FloodWait, FloodPremiumWait, RPCError, BadRequest
+from pyrogram.errors import BadRequest, FloodPremiumWait, FloodWait, RPCError
 from pyrogram.types import (
-    InputMediaPhoto,
     InputMediaDocument,
+    InputMediaPhoto,
     Message,
 )
 from tenacity import (
     retry,
-    wait_exponential,
-    stop_after_attempt,
     retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
 )
 
 from ...config import settings
-from ...rate_limiter import telegram_limiter
 from ...conversion import convert_image_to_png_async
-from ..video import probe_video, extract_video_thumbnail, take_screenshots
-import av
+from ...rate_limiter import telegram_limiter
+from ..video import extract_video_thumbnail, probe_video, take_screenshots
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class UploadTooLarge(Exception):
     pass
 
 
-def natural_sort_key(s: str) -> list[Union[int, str]]:
+def natural_sort_key(s: str) -> list[int | str]:
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', str(s))]
 
 
@@ -94,7 +95,7 @@ async def is_photo_invalid_for_telegram_async(file_path: Path) -> bool:
     return await asyncio.to_thread(is_photo_invalid_for_telegram, file_path)
 
 
-def _make_image_thumbnail(file_path: Path) -> Optional[Path]:
+def _make_image_thumbnail(file_path: Path) -> Path | None:
     try:
         import PIL.Image
         thumb_path = file_path.with_name(f"thumb_{file_path.stem}.jpg")
@@ -109,7 +110,7 @@ def _make_image_thumbnail(file_path: Path) -> Optional[Path]:
         return None
 
 
-async def extract_image_thumbnail(file_path: Path) -> Optional[Path]:
+async def extract_image_thumbnail(file_path: Path) -> Path | None:
     return await asyncio.to_thread(_make_image_thumbnail, file_path)
 
 
@@ -121,7 +122,7 @@ class TelegramUploader:
         client: Client,
         chat_id: int,
         path: Path,
-        progress: Optional[Callable[[int, int], Coroutine[None, None, None]]] = None,
+        progress: Callable[[int, int], Coroutine[None, None, None]] | None = None,
         lprefix: str = "",
         as_doc: bool = False,
         media_group: bool = True,
@@ -140,7 +141,7 @@ class TelegramUploader:
         self.total_files = 0
         self.corrupted = 0
         self.is_cancelled = False
-        self.sent_msg: Optional[Message] = None
+        self.sent_msg: Message | None = None
 
     async def _upload_progress_callback(self, current: int, total: int) -> None:
         if self.is_cancelled:
@@ -158,7 +159,7 @@ class TelegramUploader:
             except Exception as e:
                 log.debug("Progress callback error: %s", e)
 
-    def _prepare_filename_and_caption(self, file_path: Path) -> Tuple[str, Path]:
+    def _prepare_filename_and_caption(self, file_path: Path) -> tuple[str, Path]:
         filename = file_path.name
 
         # Check for split part pattern like _part001.mp4, .part001.mp4, .001
@@ -188,7 +189,7 @@ class TelegramUploader:
             log.error("Upload path %s does not exist", self.path)
             return
 
-        files_to_upload: List[Path] = []
+        files_to_upload: list[Path] = []
         if self.path.is_file():
             files_to_upload.append(self.path)
         else:
@@ -203,8 +204,8 @@ class TelegramUploader:
             log.warning("No files found to upload in %s", self.path)
             return
 
-        split_groups: Dict[str, List[Path]] = {}
-        single_files: List[Path] = []
+        split_groups: dict[str, list[Path]] = {}
+        single_files: list[Path] = []
 
         if self.media_group:
             for f in files_to_upload:
@@ -235,13 +236,13 @@ class TelegramUploader:
             self.last_uploaded = 0
             await self._upload_single_file_with_retry(f)
 
-    async def _upload_media_group_batch(self, group_files: List[Path]) -> None:
+    async def _upload_media_group_batch(self, group_files: list[Path]) -> None:
         """Batch upload up to 10 split files in a media group."""
         for i in range(0, len(group_files), 10):
             if self.is_cancelled:
                 return
             batch = group_files[i : i + 10]
-            media_list: List[InputMediaDocument] = []
+            media_list: list[InputMediaDocument] = []
             for f in batch:
                 cap_mono, f_renamed = self._prepare_filename_and_caption(f)
                 media_list.append(InputMediaDocument(media=str(f_renamed), caption=cap_mono))
@@ -272,7 +273,7 @@ class TelegramUploader:
             raise UploadTooLarge(f"{file_path.name} is {size / 1e9:.2f}GB, exceeds MTProto limit")
 
         ext = file_path.suffix.lower()
-        converted_png: Optional[Path] = None
+        converted_png: Path | None = None
         if ext in CONVERTIBLE_IMAGE_EXT:
             png_path = file_path.with_suffix(".png")
             if await convert_image_to_png_async(file_path, png_path):
@@ -315,9 +316,9 @@ class TelegramUploader:
             log.info("Image %s has dimensions/color space unsuited for Telegram photo API; uploading as document", file_path.name)
             force_document = True
 
-        thumb_path: Optional[Path] = None
-        screenshots: List[Path] = []
-        video_meta: Dict[str, Any] = {}
+        thumb_path: Path | None = None
+        screenshots: list[Path] = []
+        video_meta: dict[str, Any] = {}
 
         await telegram_limiter.acquire_upload(self.chat_id)
 
@@ -416,7 +417,7 @@ class TelegramUploader:
                     except Exception:
                         pass
 
-    async def _send_screenshots(self, screenshots: List[Path], video_name: str) -> None:
+    async def _send_screenshots(self, screenshots: list[Path], video_name: str) -> None:
         try:
             log.info("Sending %s screenshots grouped for %s", len(screenshots), video_name)
             media = [InputMediaPhoto(str(shot)) for shot in screenshots]
@@ -438,7 +439,7 @@ async def upload_file(
     client: Client,
     chat_id: int,
     path: Path,
-    progress: Optional[Callable[[int, int], Coroutine[None, None, None]]] = None,
+    progress: Callable[[int, int], Coroutine[None, None, None]] | None = None,
     lprefix: str = "",
     as_doc: bool = False,
     media_group: bool = True,

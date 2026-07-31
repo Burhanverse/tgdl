@@ -6,7 +6,7 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pyrogram import Client, filters
 from pyrogram.types import (
@@ -37,7 +37,7 @@ DANGEROUS_KEYS_OR_NAMES = {
 }
 
 
-def _scan_obj_for_dangerous_directives(obj: Any) -> Optional[str]:
+def _scan_obj_for_dangerous_directives(obj: Any) -> str | None:
     """Recursively checks a dict/list structure for dangerous keys or non-allowlisted postprocessors."""
     if isinstance(obj, dict):
         for k, v in obj.items():
@@ -83,7 +83,7 @@ def _strip_comments(json_str: str) -> str:
     return text
 
 
-def validate_gdl_conf(content: str) -> tuple[bool, str, Optional[dict]]:
+def validate_gdl_conf(content: str) -> tuple[bool, str, dict | None]:
     """Validates if content is a valid gallery-dl configuration structure and checks for dangerous directives."""
     if not content.strip():
         return False, "Configuration file is empty.", None
@@ -130,7 +130,7 @@ def _get_config_info(user_id: int) -> tuple[Path, bool, str, dict]:
     return active_path, is_user_specific, size_str, parsed_dict
 
 
-def _get_cookies_info(user_id: int) -> tuple[Optional[Path], bool, str]:
+def _get_cookies_info(user_id: int) -> tuple[Path | None, bool, str]:
     """Returns (active_cookies_path, is_user_specific, size_str)."""
     user_cookies = get_user_cookies_path(user_id)
     is_user_specific = user_cookies.exists() and user_cookies.is_file()
@@ -216,7 +216,7 @@ def build_gdlconf_text(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     return text, keyboard
 
 
-def _get_default_template_path() -> Optional[Path]:
+def _get_default_template_path() -> Path | None:
     candidates = [
         Path(__file__).parent.parent / "downloader" / "gallery_dl" / "gallery-dl.conf",
         settings.gdl_config_path,

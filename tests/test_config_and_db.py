@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import pytest
-import os
 from pathlib import Path
+
+import pytest
+
 from app.config import Settings
-from app.db import JobStore, JobStatus
+from app.db import JobStatus, JobStore
+
 
 @pytest.mark.asyncio
 async def test_settings_validation(monkeypatch, tmp_path):

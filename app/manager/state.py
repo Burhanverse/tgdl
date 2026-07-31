@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+
 from ..db import Job
+
 
 class JobState:
     def __init__(self, job: Job, dest_dir: Path):

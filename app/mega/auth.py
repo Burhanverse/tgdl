@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Tuple
 
 from ..config import settings
 
@@ -12,6 +11,7 @@ log = logging.getLogger(__name__)
 
 import os
 
+
 def get_user_auth_dir(user_id: int | str) -> Path:
     """Returns directory path for user-specific auth credentials."""
     user_dir = settings.auth_dir / str(user_id)
@@ -19,7 +19,7 @@ def get_user_auth_dir(user_id: int | str) -> Path:
     return user_dir
 
 
-def get_user_mega_credentials(user_id: int | str) -> Tuple[Optional[str], Optional[str]]:
+def get_user_mega_credentials(user_id: int | str) -> tuple[str | None, str | None]:
     """Returns (email, password) for user if saved in auth/{user_id}/mega.json."""
     creds_file = get_user_auth_dir(user_id) / "mega.json"
     if creds_file.exists():

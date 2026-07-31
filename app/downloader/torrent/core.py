@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
+import secrets
 import shutil
 import socket
-import json
-import base64
 import urllib.request
-import secrets
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from ...config import settings
 from ..gallery_dl import DownloadResult
@@ -34,9 +34,9 @@ TRACKERS = [
     "http://tracker.ipv6tracker.ru:80/announce"
 ]
 
-ARIA2_PORT: Optional[int] = None
-ARIA2_PROC: Optional[asyncio.subprocess.Process] = None
-ARIA2_SECRET: Optional[str] = None
+ARIA2_PORT: int | None = None
+ARIA2_PROC: asyncio.subprocess.Process | None = None
+ARIA2_SECRET: str | None = None
 
 
 class Aria2DownloadTask:
@@ -96,6 +96,7 @@ async def async_rpc_call(port: int, method: str, params: list) -> dict:
 
 from .trackers import add_trackers_to_magnet, fetch_latest_trackers, get_tracker_string
 
+
 async def start_aria2_daemon() -> None:
     """Launch the global aria2c RPC daemon with live trackers from ngosang/trackerslist."""
     global ARIA2_PORT, ARIA2_PROC, ARIA2_SECRET
@@ -148,7 +149,7 @@ async def start_aria2_daemon() -> None:
         )
         ARIA2_PROC = proc
         ARIA2_PORT = port
-    except Exception as e:
+    except Exception:
         log.exception("Failed to start global aria2c daemon")
         return
 
@@ -185,8 +186,8 @@ async def stop_aria2_daemon() -> None:
 async def download_torrent_async(
     torrent_or_magnet: str,
     dest_dir: Path,
-    on_progress: Optional[Callable[..., None]] = None,
-    register_proc: Optional[Callable[[Any], None]] = None,
+    on_progress: Callable[..., None] | None = None,
+    register_proc: Callable[[Any], None] | None = None,
 ) -> DownloadResult:
     """Download a torrent or magnet link asynchronously using global aria2c RPC daemon."""
     global ARIA2_PORT, ARIA2_PROC
@@ -200,8 +201,7 @@ async def download_torrent_async(
 
     target = torrent_or_magnet
     is_torrent_file = (target.startswith("torrent:") or target.endswith(".torrent")) and not target.startswith(("http://", "https://", "magnet:"))
-    if target.startswith("torrent:"):
-        target = target[len("torrent:"):]
+    target = target.removeprefix("torrent:")
 
     tracker_str = get_tracker_string()
     rpc_options = {

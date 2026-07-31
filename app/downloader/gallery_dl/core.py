@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
-import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 from ...config import settings
 from ...rate_limiter import Backoff, looks_rate_limited
@@ -67,10 +67,10 @@ def get_cookies_path(user_id: int | str | None = None) -> Path | None:
 def _build_cmd(
     urls: list[str],
     dest_dir: Path,
-    extra_args: Optional[list[str]] = None,
-    links_file: Optional[Path] = None,
-    config_path: Optional[Path] = None,
-    user_id: Optional[int | str] = None,
+    extra_args: list[str] | None = None,
+    links_file: Path | None = None,
+    config_path: Path | None = None,
+    user_id: int | str | None = None,
 ) -> list[str]:
     conf = config_path or get_gdl_config_path(user_id=user_id)
     cookies = get_cookies_path(user_id=user_id)
@@ -140,11 +140,11 @@ async def _stream_run(cmd: list[str]) -> tuple[int, str, Callable[[], int]]:
 async def run_with_progress(
     url: str,
     dest_dir: Path,
-    on_progress: Optional[Callable[[int, Optional[str]], None]] = None,
-    extra_args: Optional[list[str]] = None,
-    register_proc: Optional[Callable[[asyncio.subprocess.Process], None]] = None,
-    user_id: Optional[int | str] = None,
-    config_path: Optional[Path] = None,
+    on_progress: Callable[[int, str | None], None] | None = None,
+    extra_args: list[str] | None = None,
+    register_proc: Callable[[asyncio.subprocess.Process], None] | None = None,
+    user_id: int | str | None = None,
+    config_path: Path | None = None,
 ) -> DownloadResult:
 
     if shutil.which("gallery-dl") is None:

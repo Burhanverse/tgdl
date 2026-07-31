@@ -4,7 +4,7 @@ import asyncio
 import html
 import logging
 import urllib.parse
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiohttp
 
@@ -12,11 +12,11 @@ from ...config import settings
 
 log = logging.getLogger(__name__)
 
-SITES: Optional[Dict[str, str]] = None
+SITES: dict[str, str] | None = None
 TELEGRAPH_LIMIT = 300
 
 
-def format_bytes(size: float | int) -> str:
+def format_bytes(size: float) -> str:
     """Formats bytes into human readable string."""
     try:
         size = float(size)
@@ -29,14 +29,14 @@ def format_bytes(size: float | int) -> str:
         return "N/A"
 
 
-async def search_prowlarr(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+async def search_prowlarr(query: str, limit: int = 20) -> list[dict[str, Any]]:
     """Performs torrent search using Prowlarr API via prowlarr-py wrapper."""
     if not settings.prowlarr_url or not settings.prowlarr_api_key:
         return []
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
-    def _prowlarr_sync() -> List[Dict[str, Any]]:
+    def _prowlarr_sync() -> list[dict[str, Any]]:
         try:
             import prowlarr
             config = prowlarr.Configuration(host=settings.prowlarr_url.rstrip("/"))
@@ -79,9 +79,9 @@ async def search_prowlarr(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     return results
 
 
-async def search_apibay_and_csv(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+async def search_apibay_and_csv(query: str, limit: int = 20) -> list[dict[str, Any]]:
     """Free public fallback torrent search using Apibay (PirateBay) and Torrents-CSV."""
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     encoded_query = urllib.parse.quote(query)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
@@ -138,7 +138,7 @@ async def search_apibay_and_csv(query: str, limit: int = 20) -> List[Dict[str, A
                                 "seeders": seeders,
                                 "leechers": leechers,
                                 "magnet": magnet,
-                                "url": f"https://torrents-csv.com",
+                                "url": "https://torrents-csv.com",
                             })
             except Exception as e:
                 log.warning("Torrents-CSV search error: %s", e)
@@ -176,9 +176,9 @@ async def initiate_search_tools() -> None:
         SITES = {"public": "Public Indexers"}
 
 
-async def search_torrents(key: str, site: str = "all", method: str = "apisearch") -> List[Dict[str, Any]]:
+async def search_torrents(key: str, site: str = "all", method: str = "apisearch") -> list[dict[str, Any]]:
     """Performs a torrent search using Prowlarr, Search API, or public fallbacks."""
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     limit = settings.search_limit or 20
 
     # 1. Try Prowlarr if configured or specifically selected
@@ -222,7 +222,7 @@ async def search_torrents(key: str, site: str = "all", method: str = "apisearch"
     return results
 
 
-def format_search_results_html(results: List[Dict[str, Any]], query: str, site: str) -> str:
+def format_search_results_html(results: list[dict[str, Any]], query: str, site: str) -> str:
     """Formats search results into clean HTML for Telegram messages."""
     if not results:
         return f"<b>No torrent results found</b> for <i>{html.escape(query)}</i>."

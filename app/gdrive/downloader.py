@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
-import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from googleapiclient.http import MediaIoBaseDownload
 
-from .client import EXPORT_MAP, G_DRIVE_DIR_MIME_TYPE, GoogleDriveClient, get_id_from_url, sanitize_filename
+from .client import (
+    EXPORT_MAP,
+    G_DRIVE_DIR_MIME_TYPE,
+    GoogleDriveClient,
+    get_id_from_url,
+    sanitize_filename,
+)
 
 log = logging.getLogger(__name__)
 
@@ -18,9 +22,9 @@ log = logging.getLogger(__name__)
 class GoogleDriveDownloader:
     def __init__(
         self,
-        client: Optional[GoogleDriveClient] = None,
-        user_id: Optional[int | str] = None,
-        progress_callback: Optional[Callable[[int, float, str], None]] = None,
+        client: GoogleDriveClient | None = None,
+        user_id: int | str | None = None,
+        progress_callback: Callable[[int, float, str], None] | None = None,
     ):
         self.client = client or GoogleDriveClient(user_id=user_id)
         self.progress_callback = progress_callback

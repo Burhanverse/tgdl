@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from googleapiclient.errors import HttpError
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from .auth import GoogleDriveAuthManager
 
@@ -69,8 +74,8 @@ def get_id_from_url(url: str) -> str:
 class GoogleDriveClient:
     def __init__(
         self,
-        auth_manager: Optional[GoogleDriveAuthManager] = None,
-        user_id: Optional[int | str] = None,
+        auth_manager: GoogleDriveAuthManager | None = None,
+        user_id: int | str | None = None,
     ):
         self.auth_manager = auth_manager or GoogleDriveAuthManager(user_id=user_id)
         self._service = None

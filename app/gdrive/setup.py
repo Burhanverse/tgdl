@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from google_auth_oauthlib.flow import InstalledAppFlow
+
 from app.config import settings
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]

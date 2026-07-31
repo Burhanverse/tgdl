@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Optional, Set
 
 from pyrogram import Client
-from pyrogram.errors import FloodWait, FloodPremiumWait
+from pyrogram.errors import FloodPremiumWait, FloodWait
 from pyrogram.types import Message
 
 from ...rate_limiter import telegram_limiter
 
-_global_lock: Optional[asyncio.Lock] = None
+_global_lock: asyncio.Lock | None = None
 
 def get_global_lock() -> asyncio.Lock:
     global _global_lock
@@ -20,7 +19,7 @@ def get_global_lock() -> asyncio.Lock:
         _global_lock = asyncio.Lock()
     return _global_lock
 
-GLOBAL_GID: Set[str] = set()
+GLOBAL_GID: set[str] = set()
 
 
 class TelegramDownloadError(Exception):
@@ -37,8 +36,8 @@ class TelegramDownloader:
         client: Client,
         message: Message,
         dest_dir: Path,
-        progress_cb: Optional[Callable[[int, int, str], Coroutine[None, None, None]]] = None,
-        custom_file_name: Optional[str] = None,
+        progress_cb: Callable[[int, int, str], Coroutine[None, None, None]] | None = None,
+        custom_file_name: str | None = None,
     ) -> None:
         self.client = client
         self.message = message
@@ -55,7 +54,7 @@ class TelegramDownloader:
         self.is_downloading = False
         self.is_cancelled = False
         self.file_unique_id = ""
-        self.downloaded_path: Optional[Path] = None
+        self.downloaded_path: Path | None = None
 
     @property
     def speed(self) -> float:
@@ -192,8 +191,8 @@ async def download_telegram_media(
     client: Client,
     message: Message,
     dest_dir: Path,
-    progress_cb: Optional[Callable[[int, int, str], Coroutine[None, None, None]]] = None,
-    custom_file_name: Optional[str] = None,
+    progress_cb: Callable[[int, int, str], Coroutine[None, None, None]] | None = None,
+    custom_file_name: str | None = None,
 ) -> Path:
     """Helper function to download media from a Pyrogram message to dest_dir."""
     downloader = TelegramDownloader(

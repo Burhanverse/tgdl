@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:

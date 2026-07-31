@@ -1,38 +1,38 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
-import time
 import shutil
+import time
 from pathlib import Path
-from typing import Optional
 
-import json
 from pyrogram import Client
-from pyrogram.types import LinkPreviewOptions, Message, ForceReply, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import (
+    ForceReply,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    Message,
+)
 
 from ..config import settings
-from ..db import Job, JobStatus, JobStore
-
+from ..db import JobStatus, JobStore
 from .state import JobState
 from .status import (
-    format_size,
-    safe_edit,
-    safe_pin,
-    safe_delete,
-    compile_queued_status_text,
-    compile_job_status_text,
     compile_archive_prompt_text,
-    compile_extraction_status_text,
-    compile_extraction_success_status_text,
-    compile_extraction_failed_status_text,
-    compile_conversion_prompt_text,
-    compile_conversion_running_status_text,
-    compile_conversion_failed_status_text,
+    compile_audio_conversion_failed_status_text,
     compile_audio_conversion_prompt_text,
     compile_audio_conversion_running_status_text,
-    compile_audio_conversion_failed_status_text,
+    compile_conversion_running_status_text,
+    compile_extraction_failed_status_text,
+    compile_extraction_status_text,
+    compile_extraction_success_status_text,
+    compile_job_status_text,
+    safe_delete,
+    safe_edit,
+    safe_pin,
 )
 
 log = logging.getLogger(__name__)
@@ -45,8 +45,8 @@ store = JobStore(settings.db_path)
 
 class QueueManager:
     def __init__(self):
-        self.client: Optional[Client] = None
-        self.store: Optional[JobStore] = None
+        self.client: Client | None = None
+        self.store: JobStore | None = None
         self.download_queue: asyncio.Queue[str] = asyncio.Queue()
         self.upload_queue: asyncio.Queue[str] = asyncio.Queue()
         self.jobs: dict[str, JobState] = {}
@@ -286,7 +286,7 @@ class QueueManager:
 
             db_job = await self.store.get_job(job.id) or job
             status_text = compile_job_status_text(db_job, job_state)
-            from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
             ])
@@ -342,7 +342,7 @@ class QueueManager:
                                 if not job_state.is_pinned:
                                     await safe_pin(self.client, chat_id, job_state.msg_id)
                                     job_state.is_pinned = True
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         try:
                             db_job = await self.store.get_job(job.id)
                             if db_job and db_job.status != JobStatus.CANCELLED:
@@ -448,7 +448,7 @@ class QueueManager:
                 monitor_task = asyncio.create_task(monitor_download_speed())
 
             if is_unzip:
-                from ..downloader import download_telegram_media, DownloadResult
+                from ..downloader import DownloadResult, download_telegram_media
                 reply_msg_id = None
                 if job.args:
                     try:
@@ -508,13 +508,12 @@ class QueueManager:
                 archive_files = [p for p in dest_dir.rglob("*") if p.is_file()]
                 result = DownloadResult(ok=True, files=archive_files)
             elif is_gdrive:
-                from ..gdrive import GoogleDriveDownloader, archive_all_folders_in_dir
                 from ..downloader import DownloadResult
+                from ..gdrive import GoogleDriveDownloader, archive_all_folders_in_dir
 
                 gdrive_link = cleaned_url
                 for prefix in ("gdrive:", "gd2tg:"):
-                    if gdrive_link.startswith(prefix):
-                        gdrive_link = gdrive_link[len(prefix):]
+                    gdrive_link = gdrive_link.removeprefix(prefix)
 
                 def on_gdrive_progress(downloaded: int, speed: float, filename: str) -> None:
                     job_state.total_downloaded_bytes = downloaded
@@ -582,12 +581,11 @@ class QueueManager:
                 final_files = [p for p in dest_dir.rglob("*") if p.is_file()]
                 result = DownloadResult(ok=True, files=final_files)
             elif is_mega:
-                from ..mega import MegaDownloader
                 from ..downloader import DownloadResult
+                from ..mega import MegaDownloader
 
                 mega_link = cleaned_url
-                if mega_link.startswith("mega:"):
-                    mega_link = mega_link[len("mega:"):]
+                mega_link = mega_link.removeprefix("mega:")
 
                 def on_mega_progress(downloaded: int, speed: float, filename: str) -> None:
                     job_state.total_downloaded_bytes = downloaded
@@ -608,7 +606,7 @@ class QueueManager:
                     speed_bytes: float,
                     seeders: int = 0,
                     connections: int = 0,
-                    name: Optional[str] = None
+                    name: str | None = None
                 ) -> None:
                     job_state.download_pct = pct
                     job_state.total_downloaded_bytes = downloaded_bytes
@@ -669,7 +667,7 @@ class QueueManager:
                     job_state.current_download_file = filename
                     job_state.trigger_event.set()
 
-                from ..downloader import TelegramDownloader, DownloadResult
+                from ..downloader import DownloadResult, TelegramDownloader
                 downloader = TelegramDownloader(
                     client=self.client,
                     message=tgt_msg,
@@ -681,8 +679,12 @@ class QueueManager:
 
             elif cleaned_url.startswith("mirror:"):
                 target_u = cleaned_url[len("mirror:"):]
-                from ..downloader import download_direct, run_with_progress, DownloadResult
-                async def on_direct_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
+                from ..downloader import (
+                    DownloadResult,
+                    download_direct,
+                    run_with_progress,
+                )
+                async def on_direct_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
                     job_state.total_downloaded_bytes = current
                     job_state.total_expected_bytes = total
                     if total > 0:
@@ -697,7 +699,7 @@ class QueueManager:
                     result = DownloadResult(ok=True, files=downloaded_paths)
                 except Exception as de:
                     log.warning("DirectDownloader failed for mirror link %s, attempting gallery-dl fallback: %s", target_u, de)
-                    def on_dl_progress(count: int, filename: Optional[str] = None, current_url: Optional[str] = None) -> None:
+                    def on_dl_progress(count: int, filename: str | None = None, current_url: str | None = None) -> None:
                         job_state.download_count = count
                         if filename:
                             job_state.current_download_file = filename
@@ -713,8 +715,8 @@ class QueueManager:
                     )
 
             elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url):
-                direct_url = cleaned_url[len("direct:"):] if cleaned_url.startswith("direct:") else cleaned_url
-                async def on_direct_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
+                direct_url = cleaned_url.removeprefix("direct:")
+                async def on_direct_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
                     job_state.total_downloaded_bytes = current
                     job_state.total_expected_bytes = total
                     if total > 0:
@@ -725,7 +727,7 @@ class QueueManager:
                         job_state.current_download_url = url
                     job_state.trigger_event.set()
 
-                from ..downloader import download_direct, DownloadResult
+                from ..downloader import DownloadResult, download_direct
                 downloaded_paths = await download_direct(direct_url, dest_dir, progress_cb=on_direct_progress)
                 result = DownloadResult(ok=True, files=downloaded_paths)
             else:
@@ -736,7 +738,7 @@ class QueueManager:
                     except Exception:
                         pass
 
-                def on_download_progress(count: int, filename: Optional[str] = None, current_url: Optional[str] = None) -> None:
+                def on_download_progress(count: int, filename: str | None = None, current_url: str | None = None) -> None:
                     job_state.download_count = count
                     if filename:
                         job_state.current_download_file = filename
@@ -744,7 +746,11 @@ class QueueManager:
                         job_state.current_download_url = current_url
                     job_state.trigger_event.set()
 
-                from ..downloader import run_with_progress, download_direct, DownloadResult
+                from ..downloader import (
+                    DownloadResult,
+                    download_direct,
+                    run_with_progress,
+                )
                 result = await run_with_progress(
                     job.url,
                     dest_dir,
@@ -755,7 +761,7 @@ class QueueManager:
                 )
                 if not result.ok:
                     log.info("gallery-dl failed or unsupported site for %s. Falling back to DirectDownloader...", job.url)
-                    async def on_fallback_progress(current: int, total: int, filename: str, url: Optional[str] = None) -> None:
+                    async def on_fallback_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
                         job_state.total_downloaded_bytes = current
                         job_state.total_expected_bytes = total
                         if total > 0:
@@ -790,26 +796,26 @@ class QueueManager:
 
     async def _process_upload(self, job_state: JobState) -> None:
         job_state.active_upload_task = asyncio.current_task()
-        from ..conversion import (
-            convert_media_async,
-            convert_audio_async,
-            CONVERSION_EXT,
-            AUDIO_CONVERSION_EXT,
-            _conversion_ids,
-            _conversion_events,
-            _conversion_choices,
-            _converted_files
-        )
         from ..archive import (
-            extract_archive_async,
             ARCHIVE_EXT,
             ArchivePasswordRequired,
-            _archive_ids,
-            _archive_events,
             _archive_choices,
+            _archive_events,
+            _archive_ids,
             _extracted_archives,
             _extracted_file_names,
-            get_split_archive_info
+            extract_archive_async,
+            get_split_archive_info,
+        )
+        from ..conversion import (
+            AUDIO_CONVERSION_EXT,
+            CONVERSION_EXT,
+            _conversion_choices,
+            _conversion_events,
+            _conversion_ids,
+            _converted_files,
+            convert_audio_async,
+            convert_media_async,
         )
 
         job = job_state.job
@@ -872,7 +878,10 @@ class QueueManager:
                     if job_state.msg_id:
                         status_text = compile_job_status_text(db_job, job_state)
                         if status_text != job_state.last_edited_text:
-                            from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                            from pyrogram.types import (
+                                InlineKeyboardButton,
+                                InlineKeyboardMarkup,
+                            )
                             keyboard = InlineKeyboardMarkup([
                                 [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
                             ])
@@ -1073,7 +1082,7 @@ class QueueManager:
                                         break
                                     try:
                                         await asyncio.wait_for(_archive_events[job.id][archive_id].wait(), timeout=2.0)
-                                    except asyncio.TimeoutError:
+                                    except TimeoutError:
                                         pass
                                 if job_state.uploader_done.is_set():
                                     return
@@ -1242,10 +1251,10 @@ class QueueManager:
                                     start_time = time.time()
                                     while not job_state.uploader_done.is_set() and not event.is_set():
                                         if time.time() - start_time >= 300:
-                                            raise asyncio.TimeoutError()
+                                            raise TimeoutError()
                                         try:
                                             await asyncio.wait_for(event.wait(), timeout=2.0)
-                                        except asyncio.TimeoutError:
+                                        except TimeoutError:
                                             pass
                                     if job_state.uploader_done.is_set():
                                         return
@@ -1272,7 +1281,7 @@ class QueueManager:
                                     except Exception:
                                         pass
                                     break
-                                except asyncio.TimeoutError:
+                                except TimeoutError:
                                     try:
                                         await self.client.delete_messages(chat_id, prompt_msg.id)
                                     except Exception:
@@ -1422,7 +1431,7 @@ class QueueManager:
                                         break
                                     try:
                                         await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
-                                    except asyncio.TimeoutError:
+                                    except TimeoutError:
                                         pass
                                 if job_state.uploader_done.is_set():
                                     return
@@ -1517,7 +1526,7 @@ class QueueManager:
                             except Exception:
                                 pass
 
-                from ..uploader import handle_large_file, upload_file, UploadTooLarge
+                from ..uploader import UploadTooLarge, handle_large_file, upload_file
 
                 try:
                     split_parts = await handle_large_file(f, bool(job.split_large_files))
@@ -1605,17 +1614,13 @@ class QueueManager:
                     await asyncio.sleep(delay)
 
         async def run_uploader() -> None:
-            from ..uploader import should_ignore_file
             from ..conversion import (
-                convert_media_async,
-                convert_audio_async,
-                CONVERSION_EXT,
                 AUDIO_CONVERSION_EXT,
-                _conversion_ids,
-                _conversion_events,
-                _conversion_choices,
-                _converted_files
+                CONVERSION_EXT,
+                convert_audio_async,
+                convert_media_async,
             )
+            from ..uploader import should_ignore_file
             if is_torrent or has_archive_fmt:
                 while not job_state.downloader_done.is_set():
                     await asyncio.sleep(2.0)
@@ -1741,7 +1746,7 @@ class QueueManager:
                 try:
                     await asyncio.wait_for(job_state.trigger_event.wait(), timeout=5.0)
                     job_state.trigger_event.clear()
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
         updater_task = asyncio.create_task(status_updater_loop())
@@ -1776,7 +1781,7 @@ class QueueManager:
 
             if getattr(job_state, "pixeldrain_links", None):
                 link_lines = [f"• `{fname}`: {url}" for fname, url in job_state.pixeldrain_links]
-                summary += f"\n\n**Pixeldrain Mirror Links:**\n" + "\n".join(link_lines)
+                summary += "\n\n**Pixeldrain Mirror Links:**\n" + "\n".join(link_lines)
 
             if not (is_mirror_job and not upload_tg):
                 await report(summary)
@@ -1802,8 +1807,19 @@ class QueueManager:
                 final_text = compile_job_status_text(db_job, job_state)
                 await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None, force=True)
 
-            from ..archive import _archive_ids, _archive_events, _archive_choices, _extracted_archives, _extracted_file_names
-            from ..conversion import _conversion_ids, _conversion_events, _conversion_choices, _converted_files
+            from ..archive import (
+                _archive_choices,
+                _archive_events,
+                _archive_ids,
+                _extracted_archives,
+                _extracted_file_names,
+            )
+            from ..conversion import (
+                _conversion_choices,
+                _conversion_events,
+                _conversion_ids,
+                _converted_files,
+            )
 
             _archive_ids.pop(job.id, None)
             _archive_events.pop(job.id, None)

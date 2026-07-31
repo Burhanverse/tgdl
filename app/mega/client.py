@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional, Union
 
 import aiohttp
 from mega.client import MegaNzClient
-from mega.data_structures import NodeID
 from mega.filesystem import FileSystem
 
 from ..config import settings
@@ -31,8 +29,8 @@ class MegaClient:
 
     def __init__(
         self,
-        session: Optional[aiohttp.ClientSession] = None,
-        user_agent: Optional[str] = None,
+        session: aiohttp.ClientSession | None = None,
+        user_agent: str | None = None,
     ) -> None:
         self._client = MegaNzClient(session=session, user_agent=user_agent)
 
@@ -46,9 +44,9 @@ class MegaClient:
 
     async def login(
         self,
-        email: Optional[str] = None,
-        password: Optional[str] = None,
-        user_id: Optional[Union[int, str]] = None,
+        email: str | None = None,
+        password: str | None = None,
+        user_id: int | str | None = None,
     ) -> None:
         """Log into MEGA account using provided credentials, user credentials, global settings, or anonymous fallback."""
         if self._client.logged_in:
@@ -78,9 +76,9 @@ class MegaClient:
 
     async def ensure_logged_in(
         self,
-        email: Optional[str] = None,
-        password: Optional[str] = None,
-        user_id: Optional[Union[int, str]] = None,
+        email: str | None = None,
+        password: str | None = None,
+        user_id: int | str | None = None,
     ) -> None:
         """Ensure client is logged into a MEGA session before performing operations."""
         if not self._client.logged_in:
@@ -105,8 +103,7 @@ class MegaClient:
     def parse_url(self, url: str):
         """Parse a MEGA URL into PublicURLInfo."""
         clean_url = url.strip()
-        if clean_url.startswith("mega:"):
-            clean_url = clean_url[len("mega:"):]
+        clean_url = clean_url.removeprefix("mega:")
         return self._client.parse_url(clean_url)
 
     async def get_public_filesystem(
@@ -120,7 +117,7 @@ class MegaClient:
         self,
         public_handle: str,
         public_key: str,
-        output_dir: Optional[Union[str, Path]] = None,
+        output_dir: str | Path | None = None,
     ) -> Path:
         """Download a single public file."""
         await self.ensure_logged_in()
@@ -132,8 +129,8 @@ class MegaClient:
         self,
         public_handle: str,
         public_key: str,
-        output_dir: Optional[Union[str, Path]] = None,
-        root_id: Optional[str] = None,
+        output_dir: str | Path | None = None,
+        root_id: str | None = None,
     ):
         """Download a public folder preserving directory structure."""
         await self.ensure_logged_in()
@@ -144,11 +141,10 @@ class MegaClient:
     async def download_url(
         self,
         url: str,
-        output_dir: Optional[Union[str, Path]] = None,
+        output_dir: str | Path | None = None,
     ):
         """Download a public file or folder by URL."""
         await self.ensure_logged_in()
         clean_url = url.strip()
-        if clean_url.startswith("mega:"):
-            clean_url = clean_url[len("mega:"):]
+        clean_url = clean_url.removeprefix("mega:")
         return await self._client.download_url(clean_url, output_dir=output_dir)

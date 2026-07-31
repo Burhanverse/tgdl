@@ -1,19 +1,29 @@
 from .core import download_torrent_async, start_aria2_daemon, stop_aria2_daemon
-from .search import initiate_search_tools, search_torrents, format_search_results_html, SITES
+from .search import (
+    SITES,
+    format_search_results_html,
+    initiate_search_tools,
+    search_torrents,
+)
 from .telegraph_helper import telegraph_helper
-from .trackers import add_trackers_to_magnet, fetch_latest_trackers, get_trackers, get_tracker_string
+from .trackers import (
+    add_trackers_to_magnet,
+    fetch_latest_trackers,
+    get_tracker_string,
+    get_trackers,
+)
 
 __all__ = [
+    "SITES",
+    "add_trackers_to_magnet",
     "download_torrent_async",
-    "start_aria2_daemon",
-    "stop_aria2_daemon",
+    "fetch_latest_trackers",
+    "format_search_results_html",
+    "get_tracker_string",
+    "get_trackers",
     "initiate_search_tools",
     "search_torrents",
-    "format_search_results_html",
-    "SITES",
+    "start_aria2_daemon",
+    "stop_aria2_daemon",
     "telegraph_helper",
-    "add_trackers_to_magnet",
-    "fetch_latest_trackers",
-    "get_trackers",
-    "get_tracker_string",
 ]

@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Any
+
 from pyrogram import Client
 from pyrogram.errors import FloodWait, MessageNotModified
-from pyrogram.types import Message, InlineKeyboardMarkup, LinkPreviewOptions
+from pyrogram.types import InlineKeyboardMarkup, LinkPreviewOptions, Message
 
 from ..rate_limiter import telegram_limiter
 
@@ -14,17 +15,17 @@ log = logging.getLogger(__name__)
 
 # Global status tracking structures
 task_dict_lock = asyncio.Lock()
-status_dict: Dict[int, Dict[str, Any]] = {}
-intervals: Dict[str, Any] = {"status": {}, "stopAll": False}
+status_dict: dict[int, dict[str, Any]] = {}
+intervals: dict[str, Any] = {"status": {}, "stopAll": False}
 
 
 async def send_message(
-    target: Union[Client, Message],
+    target: Client | Message,
     text: str,
-    buttons: Optional[InlineKeyboardMarkup] = None,
-    chat_id: Optional[int] = None,
+    buttons: InlineKeyboardMarkup | None = None,
+    chat_id: int | None = None,
     block: bool = True,
-) -> Union[Message, str, None]:
+) -> Message | str | None:
     """Sends a Telegram message with rate limiting and FloodWait protection."""
     cid = chat_id or (target.chat.id if isinstance(target, Message) else None)
     if cid:
@@ -64,9 +65,9 @@ async def send_message(
 async def edit_message(
     message: Message,
     text: str,
-    buttons: Optional[InlineKeyboardMarkup] = None,
+    buttons: InlineKeyboardMarkup | None = None,
     block: bool = True,
-) -> Union[Message, bool, str]:
+) -> Message | bool | str:
     """Edits a Telegram message with rate limiting and FloodWait protection."""
     cid = message.chat.id if message and message.chat else None
     if cid:
@@ -93,7 +94,7 @@ async def edit_message(
         return str(e)
 
 
-async def delete_message(message: Optional[Message]) -> bool:
+async def delete_message(message: Message | None) -> bool:
     """Safely deletes a Telegram message."""
     if not message:
         return False
@@ -115,8 +116,8 @@ async def delete_message(message: Optional[Message]) -> bool:
 
 
 async def auto_delete_message(
-    cmd_message: Optional[Message] = None,
-    bot_message: Optional[Message] = None,
+    cmd_message: Message | None = None,
+    bot_message: Message | None = None,
     delay: int = 60,
 ) -> None:
     """Schedules automatic deletion of messages after a delay."""
@@ -255,8 +256,13 @@ async def send_status_message(target_msg: Message, user_id: int = 0) -> None:
             text, buttons = await get_readable_message(sid, is_user)
             if text is None:
                 # No active tasks
-                from psutil import cpu_percent, virtual_memory, disk_usage
-                from .status_utils import get_readable_file_size, get_readable_time, BOT_START_TIME
+                from psutil import cpu_percent, disk_usage, virtual_memory
+
+                from .status_utils import (
+                    BOT_START_TIME,
+                    get_readable_file_size,
+                    get_readable_time,
+                )
 
                 currentTime = get_readable_time(time.time() - BOT_START_TIME)
                 free = get_readable_file_size(disk_usage("/").free)

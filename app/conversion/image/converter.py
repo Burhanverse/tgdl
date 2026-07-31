@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import PIL.Image
-import av
+import asyncio
 import logging
 from pathlib import Path
-import asyncio
+
+import av
+import PIL.Image
 
 log = logging.getLogger(__name__)
 

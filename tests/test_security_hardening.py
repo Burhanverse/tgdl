@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
-import pytest
 
+from app.auth import is_authorized_user_or_chat
 from app.config import settings
-from app.auth import is_authorized_user_or_chat, check_auth_on_startup
 from app.handlers.gdlconf import validate_gdl_conf
 
 
@@ -39,7 +37,7 @@ def test_validate_gdl_conf_rejects_exec_and_python_postprocessors():
         }
     }
     """
-    ok, err, parsed = validate_gdl_conf(python_config)
+    ok, err, _parsed = validate_gdl_conf(python_config)
     assert ok is False
     assert "Forbidden postprocessor" in err or "python" in err
 
@@ -60,7 +58,7 @@ def test_validate_gdl_conf_accepts_safe_postprocessors():
         }
     }
     """
-    ok, err, parsed = validate_gdl_conf(safe_config)
+    ok, _err, parsed = validate_gdl_conf(safe_config)
     assert ok is True
     assert parsed is not None
 

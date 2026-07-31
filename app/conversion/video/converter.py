@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import av
+import asyncio
 import logging
 from pathlib import Path
-import asyncio
+
+import av
 
 log = logging.getLogger(__name__)
 

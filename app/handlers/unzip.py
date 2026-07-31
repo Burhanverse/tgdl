@@ -3,26 +3,35 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from pyrogram import Client, filters
-from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
+from typing import Optional
 
-from ..config import settings
-from ..middleware import is_job_owner
-from ..manager import queue_manager, store, _password_prompt_events, _password_prompt_messages
-from ..manager.status.compiler import (
-    compile_split_prompt_text,
-    compile_queued_status_text,
-    compile_unzip_download_status_text,
+from pyrogram import Client, filters
+from pyrogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    Message,
 )
+
 from ..archive import (
     ARCHIVE_EXT,
-    extract_archive_async,
-    ArchivePasswordRequired,
     get_split_archive_info,
-    start_multi_unzip_session,
-    handle_multi_document,
     handle_multi_cancel_cb,
+    handle_multi_document,
     handle_multi_start_cb,
+    start_multi_unzip_session,
+)
+from ..config import settings
+from ..manager import (
+    _password_prompt_events,
+    _password_prompt_messages,
+    queue_manager,
+    store,
+)
+from ..manager.status.compiler import (
+    compile_split_prompt_text,
+    compile_unzip_download_status_text,
 )
 
 log = logging.getLogger(__name__)
@@ -290,6 +299,7 @@ async def run_split_archive_download_and_extract(
     queue_manager
 ) -> None:
     import json
+
     from ..db import JobStatus
     parts: dict[int, Message] = session["parts"]
     password: Optional[str] = session["password"]

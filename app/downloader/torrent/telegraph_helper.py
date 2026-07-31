@@ -4,7 +4,7 @@ import html
 import logging
 import urllib.parse
 from secrets import token_urlsafe
-from typing import Any, Dict, List
+from typing import Any
 
 from telegraph.aio import Telegraph
 
@@ -18,7 +18,7 @@ class TelegraphHelper:
         self.author_name = author_name
         self.author_url = author_url
 
-    async def generate_telegraph_page(self, results: List[Dict[str, Any]], query: str, site: str) -> str | None:
+    async def generate_telegraph_page(self, results: list[dict[str, Any]], query: str, site: str) -> str | None:
         """Formats search results into a modern, minimal HTML layout and publishes to Telegraph."""
         if not results:
             return None

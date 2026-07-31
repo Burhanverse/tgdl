@@ -5,7 +5,6 @@ import logging
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Optional, Union
 
 import patoolib
 from patoolib.util import PatoolError
@@ -21,10 +20,9 @@ ARCHIVE_EXT = {
 
 class ArchivePasswordRequired(Exception):
     """Raised when an archive requires a password or an incorrect password was provided."""
-    pass
 
 
-def is_archive(path_or_filename: Union[str, Path]) -> bool:
+def is_archive(path_or_filename: str | Path) -> bool:
     """Checks whether a given file path or filename is recognized as a supported archive."""
     path = Path(path_or_filename)
     ext = path.suffix.lower()
@@ -58,7 +56,7 @@ def _is_password_err(err_text: str) -> bool:
 async def extract_archive_async(
     archive_path: Path,
     extract_dir: Path,
-    password: Optional[str] = None
+    password: str | None = None
 ) -> bool:
     """Extracts an archive to extract_dir using patoolib and fallback CLI/Python tools.
 

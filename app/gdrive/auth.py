@@ -6,7 +6,7 @@ import os
 import pickle
 from pathlib import Path
 from random import shuffle
-from typing import Any, Optional
+from typing import Any
 
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
@@ -46,8 +46,8 @@ def create_oauth_flow_from_json(json_path: Path, redirect_uri: str = "http://127
 def finish_oauth_flow_and_save(
     flow: Any,
     auth_code: str,
-    user_id: Optional[int | str] = None,
-    token_path: Optional[Path] = None,
+    user_id: int | str | None = None,
+    token_path: Path | None = None,
 ) -> Credentials:
     """Exchanges authorization code for tokens and saves credentials to auth/{user_id}/token.json with 0o600 perms."""
     if not token_path:
@@ -72,10 +72,10 @@ def finish_oauth_flow_and_save(
 class GoogleDriveAuthManager:
     def __init__(
         self,
-        user_id: Optional[int | str] = None,
-        token_path: Optional[Path] = None,
-        accounts_dir: Optional[Path] = None,
-        use_sa: Optional[bool] = None,
+        user_id: int | str | None = None,
+        token_path: Path | None = None,
+        accounts_dir: Path | None = None,
+        use_sa: bool | None = None,
     ):
         self.user_id = str(user_id) if user_id else None
         if self.user_id and not token_path and not accounts_dir:

@@ -6,7 +6,6 @@ import os
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 import patoolib
 from patoolib.util import PatoolError
@@ -20,7 +19,7 @@ async def create_archive_async(
     folder_path: Path,
     output_archive: Path,
     archive_format: str = "zip",
-    password: Optional[str] = None
+    password: str | None = None
 ) -> bool:
     """Creates a compressed archive from folder_path using patoolib.create_archive.
 

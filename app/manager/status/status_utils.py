@@ -5,7 +5,8 @@ import logging
 import time
 from html import escape
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
+
 from psutil import cpu_percent, disk_usage, virtual_memory
 
 from ...telegram_helper.button_build import ButtonMaker
@@ -47,7 +48,7 @@ STATUSES = {
 }
 
 
-def get_readable_file_size(size_in_bytes: Union[int, float]) -> str:
+def get_readable_file_size(size_in_bytes: float) -> str:
     if not size_in_bytes or size_in_bytes < 0:
         return "0B"
     index = 0
@@ -58,7 +59,7 @@ def get_readable_file_size(size_in_bytes: Union[int, float]) -> str:
     return f"{size:.2f}{SIZE_UNITS[index]}"
 
 
-def get_readable_time(seconds: Union[int, float]) -> str:
+def get_readable_time(seconds: float) -> str:
     seconds = int(seconds)
     if seconds <= 0:
         return "0s"
@@ -102,7 +103,7 @@ def get_progress_bar_string(pct: float) -> str:
 class TaskStatusAdapter:
     """Unified status wrapper over active JobState and DB Job models."""
 
-    def __init__(self, job: Any, job_state: Optional[Any] = None) -> None:
+    def __init__(self, job: Any, job_state: Any | None = None) -> None:
         self.job = job
         self.job_state = job_state
         self.user_id = getattr(job, "chat_id", 0)
@@ -216,11 +217,11 @@ class TaskStatusAdapter:
         return "-"
 
 
-async def get_all_active_task_adapters() -> List[TaskStatusAdapter]:
+async def get_all_active_task_adapters() -> list[TaskStatusAdapter]:
     """Gather all active, queued, and waiting tasks from queue_manager and DB store."""
     from ...manager.core import queue_manager, store
 
-    tasks: List[TaskStatusAdapter] = []
+    tasks: list[TaskStatusAdapter] = []
     active_ids = set()
 
     # Active running tasks in queue manager
@@ -249,7 +250,7 @@ async def get_all_active_task_adapters() -> List[TaskStatusAdapter]:
     return tasks
 
 
-async def get_task_by_gid(gid: str) -> Optional[TaskStatusAdapter]:
+async def get_task_by_gid(gid: str) -> TaskStatusAdapter | None:
     adapters = await get_all_active_task_adapters()
     for tk in adapters:
         if tk.gid() == gid:
@@ -257,7 +258,7 @@ async def get_task_by_gid(gid: str) -> Optional[TaskStatusAdapter]:
     return None
 
 
-async def get_specific_tasks(status_filter: str, user_id: Optional[int] = None) -> List[TaskStatusAdapter]:
+async def get_specific_tasks(status_filter: str, user_id: int | None = None) -> list[TaskStatusAdapter]:
     all_tasks = await get_all_active_task_adapters()
     if user_id:
         all_tasks = [tk for tk in all_tasks if tk.user_id == user_id]
@@ -268,9 +269,7 @@ async def get_specific_tasks(status_filter: str, user_id: Optional[int] = None) 
     result = []
     for tk in all_tasks:
         st = tk.status()
-        if st == status_filter:
-            result.append(tk)
-        elif status_filter == MirrorStatus.STATUS_DOWNLOAD and st not in STATUSES.values():
+        if st == status_filter or status_filter == MirrorStatus.STATUS_DOWNLOAD and st not in STATUSES.values():
             result.append(tk)
     return result
 
@@ -281,7 +280,7 @@ async def get_readable_message(
     page_no: int = 1,
     status: str = "All",
     page_step: int = 1,
-) -> Tuple[Optional[str], Optional[Any]]:
+) -> tuple[str | None, Any | None]:
     tasks = await get_specific_tasks(status, sid if is_user else None)
     STATUS_LIMIT = 8
     tasks_no = len(tasks)
@@ -310,7 +309,7 @@ async def get_readable_message(
     start_position = (page_no - 1) * STATUS_LIMIT
 
     msg = ""
-    task_gids: List[Tuple[int, str]] = []
+    task_gids: list[tuple[int, str]] = []
 
     for index, task in enumerate(
         tasks[start_position : STATUS_LIMIT + start_position], start=1

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import logging
 import asyncio
-from pathlib import Path
+import logging
 from collections.abc import Callable, Coroutine
-from typing import Any, Tuple
+from pathlib import Path
+from typing import Any
 
 import webhost
 from webhost.exceptions import WebHostError
@@ -32,13 +32,14 @@ def _make_sync_progress_callback(
 
 from ..user_keys import resolve_upload_api_key
 
+
 async def upload_to_pixeldrain(
     file_path: Path | str,
     api_key: str | None = None,
     progress_callback: Callable[[int, int], Coroutine[None, None, None]] | None = None,
     domain: str = "pixeldrain.com",
     user_id: int | str | None = None,
-) -> Tuple[dict[str, Any], list[str]]:
+) -> tuple[dict[str, Any], list[str]]:
     """
     Upload a file to Pixeldrain using the webhost package.
 

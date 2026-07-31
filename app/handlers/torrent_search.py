@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import html
 import logging
+
 from pyrogram import Client, filters
 from pyrogram.handlers import CallbackQueryHandler, MessageHandler
-from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from pyrogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
-from ..config import settings
 from ..downloader.torrent import (
     SITES,
     format_search_results_html,
-    initiate_search_tools,
     search_torrents,
     telegraph_helper,
 )

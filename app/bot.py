@@ -4,7 +4,6 @@ import asyncio
 import logging
 import logging.handlers
 import time
-from pathlib import Path
 
 from pyrogram import Client, idle
 
@@ -16,6 +15,7 @@ log = logging.getLogger("tgdl_bot")
 
 
 import json
+
 
 class JsonFormatter(logging.Formatter):
     """JSON log formatter for production observability."""
@@ -34,6 +34,7 @@ class JsonFormatter(logging.Formatter):
 
 def setup_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    fmt: logging.Formatter
     if settings.log_format.lower() == "json":
         fmt = JsonFormatter()
     else:
@@ -106,8 +107,8 @@ async def main() -> None:
     except Exception as e:
         log.warning("Failed to set bot commands: %s", e)
 
-    from .manager import queue_manager, store, cleanup_orphaned_directories
     from .downloader.torrent import initiate_search_tools
+    from .manager import cleanup_orphaned_directories, queue_manager, store
     await initiate_search_tools()
     await store.open()
     await cleanup_orphaned_directories()

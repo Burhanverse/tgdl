@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -11,7 +10,7 @@ class ButtonMaker:
         self._header_button: list[InlineKeyboardButton] = []
         self._footer_button: list[InlineKeyboardButton] = []
 
-    def data_button(self, text: str, callback_data: str, position: Optional[str] = None) -> None:
+    def data_button(self, text: str, callback_data: str, position: str | None = None) -> None:
         btn = InlineKeyboardButton(text=text, callback_data=callback_data)
         if position == "header":
             self._header_button.append(btn)
@@ -20,7 +19,7 @@ class ButtonMaker:
         else:
             self._button.append(btn)
 
-    def url_button(self, text: str, url: str, position: Optional[str] = None) -> None:
+    def url_button(self, text: str, url: str, position: str | None = None) -> None:
         btn = InlineKeyboardButton(text=text, url=url)
         if position == "header":
             self._header_button.append(btn)
@@ -31,7 +30,7 @@ class ButtonMaker:
 
     def build_menu(
         self, b_cols: int = 2, h_cols: int = 2, f_cols: int = 2
-    ) -> Optional[InlineKeyboardMarkup]:
+    ) -> InlineKeyboardMarkup | None:
         menu: list[list[InlineKeyboardButton]] = []
 
         if self._header_button:
