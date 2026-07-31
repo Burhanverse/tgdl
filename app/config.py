@@ -93,6 +93,26 @@ class Settings(BaseSettings):
             return [int(x) for x in v if str(x).strip().lstrip("-").isdigit()]
         return []
 
+    @field_validator("max_total_downloads_bytes", mode="before")
+    @classmethod
+    def _parse_optional_int(cls, v: Any) -> int | None:
+        if v == "" or v is None:
+            return None
+        if isinstance(v, str):
+            v_clean = v.strip()
+            if not v_clean:
+                return None
+            return int(v_clean)
+        return int(v) if v is not None else None
+
+    @field_validator("search_api_link", "prowlarr_url", "prowlarr_api_key", "pixeldrain_api_key", "gofile_api_key", mode="before")
+    @classmethod
+    def _parse_optional_str(cls, v: Any) -> str | None:
+        if isinstance(v, str):
+            v_clean = v.strip()
+            return v_clean if v_clean else None
+        return v
+
     @field_validator("data_dir", "auth_dir", "log_dir")
     @classmethod
     def _ensure_dir(cls, v: Path) -> Path:

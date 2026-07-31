@@ -30,6 +30,15 @@ async def test_settings_authorized_user_ids_env_string(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_settings_empty_optional_env_vars(monkeypatch):
+    monkeypatch.setenv("MAX_TOTAL_DOWNLOADS_BYTES", "")
+    monkeypatch.setenv("SEARCH_API_LINK", "")
+    settings = Settings()
+    assert settings.max_total_downloads_bytes is None
+    assert settings.search_api_link is None
+
+
+@pytest.mark.asyncio
 async def test_settings_missing_credentials():
     settings = Settings(tg_api_id=0, tg_api_hash="", tg_bot_token="")
     with pytest.raises(ValueError, match="Missing required environment variables"):
