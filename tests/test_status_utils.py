@@ -5,10 +5,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import app.manager.status.status_utils as status_utils
 from app.db import JobStore
 from app.manager.core import queue_manager
 from app.manager.state import JobState
+from app.manager.status import status_utils
 from app.manager.status.status_utils import (
     get_all_active_task_adapters,
     get_system_stats_snapshot,

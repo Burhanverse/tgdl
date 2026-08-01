@@ -7,6 +7,8 @@ import time
 from collections.abc import Callable, Coroutine
 from html import escape
 from pathlib import Path
+from typing import Any
+
 from pyrogram import Client
 from pyrogram.errors import BadRequest, FloodPremiumWait, FloodWait, RPCError
 from pyrogram.types import (

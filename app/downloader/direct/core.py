@@ -199,7 +199,6 @@ class DirectDownloader:
 
             log.info("Downloading direct link %s to %s (size: %s bytes)", url, out_file, file_size)
 
-            from ...config import settings
             from ...pacing import DownloadThrottler
             throttler = DownloadThrottler(settings.global_download_speed_limit)
 

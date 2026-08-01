@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ...utils.media import VIDEO_EXT, split_binary
+from ...utils.media import VIDEO_EXT, split_binary, split_video_async
+
+log = logging.getLogger(__name__)
+
 
 async def split_video(video_path: Path, max_size_bytes: int) -> list[Path]:
     try:
@@ -14,6 +17,7 @@ async def split_video(video_path: Path, max_size_bytes: int) -> list[Path]:
         log.exception("Failed to split video using PyAV segmenter: %s", video_path.name)
 
     return await split_binary(video_path, max_size_bytes)
+
 
 async def handle_large_file(path: Path, split_large_files: bool) -> list[Path]:
     max_size = int(1.95 * 1024 * 1024 * 1024)

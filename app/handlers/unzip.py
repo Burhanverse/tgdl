@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
 
 from pyrogram import Client, filters
 from pyrogram.types import (
@@ -14,16 +13,6 @@ from pyrogram.types import (
     Message,
 )
 
-from ..utils.archive import (
-    ARCHIVE_EXT,
-    archive_session_store,
-    get_split_archive_info,
-    handle_multi_cancel_cb,
-    handle_multi_document,
-    handle_multi_start_cb,
-    normalize_split_archive_filenames,
-    start_multi_unzip_session,
-)
 from ..auth import authorized_filter
 from ..config import settings
 from ..manager import (
@@ -35,6 +24,16 @@ from ..manager import (
 from ..manager.status.compiler import (
     compile_split_prompt_text,
     compile_unzip_download_status_text,
+)
+from ..utils.archive import (
+    ARCHIVE_EXT,
+    archive_session_store,
+    get_split_archive_info,
+    handle_multi_cancel_cb,
+    handle_multi_document,
+    handle_multi_start_cb,
+    normalize_split_archive_filenames,
+    start_multi_unzip_session,
 )
 
 log = logging.getLogger(__name__)
@@ -309,7 +308,7 @@ async def run_split_archive_download_and_extract(
 
     from ..db import JobStatus
     parts: dict[int, Message] = session["parts"]
-    password: Optional[str] = session["password"]
+    password: str | None = session["password"]
     chat_id = status_msg.chat.id
     sorted_part_nums = sorted(parts.keys())
     total_parts = len(sorted_part_nums)
@@ -372,7 +371,6 @@ async def run_split_archive_download_and_extract(
         log.info("Split-unzip pipeline [%s/%s]: Downloading %s for job #%s...", idx, total_parts, part_filename, job.id)
         await part_msg.download(file_name=str(target_file), progress=on_part_download_progress)
 
-    from ..utils.archive import normalize_split_archive_filenames
     normalize_split_archive_filenames(dest_dir)
 
     log.info("Split-unzip pipeline: All %s parts downloaded for job #%s. Enqueuing for extraction...", total_parts, job.id)

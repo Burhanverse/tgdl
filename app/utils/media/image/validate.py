@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+
 def is_photo_invalid_for_telegram(file_path: Path) -> bool:
     try:
         import PIL.Image

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -10,6 +11,8 @@ from pyrogram.errors import FloodPremiumWait, FloodWait
 from pyrogram.types import Message
 
 from ...pacing import telegram_limiter
+
+log = logging.getLogger(__name__)
 
 _global_lock: asyncio.Lock | None = None
 

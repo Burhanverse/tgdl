@@ -149,8 +149,8 @@ class QueueManager:
         shutil.rmtree(job_state.dest_dir, ignore_errors=True)
         shutil.rmtree(job_state.dest_dir.parent / f"{job_state.dest_dir.name}_extracted", ignore_errors=True)
 
-        from ..utils.archive import archive_session_store
         from ..handlers.conversion_state import conversion_session_store
+        from ..utils.archive import archive_session_store
         from .status.messaging import _last_edit_times
 
         archive_session_store.pop_job(job_id)
@@ -830,19 +830,19 @@ class QueueManager:
 
     async def _process_upload(self, job_state: JobState) -> None:
         job_state.active_upload_task = asyncio.current_task()
+        from ..conversion import (
+            AUDIO_CONVERSION_EXT,
+            CONVERSION_EXT,
+            convert_audio_async,
+            convert_media_async,
+        )
+        from ..handlers.conversion_state import conversion_session_store
         from ..utils.archive import (
             ARCHIVE_EXT,
             ArchivePasswordRequired,
             archive_session_store,
             extract_archive_async,
             get_split_archive_info,
-        )
-        from ..handlers.conversion_state import conversion_session_store
-        from ..conversion import (
-            AUDIO_CONVERSION_EXT,
-            CONVERSION_EXT,
-            convert_audio_async,
-            convert_media_async,
         )
 
         job = job_state.job
@@ -977,7 +977,7 @@ class QueueManager:
                             job_state.web_mirror_info = dict(h_info)
                             job_state.trigger_event.set()
 
-                        host_links = await mirror_file_to_web_hosts(
+                        await mirror_file_to_web_hosts(
                             f,
                             hosts_info_callback=on_hosts_info_update
                         )
@@ -1840,8 +1840,8 @@ class QueueManager:
                 final_text = compile_job_status_text(db_job, job_state)
                 await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None, force=True)
 
-            from ..utils.archive import archive_session_store
             from ..handlers.conversion_state import conversion_session_store
+            from ..utils.archive import archive_session_store
             from .status.messaging import _last_edit_times
 
             archive_session_store.pop_job(job.id)

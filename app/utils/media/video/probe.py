@@ -7,10 +7,13 @@ from typing import Any
 
 import av
 
+log = logging.getLogger(__name__)
+
 VIDEO_EXT = {
     ".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".wmv",
     ".3gp", ".mpeg", ".mpg", ".m4v", ".ts", ".f4v"
 }
+
 
 def _probe_video_sync(video_path: Path) -> dict[str, Any]:
     info: dict[str, Any] = {"decodable": False}
@@ -34,6 +37,7 @@ def _probe_video_sync(video_path: Path) -> dict[str, Any]:
     except Exception as e:
         log.exception("PyAV failed to probe video %s: %s", video_path.name, e)
     return info
+
 
 async def probe_video(video_path: Path) -> dict[str, Any]:
     """Asynchronously probe video metadata using PyAV."""

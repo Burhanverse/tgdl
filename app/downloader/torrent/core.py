@@ -10,6 +10,7 @@ import socket
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ...config import settings
 from ..gallery_dl import DownloadResult

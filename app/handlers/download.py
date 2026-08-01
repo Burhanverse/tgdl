@@ -6,7 +6,6 @@ import logging
 import shutil
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from pyrogram import Client, filters
 from pyrogram.types import (
@@ -26,7 +25,7 @@ from ..uploader import upload_to_fileditch, upload_to_gofile, upload_to_pixeldra
 log = logging.getLogger(__name__)
 
 
-def _parse_flags(text_tokens: list[str]) -> tuple[bool, bool, bool, Optional[str], list[str]]:
+def _parse_flags(text_tokens: list[str]) -> tuple[bool, bool, bool, str | None, list[str]]:
     is_mirror = False
     upload_tg = False
     unzip = False
@@ -69,7 +68,7 @@ async def _create_and_enqueue_job(
     is_mirror: bool = False,
     upload_tg: bool = False,
     unzip: bool = False,
-    password: Optional[str] = None
+    password: str | None = None
 ) -> None:
     active_jobs = queue_manager.get_active_jobs_for_chat(chat_id)
     if settings.max_jobs_per_chat > 0 and len(active_jobs) >= settings.max_jobs_per_chat:

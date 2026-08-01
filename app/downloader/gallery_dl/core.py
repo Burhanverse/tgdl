@@ -194,7 +194,6 @@ async def run_with_progress(
             max_attempts=settings.gdl_max_run_retries,
         )
 
-        url_success = False
         while True:
             attempts += 1
             cmd = _build_cmd(
@@ -268,7 +267,6 @@ async def run_with_progress(
             last_stderr = last_stderr or "".join(stderr_buf)[-3000:]
 
             if returncode == 0:
-                url_success = True
                 success_count += 1
                 total_download_count += count
                 if on_progress:

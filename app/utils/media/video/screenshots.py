@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import av
-from PIL import Image
 
 log = logging.getLogger(__name__)
 
