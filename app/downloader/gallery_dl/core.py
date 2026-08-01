@@ -86,10 +86,11 @@ def _build_cmd(
         "-D", str(dest_dir),
         "--sleep", f"{settings.gdl_sleep_min}-{settings.gdl_sleep_max}",
         "--sleep-request", settings.gdl_sleep_request,
-        "--limit-rate", settings.gdl_limit_rate,
         "--retries", str(settings.gdl_retries),
         "-v",
     ])
+    if settings.global_download_speed_limit and str(settings.global_download_speed_limit).strip().lower() not in ("none", "0", ""):
+        cmd.extend(["--limit-rate", str(settings.global_download_speed_limit)])
     if extra_args:
         cmd.extend(extra_args)
     if links_file:

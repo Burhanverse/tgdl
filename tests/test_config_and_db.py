@@ -46,6 +46,17 @@ async def test_settings_missing_credentials():
 
 
 @pytest.mark.asyncio
+async def test_settings_global_download_speed_limit(monkeypatch):
+    monkeypatch.setenv("GLOBAL_DOWNLOAD_SPEED_LIMIT", "3M")
+    settings = Settings(_env_file=None)
+    assert settings.global_download_speed_limit == "3M"
+
+    monkeypatch.setenv("GLOBAL_DOWNLOAD_SPEED_LIMIT", "500K")
+    settings_custom = Settings(_env_file=None)
+    assert settings_custom.global_download_speed_limit == "500K"
+
+
+@pytest.mark.asyncio
 async def test_job_store(tmp_path: Path):
     db_path = tmp_path / "test_state.sqlite3"
     store = JobStore(db_path)

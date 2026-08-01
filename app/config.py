@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     gdl_sleep_min: float = 1.5
     gdl_sleep_max: float = 4.0
     gdl_sleep_request: str = "1-3"
-    gdl_limit_rate: str = "3M"
+    global_download_speed_limit: str | None = Field(default="20M", description="Global download rate limit for tools supporting it (e.g. 3M, 500K, None for unlimited)")
     gdl_retries: int = 4
 
     # --- adaptive backoff on rate-limit signals ---
