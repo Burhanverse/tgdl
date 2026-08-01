@@ -76,3 +76,22 @@ def test_get_system_stats_snapshot_caching(monkeypatch):
     stats3 = get_system_stats_snapshot(max_age_seconds=2.0)
     assert stats3["cpu_percent"] == 50.0
     assert cpu_call_count == 2
+
+
+def test_get_system_stats_snapshot_server_totals(monkeypatch):
+    monkeypatch.setattr(status_utils, "SERVER_BOOT_TIME", 200.0)
+    monkeypatch.setattr(status_utils.time, "time", lambda: 1200.0)
+
+    mock_net = MagicMock()
+    mock_net.bytes_sent = 1000000
+    mock_net.bytes_recv = 5000000
+    monkeypatch.setattr(status_utils.psutil, "net_io_counters", lambda: mock_net)
+
+    # Reset module level cache
+    monkeypatch.setattr(status_utils, "_system_stats_cache", None)
+    monkeypatch.setattr(status_utils, "_system_stats_timestamp", 0.0)
+
+    stats = get_system_stats_snapshot(max_age_seconds=2.0)
+    assert stats["uptime_seconds"] == 1000.0
+    assert stats["net_sent_bytes_since_start"] == 1000000
+    assert stats["net_recv_bytes_since_start"] == 5000000

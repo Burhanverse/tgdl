@@ -14,7 +14,11 @@ from ...telegram_helper.button_build import ButtonMaker
 log = logging.getLogger(__name__)
 
 BOT_START_TIME = time.time()
-NET_IO_BASELINE = psutil.net_io_counters()
+try:
+    SERVER_BOOT_TIME = psutil.boot_time()
+except Exception:
+    SERVER_BOOT_TIME = BOT_START_TIME
+
 SIZE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"]
 
 _system_stats_cache: dict[str, Any] | None = None
@@ -22,7 +26,7 @@ _system_stats_timestamp: float = 0.0
 
 
 def get_system_stats_snapshot(max_age_seconds: float = 2.0) -> dict[str, Any]:
-    """Return cached system stats snapshot or recompute if cache is older than max_age_seconds."""
+    """Return cached system stats snapshot (CPU, RAM, free disk space, server uptime, total server network traffic since boot) or recompute if cache is older than max_age_seconds."""
     global _system_stats_cache, _system_stats_timestamp
     now = time.time()
     if _system_stats_cache is not None and (now - _system_stats_timestamp) < max_age_seconds:
@@ -30,8 +34,8 @@ def get_system_stats_snapshot(max_age_seconds: float = 2.0) -> dict[str, Any]:
 
     try:
         net_counters = psutil.net_io_counters()
-        net_sent = max(0, net_counters.bytes_sent - NET_IO_BASELINE.bytes_sent)
-        net_recv = max(0, net_counters.bytes_recv - NET_IO_BASELINE.bytes_recv)
+        net_sent = max(0, net_counters.bytes_sent)
+        net_recv = max(0, net_counters.bytes_recv)
     except Exception:
         net_sent = 0
         net_recv = 0
@@ -51,7 +55,7 @@ def get_system_stats_snapshot(max_age_seconds: float = 2.0) -> dict[str, Any]:
     except Exception:
         disk_free = 0
 
-    uptime = max(0.0, now - BOT_START_TIME)
+    uptime = max(0.0, now - SERVER_BOOT_TIME)
 
     _system_stats_cache = {
         "cpu_percent": cpu,
@@ -143,8 +147,8 @@ def speed_string_to_bytes(size_text: str) -> float:
 def get_progress_bar_string(pct: float) -> str:
     p = min(max(pct, 0.0), 100.0)
     cFull = int(p // 8.33)  # 12 blocks total
-    p_str = "■" * cFull
-    p_str += "□" * (12 - cFull)
+    p_str = "●" * cFull
+    p_str += "○" * (12 - cFull)
     return f"[{p_str}]"
 
 
@@ -346,8 +350,11 @@ async def get_readable_message(
                 if status_value != status:
                     buttons.data_button(label, f"status {sid} st {status_value}")
             stats = get_system_stats_snapshot()
+            net_sent = get_readable_file_size(stats['net_sent_bytes_since_start'])
+            net_recv = get_readable_file_size(stats['net_recv_bytes_since_start'])
             msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
-            msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}"
+            msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>SERVER UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}\n"
+            msg += f"<b>TOTAL NET I/O:</b> ↑ {net_sent} | ↓ {net_recv}"
             return msg, buttons.build_menu(8)
 
     pages = (max(tasks_no, 1) + STATUS_LIMIT - 1) // STATUS_LIMIT
@@ -420,7 +427,10 @@ async def get_readable_message(
             button_markup.inline_keyboard.append(cancel_buttons[i : i + 4])
 
     stats = get_system_stats_snapshot()
+    net_sent = get_readable_file_size(stats['net_sent_bytes_since_start'])
+    net_recv = get_readable_file_size(stats['net_recv_bytes_since_start'])
     msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
-    msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}"
+    msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>SERVER UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}\n"
+    msg += f"<b>TOTAL NET I/O:</b> ↑ {net_sent} | ↓ {net_recv}"
 
     return msg, button_markup

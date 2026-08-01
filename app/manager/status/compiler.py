@@ -621,8 +621,8 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
         lines.append(
             f"**Host Resources**\n"
             f"> • **__CPU__**: __`{cpu_str}`__ | **__RAM__**: __`{ram_str}`__\n"
-            f"> • **__Disk Free__**: __`{disk_str}`__ | **__Uptime__**: __`{uptime_str}`__\n"
-            f"> • **__Net Up/Down__**: __`{net_sent_str} / {net_recv_str}`__"
+            f"> • **__Disk Free__**: __`{disk_str}`__ | **__Server Uptime__**: __`{uptime_str}`__\n"
+            f"> • **__Total Net I/O__**: __`↑ {net_sent_str} | ↓ {net_recv_str}`__"
         )
 
     return "\n".join(lines)

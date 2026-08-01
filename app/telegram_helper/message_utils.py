@@ -264,10 +264,13 @@ async def send_status_message(target_msg: Message, user_id: int = 0) -> None:
                 stats = get_system_stats_snapshot()
                 currentTime = get_readable_time(stats["uptime_seconds"])
                 free = get_readable_file_size(stats["disk_free_bytes"])
+                net_sent = get_readable_file_size(stats["net_sent_bytes_since_start"])
+                net_recv = get_readable_file_size(stats["net_recv_bytes_since_start"])
                 idle_text = (
                     "No Active Tasks!\n"
                     f"CPU: {stats['cpu_percent']}% | FREE: {free}\n"
-                    f"RAM: {stats['ram_percent']}% | UPTIME: {currentTime}"
+                    f"RAM: {stats['ram_percent']}% | SERVER UPTIME: {currentTime}\n"
+                    f"TOTAL NET I/O: ↑ {net_sent} | ↓ {net_recv}"
                 )
                 reply_msg = await send_message(target_msg, idle_text)
                 if isinstance(reply_msg, Message):
