@@ -1017,6 +1017,9 @@ class QueueManager:
                             # expected: file may have been moved or unlinked during check
                             continue
 
+                    from ..utils.filetype import ensure_extension
+                    f = await ensure_extension(f)
+
                     try:
                         f_rel = str(f.relative_to(extract_dir))
                     except ValueError:
@@ -1050,6 +1053,9 @@ class QueueManager:
                     except Exception:
                         # expected: file may have been moved or unlinked during check
                         continue
+
+                from ..utils.filetype import ensure_extension
+                f = await ensure_extension(f)
 
                 db_job = await self.store.get_job(job.id)
                 if db_job and db_job.status == JobStatus.CANCELLED:
