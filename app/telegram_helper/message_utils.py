@@ -255,21 +255,19 @@ async def send_status_message(target_msg: Message, user_id: int = 0) -> None:
         else:
             text, buttons = await get_readable_message(sid, is_user)
             if text is None:
-                # No active tasks
-                from psutil import cpu_percent, disk_usage, virtual_memory
-
-                from .status_utils import (
-                    BOT_START_TIME,
+                from ..manager.status.status_utils import (
                     get_readable_file_size,
                     get_readable_time,
+                    get_system_stats_snapshot,
                 )
 
-                currentTime = get_readable_time(time.time() - BOT_START_TIME)
-                free = get_readable_file_size(disk_usage("/").free)
+                stats = get_system_stats_snapshot()
+                currentTime = get_readable_time(stats["uptime_seconds"])
+                free = get_readable_file_size(stats["disk_free_bytes"])
                 idle_text = (
                     "No Active Tasks!\n"
-                    "CPU: " + f"{cpu_percent()}% | FREE: {free}\n"
-                    "RAM: " + f"{virtual_memory().percent}% | UPTIME: {currentTime}"
+                    f"CPU: {stats['cpu_percent']}% | FREE: {free}\n"
+                    f"RAM: {stats['ram_percent']}% | UPTIME: {currentTime}"
                 )
                 reply_msg = await send_message(target_msg, idle_text)
                 if isinstance(reply_msg, Message):

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     gofile_api_key: str | None = Field(default=None, description="API token for GoFile uploads")
     allow_shared_upload_keys: bool = Field(default=False, description="Allow falling back to global bot owner API keys for webhost uploads")
     allow_private_network_urls: bool = Field(default=False, description="Allow downloading URLs resolving to private/reserved IP ranges")
+    show_system_stats_on_job_card: bool = Field(default=True, description="Show host CPU/RAM/disk/network/uptime stats on individual job status cards")
 
 
     # --- Storage locations ---

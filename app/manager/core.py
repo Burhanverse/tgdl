@@ -52,6 +52,7 @@ class QueueManager:
         self.jobs: dict[str, JobState] = {}
         self.download_workers: list[asyncio.Task] = []
         self.upload_workers: list[asyncio.Task] = []
+        self.sweep_task: asyncio.Task | None = None
         self.is_running = False
         self.upload_delay_multiplier = 1.0
 
@@ -78,10 +79,16 @@ class QueueManager:
         for i in range(num_ul):
             self.upload_workers.append(asyncio.create_task(self._upload_worker_loop(i)))
             
+        from ..rate_limiter import telegram_limiter
+        self.sweep_task = asyncio.create_task(telegram_limiter.start_periodic_sweep())
+
         log.info("Queue manager started with %s download and %s upload workers", num_dl, num_ul)
 
     async def stop(self) -> None:
         self.is_running = False
+        if self.sweep_task:
+            self.sweep_task.cancel()
+            self.sweep_task = None
         for w in self.download_workers:
             w.cancel()
         for w in self.upload_workers:
@@ -138,6 +145,37 @@ class QueueManager:
         job_state.trigger_event.set()
         shutil.rmtree(job_state.dest_dir, ignore_errors=True)
         shutil.rmtree(job_state.dest_dir.parent / f"{job_state.dest_dir.name}_extracted", ignore_errors=True)
+
+        from ..archive import (
+            _archive_choices,
+            _archive_events,
+            _archive_ids,
+            _extracted_archives,
+            _extracted_file_names,
+        )
+        from ..conversion import (
+            _conversion_choices,
+            _conversion_events,
+            _conversion_ids,
+            _converted_files,
+        )
+        from .status.messaging import _last_edit_times
+
+        _archive_ids.pop(job_id, None)
+        _archive_events.pop(job_id, None)
+        _archive_choices.pop(job_id, None)
+        _extracted_archives.pop(job_id, None)
+        _extracted_file_names.pop(job_id, None)
+        _conversion_ids.pop(job_id, None)
+        _conversion_events.pop(job_id, None)
+        _conversion_choices.pop(job_id, None)
+        _converted_files.pop(job_id, None)
+        _password_prompt_events.pop(job_id, None)
+        to_remove = [mid for mid, info in _password_prompt_messages.items() if info[0] == job_id]
+        for mid in to_remove:
+            _password_prompt_messages.pop(mid, None)
+        if job_state.msg_id:
+            _last_edit_times.pop((job_state.job.chat_id, job_state.msg_id), None)
         self.jobs.pop(job_id, None)
         return True
 
@@ -1830,6 +1868,8 @@ class QueueManager:
                 _converted_files,
             )
 
+            from .status.messaging import _last_edit_times
+
             _archive_ids.pop(job.id, None)
             _archive_events.pop(job.id, None)
             _archive_choices.pop(job.id, None)
@@ -1843,6 +1883,8 @@ class QueueManager:
             to_remove = [mid for mid, info in _password_prompt_messages.items() if info[0] == job.id]
             for mid in to_remove:
                 _password_prompt_messages.pop(mid, None)
+            if job_state.msg_id:
+                _last_edit_times.pop((chat_id, job_state.msg_id), None)
             self.jobs.pop(job.id, None)
 
 

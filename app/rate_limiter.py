@@ -55,6 +55,10 @@ class Backoff:
         return self.attempt >= self.max_attempts
 
 
+SWEEP_INTERVAL_SECONDS: float = 3600.0
+STALENESS_THRESHOLD_SECONDS: float = 86400.0
+
+
 class TelegramRateLimiter:
     """Async Rate Limiter enforcing Telegram API limits:
 
@@ -145,6 +149,71 @@ class TelegramRateLimiter:
         else:
             self._global_floodwait_until = max(self._global_floodwait_until, until)
             log.warning("Registered global FloodWait of %ss", seconds)
+
+    def cleanup_stale_chats(
+        self,
+        active_chat_ids: set[int] | None = None,
+        staleness_threshold: float = STALENESS_THRESHOLD_SECONDS,
+    ) -> int:
+        """Evict pacing state for chats that haven't been active for longer than staleness_threshold and have no active jobs."""
+        if active_chat_ids is None:
+            active_chat_ids = set()
+
+        now = time.time()
+        all_chat_ids = (
+            set(self._chat_locks.keys())
+            | set(self._chat_last_call.keys())
+            | set(self._chat_last_upload.keys())
+            | set(self._chat_floodwait_until.keys())
+        )
+
+        evicted_count = 0
+        for chat_id in all_chat_ids:
+            if chat_id in active_chat_ids:
+                continue
+
+            last_call = self._chat_last_call.get(chat_id, 0.0)
+            last_upload = self._chat_last_upload.get(chat_id, 0.0)
+            flood_until = self._chat_floodwait_until.get(chat_id, 0.0)
+
+            most_recent = max(last_call, last_upload, flood_until)
+            if now - most_recent > staleness_threshold:
+                lock = self._chat_locks.get(chat_id)
+                if lock and lock.locked():
+                    continue
+
+                self._chat_locks.pop(chat_id, None)
+                self._chat_last_call.pop(chat_id, None)
+                self._chat_last_upload.pop(chat_id, None)
+                self._chat_floodwait_until.pop(chat_id, None)
+                evicted_count += 1
+
+        if evicted_count > 0:
+            log.info("Cleaned up %d stale chat entries from TelegramRateLimiter", evicted_count)
+        return evicted_count
+
+    async def start_periodic_sweep(
+        self,
+        sweep_interval: float = SWEEP_INTERVAL_SECONDS,
+        staleness_threshold: float = STALENESS_THRESHOLD_SECONDS,
+    ) -> None:
+        """Background loop running periodic sweep of stale chat rate-limiter states."""
+        while True:
+            await asyncio.sleep(sweep_interval)
+            try:
+                from .manager.core import queue_manager
+                active_chat_ids = (
+                    {js.job.chat_id for js in queue_manager.jobs.values()}
+                    if queue_manager
+                    else set()
+                )
+            except Exception:
+                active_chat_ids = set()
+
+            self.cleanup_stale_chats(
+                active_chat_ids=active_chat_ids,
+                staleness_threshold=staleness_threshold,
+            )
 
 
 # Global rate limiter instance for Telegram API calls

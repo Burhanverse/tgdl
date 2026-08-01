@@ -600,4 +600,29 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
                     f"> • **__Speed__**: __`{ul_speed_str}/s`__"
                 )
 
+    from ...config import settings
+
+    if settings.show_system_stats_on_job_card:
+        if lines:
+            lines.append("")
+        from .status_utils import (
+            get_readable_file_size,
+            get_readable_time,
+            get_system_stats_snapshot,
+        )
+        stats = get_system_stats_snapshot()
+        cpu_str = f"{stats['cpu_percent']}%"
+        ram_str = f"{stats['ram_percent']}%"
+        disk_str = get_readable_file_size(stats['disk_free_bytes'])
+        uptime_str = get_readable_time(stats['uptime_seconds'])
+        net_sent_str = get_readable_file_size(stats['net_sent_bytes_since_start'])
+        net_recv_str = get_readable_file_size(stats['net_recv_bytes_since_start'])
+
+        lines.append(
+            f"**Host Resources**\n"
+            f"> • **__CPU__**: __`{cpu_str}`__ | **__RAM__**: __`{ram_str}`__\n"
+            f"> • **__Disk Free__**: __`{disk_str}`__ | **__Uptime__**: __`{uptime_str}`__\n"
+            f"> • **__Net Up/Down__**: __`{net_sent_str} / {net_recv_str}`__"
+        )
+
     return "\n".join(lines)

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 import pytest
 
 from app.db import JobStore
 from app.manager.core import queue_manager
 from app.manager.state import JobState
-from app.manager.status.status_utils import get_all_active_task_adapters
+import app.manager.status.status_utils as status_utils
+from app.manager.status.status_utils import (
+    get_all_active_task_adapters,
+    get_system_stats_snapshot,
+)
 
 
 @pytest.mark.asyncio
@@ -33,3 +38,41 @@ async def test_get_all_active_task_adapters(monkeypatch, tmp_path: Path):
     finally:
         queue_manager.jobs.pop(job.id, None)
         await test_store.close()
+
+
+def test_get_system_stats_snapshot_caching(monkeypatch):
+    current_clock = 1000.0
+    cpu_call_count = 0
+
+    def mock_time():
+        return current_clock
+
+    def mock_cpu_percent(interval=None):
+        nonlocal cpu_call_count
+        cpu_call_count += 1
+        return 10.0 if cpu_call_count == 1 else 50.0
+
+    monkeypatch.setattr(status_utils.time, "time", mock_time)
+    monkeypatch.setattr(status_utils.psutil, "cpu_percent", mock_cpu_percent)
+    
+    # Reset module level cache
+    monkeypatch.setattr(status_utils, "_system_stats_cache", None)
+    monkeypatch.setattr(status_utils, "_system_stats_timestamp", 0.0)
+
+    # First call - computes and caches (cpu_percent == 10.0)
+    stats1 = get_system_stats_snapshot(max_age_seconds=2.0)
+    assert stats1["cpu_percent"] == 10.0
+    assert cpu_call_count == 1
+
+    # Second call within max_age_seconds (clock advanced by 1s) - returns cached dict
+    current_clock = 1001.0
+    stats2 = get_system_stats_snapshot(max_age_seconds=2.0)
+    assert stats2["cpu_percent"] == 10.0
+    assert cpu_call_count == 1
+    assert stats2 is stats1
+
+    # Third call after max_age_seconds (clock advanced past 2s) - recomputes
+    current_clock = 1003.0
+    stats3 = get_system_stats_snapshot(max_age_seconds=2.0)
+    assert stats3["cpu_percent"] == 50.0
+    assert cpu_call_count == 2

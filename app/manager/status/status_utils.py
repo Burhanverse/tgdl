@@ -7,14 +7,62 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from psutil import cpu_percent, disk_usage, virtual_memory
+import psutil
 
 from ...telegram_helper.button_build import ButtonMaker
 
 log = logging.getLogger(__name__)
 
 BOT_START_TIME = time.time()
+NET_IO_BASELINE = psutil.net_io_counters()
 SIZE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"]
+
+_system_stats_cache: dict[str, Any] | None = None
+_system_stats_timestamp: float = 0.0
+
+
+def get_system_stats_snapshot(max_age_seconds: float = 2.0) -> dict[str, Any]:
+    """Return cached system stats snapshot or recompute if cache is older than max_age_seconds."""
+    global _system_stats_cache, _system_stats_timestamp
+    now = time.time()
+    if _system_stats_cache is not None and (now - _system_stats_timestamp) < max_age_seconds:
+        return _system_stats_cache
+
+    try:
+        net_counters = psutil.net_io_counters()
+        net_sent = max(0, net_counters.bytes_sent - NET_IO_BASELINE.bytes_sent)
+        net_recv = max(0, net_counters.bytes_recv - NET_IO_BASELINE.bytes_recv)
+    except Exception:
+        net_sent = 0
+        net_recv = 0
+
+    try:
+        cpu = psutil.cpu_percent(interval=None)
+    except Exception:
+        cpu = 0.0
+
+    try:
+        ram = psutil.virtual_memory().percent
+    except Exception:
+        ram = 0.0
+
+    try:
+        disk_free = psutil.disk_usage("/").free
+    except Exception:
+        disk_free = 0
+
+    uptime = max(0.0, now - BOT_START_TIME)
+
+    _system_stats_cache = {
+        "cpu_percent": cpu,
+        "ram_percent": ram,
+        "disk_free_bytes": disk_free,
+        "uptime_seconds": uptime,
+        "net_sent_bytes_since_start": net_sent,
+        "net_recv_bytes_since_start": net_recv,
+    }
+    _system_stats_timestamp = now
+    return _system_stats_cache
 
 
 class MirrorStatus:
@@ -297,8 +345,9 @@ async def get_readable_message(
             for label, status_value in list(STATUSES.items()):
                 if status_value != status:
                     buttons.data_button(label, f"status {sid} st {status_value}")
-            msg += f"<b>CPU:</b> {cpu_percent()}% | <b>FREE:</b> {get_readable_file_size(disk_usage('/').free)}\n"
-            msg += f"<b>RAM:</b> {virtual_memory().percent}% | <b>UPTIME:</b> {get_readable_time(time.time() - BOT_START_TIME)}"
+            stats = get_system_stats_snapshot()
+            msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
+            msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}"
             return msg, buttons.build_menu(8)
 
     pages = (max(tasks_no, 1) + STATUS_LIMIT - 1) // STATUS_LIMIT
@@ -370,7 +419,8 @@ async def get_readable_message(
         for i in range(0, len(cancel_buttons), 4):
             button_markup.inline_keyboard.append(cancel_buttons[i : i + 4])
 
-    msg += f"<b>CPU:</b> {cpu_percent()}% | <b>FREE:</b> {get_readable_file_size(disk_usage('/').free)}\n"
-    msg += f"<b>RAM:</b> {virtual_memory().percent}% | <b>UPTIME:</b> {get_readable_time(time.time() - BOT_START_TIME)}"
+    stats = get_system_stats_snapshot()
+    msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
+    msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}"
 
     return msg, button_markup
