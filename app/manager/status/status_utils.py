@@ -225,7 +225,7 @@ async def get_all_active_task_adapters() -> list[TaskStatusAdapter]:
     active_ids = set()
 
     # Active running tasks in queue manager
-    for job_id, job_state in list(queue_manager.active_jobs.items()):
+    for job_id, job_state in list(queue_manager.jobs.items()):
         job = await store.get_job(job_id)
         if job:
             tasks.append(TaskStatusAdapter(job, job_state))
