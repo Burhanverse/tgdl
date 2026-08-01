@@ -3,16 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ...utils.media.file_split import split_binary
-from ...utils.media.video.split import split_video_async
-
-log = logging.getLogger(__name__)
-
-# Video extensions to decide splitting method
-VIDEO_EXT = {
-    ".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".wmv",
-    ".3gp", ".mpeg", ".mpg", ".m4v", ".ts", ".f4v"
-}
+from ...utils.media import VIDEO_EXT, split_binary
 
 async def split_video(video_path: Path, max_size_bytes: int) -> list[Path]:
     try:

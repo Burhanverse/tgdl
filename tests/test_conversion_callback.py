@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.db import JobStore
 from app.handlers.callbacks import register_choice_callback_handlers
 from app.handlers.conversion_state import conversion_session_store
+from app.manager.core import QueueManager
+from app.manager.state import JobState
+from app.utils.archive import archive_session_store
 
 
 @pytest.mark.asyncio
@@ -98,5 +101,74 @@ async def test_conversion_choice_callback_end_to_end(tmp_path: Path):
     assert evt.is_set() is True
     mock_query.answer.assert_called_once()
     mock_message.edit_text.assert_called_once()
+
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_process_upload_finally_cleanup_no_importerror(tmp_path: Path):
+    """Regression test: Ensures _process_upload's finally block completes without ImportError and evicts qm.jobs."""
+    db_path = tmp_path / "test_finally_cleanup.sqlite3"
+    store = JobStore(db_path)
+    await store.open()
+
+    qm = QueueManager()
+    qm.store = store
+    qm.client = AsyncMock()
+
+    job = await store.create_job(chat_id=999, url="https://example.com/test.zip")
+    dest_dir = tmp_path / "downloads" / job.download_dir
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    job_state = JobState(job=job, dest_dir=dest_dir)
+    qm.jobs[job.id] = job_state
+
+    # Populate session stores
+    archive_session_store.register_archive_id(job.id, "1", "data.zip")
+    conversion_session_store.register_conversion_id(job.id, "1", "audio.flac")
+
+    assert job.id in qm.jobs
+
+    # Execute _process_upload, which will complete and hit the finally block
+    await qm._process_upload(job_state)
+
+    # Assert job evicted from qm.jobs and session stores cleared
+    assert job.id not in qm.jobs
+    assert not archive_session_store.contains_job(job.id)
+    assert not conversion_session_store.contains_job(job.id)
+
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_automatic_video_conversion_no_nameerror(tmp_path: Path):
+    """Regression test: Ensures automatic video conversion code path uses conversion_session_store without NameError."""
+    db_path = tmp_path / "test_video_conv.sqlite3"
+    store = JobStore(db_path)
+    await store.open()
+
+    qm = QueueManager()
+    qm.store = store
+    qm.client = AsyncMock()
+
+    job = await store.create_job(chat_id=888, url="https://example.com/video.mkv")
+    dest_dir = tmp_path / "downloads" / job.download_dir
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create dummy video file with CONVERSION_EXT (.mkv)
+    dummy_video = dest_dir / "sample.mkv"
+    dummy_video.write_bytes(b"dummy video data")
+
+    job_state = JobState(job=job, dest_dir=dest_dir)
+    qm.jobs[job.id] = job_state
+
+    # Mock conversion and upload functions to avoid real FFmpeg / Telegram calls
+    with patch("app.manager.core.convert_video_async", new=AsyncMock(return_value=True)), \
+         patch("app.manager.core.handle_large_file", new=AsyncMock(side_effect=lambda f, s: [f])), \
+         patch("app.uploader.telegram.core.upload_file", new=AsyncMock(return_value=True)):
+        await qm._process_upload(job_state)
+
+    # Assert conversion_session_store contains converted file name and no NameError occurred
+    assert "sample.mkv" in conversion_session_store.get_converted_files(job.id)
 
     await store.close()

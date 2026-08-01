@@ -1379,11 +1379,8 @@ class QueueManager:
 
                 is_incompatible = f.suffix.lower() in CONVERSION_EXT
                 if is_incompatible:
-                    if job.id not in _converted_files:
-                        _converted_files[job.id] = set()
-
-                    if f.name not in _converted_files[job.id]:
-                        _converted_files[job.id].add(f.name)
+                    if f.name not in conversion_session_store.get_converted_files(job.id):
+                        conversion_session_store.add_converted_file(job.id, f.name)
 
                         log.info("Automatically converting video %s to MP4 for job %s", f.name, job.id)
                         output_name = f.stem + "_converted.mp4"
@@ -1844,19 +1841,11 @@ class QueueManager:
                 await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None, force=True)
 
             from ..utils.archive import archive_session_store
-            from ..conversion import (
-                _conversion_choices,
-                _conversion_events,
-                _conversion_ids,
-                _converted_files,
-            )
+            from ..handlers.conversion_state import conversion_session_store
             from .status.messaging import _last_edit_times
 
             archive_session_store.pop_job(job.id)
-            _conversion_ids.pop(job.id, None)
-            _conversion_events.pop(job.id, None)
-            _conversion_choices.pop(job.id, None)
-            _converted_files.pop(job.id, None)
+            conversion_session_store.pop_job(job.id)
             _password_prompt_events.pop(job.id, None)
             to_remove = [mid for mid, info in _password_prompt_messages.items() if info[0] == job.id]
             for mid in to_remove:

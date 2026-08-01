@@ -9,6 +9,7 @@ from .image import (
     is_photo_invalid_for_telegram_async,
 )
 from .video import (
+    VIDEO_EXT,
     convert_video_async,
     extract_video_thumbnail,
     probe_video,
@@ -17,6 +18,7 @@ from .video import (
 )
 
 __all__ = [
+    "VIDEO_EXT",
     "convert_audio_async",
     "convert_image_to_png_async",
     "convert_video_async",

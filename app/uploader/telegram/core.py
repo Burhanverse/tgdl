@@ -24,6 +24,7 @@ from tenacity import (
 from ...config import settings
 from ...pacing import telegram_limiter
 from ...utils.media import (
+    VIDEO_EXT,
     convert_image_to_png_async,
     extract_image_thumbnail,
     extract_video_thumbnail,
@@ -38,10 +39,6 @@ log = logging.getLogger(__name__)
 IMAGE_EXT = {
     ".jpg", ".jpeg", ".png", ".webp", ".gif",
     ".bmp", ".tiff", ".heic", ".heif", ".ico"
-}
-VIDEO_EXT = {
-    ".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".wmv",
-    ".3gp", ".mpeg", ".mpg", ".m4v", ".ts", ".f4v"
 }
 AUDIO_EXT = {
     ".mp3", ".flac", ".m4a", ".aac", ".opus", ".ogg", ".wav",
