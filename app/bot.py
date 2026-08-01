@@ -9,7 +9,7 @@ from pyrogram import Client, idle
 
 from .config import settings
 from .handlers import register_all_handlers
-from .telegram_helper import delete_status
+from .utils.telegram import delete_status
 
 log = logging.getLogger("tgdl_bot")
 

@@ -150,19 +150,11 @@ class QueueManager:
         shutil.rmtree(job_state.dest_dir.parent / f"{job_state.dest_dir.name}_extracted", ignore_errors=True)
 
         from ..utils.archive import archive_session_store
-        from ..conversion import (
-            _conversion_choices,
-            _conversion_events,
-            _conversion_ids,
-            _converted_files,
-        )
+        from ..handlers.conversion_state import conversion_session_store
         from .status.messaging import _last_edit_times
 
         archive_session_store.pop_job(job_id)
-        _conversion_ids.pop(job_id, None)
-        _conversion_events.pop(job_id, None)
-        _conversion_choices.pop(job_id, None)
-        _converted_files.pop(job_id, None)
+        conversion_session_store.pop_job(job_id)
         _password_prompt_events.pop(job_id, None)
         to_remove = [mid for mid, info in _password_prompt_messages.items() if info[0] == job_id]
         for mid in to_remove:
@@ -845,13 +837,10 @@ class QueueManager:
             extract_archive_async,
             get_split_archive_info,
         )
+        from ..handlers.conversion_state import conversion_session_store
         from ..conversion import (
             AUDIO_CONVERSION_EXT,
             CONVERSION_EXT,
-            _conversion_choices,
-            _conversion_events,
-            _conversion_ids,
-            _converted_files,
             convert_audio_async,
             convert_media_async,
         )
@@ -1441,19 +1430,17 @@ class QueueManager:
                 # Audio format conversion & processing using Pedalboard
                 is_audio_incompatible = f.suffix.lower() in AUDIO_CONVERSION_EXT
                 if is_audio_incompatible:
-                    if job.id not in _conversion_ids:
-                        _conversion_ids[job.id] = {}
                     conv_id = None
-                    for cid, fname in _conversion_ids[job.id].items():
+                    for cid, fname in conversion_session_store.get_conversion_ids(job.id).items():
                         if fname == f.name:
                             conv_id = cid
                             break
                     if conv_id is None:
-                        conv_id = str(len(_conversion_ids[job.id]) + 1)
-                        _conversion_ids[job.id][conv_id] = f.name
+                        conv_id = conversion_session_store.get_next_conversion_id(job.id)
+                        conversion_session_store.register_conversion_id(job.id, conv_id, f.name)
 
-                    choice = _conversion_choices.get(job.id, {}).get(conv_id)
-                    if choice != "orig" and f.name not in _converted_files.get(job.id, set()):
+                    choice = conversion_session_store.get_choice(job.id, conv_id)
+                    if choice != "orig" and f.name not in conversion_session_store.get_converted_files(job.id):
                         conversion_prompt_msg_id = None
                         if choice is None:
                             keyboard = InlineKeyboardMarkup([
@@ -1469,24 +1456,21 @@ class QueueManager:
                             prompt_msg = await safe_send(self.client, chat_id, prompt_text, reply_markup=keyboard)
                             if prompt_msg:
                                 conversion_prompt_msg_id = prompt_msg.id
-
-                                if job.id not in _conversion_events:
-                                    _conversion_events[job.id] = {}
-                                _conversion_events[job.id][conv_id] = asyncio.Event()
+                                evt = conversion_session_store.create_event(job.id, conv_id)
 
                                 start_t = time.time()
-                                while not job_state.uploader_done.is_set() and not _conversion_events[job.id][conv_id].is_set():
+                                while not job_state.uploader_done.is_set() and not evt.is_set():
                                     if time.time() - start_t >= 15.0:
                                         break
                                     try:
-                                        await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
+                                        await asyncio.wait_for(evt.wait(), timeout=2.0)
                                     except TimeoutError:
                                         # expected: timeout waiting for audio conversion prompt event tick
                                         pass
                                 if job_state.uploader_done.is_set():
                                     return
 
-                                if not _conversion_events[job.id][conv_id].is_set():
+                                if not evt.is_set():
                                     if conversion_prompt_msg_id:
                                         try:
                                             await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
@@ -1494,19 +1478,13 @@ class QueueManager:
                                             # expected: prompt message already deleted
                                             pass
                                         conversion_prompt_msg_id = None
-                                    if job.id not in _conversion_choices:
-                                        _conversion_choices[job.id] = {}
-                                    _conversion_choices[job.id][conv_id] = "orig"
+                                    conversion_session_store.set_choice(job.id, conv_id, "orig")
                             else:
-                                if job.id not in _conversion_choices:
-                                    _conversion_choices[job.id] = {}
-                                _conversion_choices[job.id][conv_id] = "orig"
-                            choice = _conversion_choices.get(job.id, {}).get(conv_id)
+                                conversion_session_store.set_choice(job.id, conv_id, "orig")
+                            choice = conversion_session_store.get_choice(job.id, conv_id)
 
                         if choice == "mp3":
-                            if job.id not in _converted_files:
-                                _converted_files[job.id] = set()
-                            _converted_files[job.id].add(f.name)
+                            conversion_session_store.add_converted_file(job.id, f.name)
 
                             log.info("Converting/processing audio %s to MP3 for job %s", f.name, job.id)
                             output_name = f.stem + "_converted.mp3"
@@ -1571,9 +1549,7 @@ class QueueManager:
                                 if fail_msg:
                                     asyncio.create_task(delete_fail_msg(fail_msg))
 
-                                if job.id not in _conversion_choices:
-                                    _conversion_choices[job.id] = {}
-                                _conversion_choices[job.id][conv_id] = "orig"
+                                conversion_session_store.set_choice(job.id, conv_id, "orig")
 
                         if choice == "orig" and conversion_prompt_msg_id:
                             try:

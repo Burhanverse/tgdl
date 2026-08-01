@@ -13,15 +13,17 @@ from ..manager.status import (
     get_readable_file_size,
     get_task_by_gid,
 )
-from ..telegram_helper import (
+from ..utils.telegram import (
     ButtonMaker,
     delete_message,
     edit_message,
-    intervals,
     send_status_message,
+    update_status_message,
+)
+from ..utils.telegram.message_utils import (
+    intervals,
     status_dict,
     task_dict_lock,
-    update_status_message,
 )
 
 log = logging.getLogger(__name__)

@@ -7,12 +7,8 @@ from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 
 from ..utils.archive import archive_session_store
+from .conversion_state import conversion_session_store
 from ..auth import authorized_filter
-from ..conversion import (
-    _conversion_choices,
-    _conversion_events,
-    _conversion_ids,
-)
 from ..manager import queue_manager, store
 from ..manager.status.compiler import (
     compile_archive_choice_status_text,
@@ -116,14 +112,10 @@ def register_choice_callback_handlers(app: Client) -> None:
         else:
             choice_str = "Upload Original Document"
 
-        if not isinstance(_conversion_choices.get(job_id), dict):
-            _conversion_choices[job_id] = {}
-        _conversion_choices[job_id][conv_id] = choice
+        conversion_session_store.set_choice(job_id, conv_id, choice)
+        conversion_session_store.set_event(job_id, conv_id)
 
-        if job_id in _conversion_events and conv_id in _conversion_events[job_id]:
-            _conversion_events[job_id][conv_id].set()
-
-        filename = _conversion_ids.get(job_id, {}).get(conv_id, conv_id)
+        filename = conversion_session_store.get_conversion_filename(job_id, conv_id) or conv_id
         await query.answer(f"Selected: {choice_str}")
 
         try:

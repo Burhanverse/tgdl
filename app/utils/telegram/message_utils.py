@@ -9,7 +9,7 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram.types import InlineKeyboardMarkup, LinkPreviewOptions, Message
 
-from ..pacing import telegram_limiter
+from ...pacing import telegram_limiter
 
 log = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ async def update_status_message(sid: int, force: bool = False) -> None:
     if intervals.get("stopAll"):
         return
 
-    from ..manager.status.status_utils import get_readable_message
+    from ...manager.status.status_utils import get_readable_message
 
     async with task_dict_lock:
         if sid not in status_dict:
@@ -216,7 +216,7 @@ async def send_status_message(target_msg: Message, user_id: int = 0) -> None:
     if intervals.get("stopAll"):
         return
 
-    from ..manager.status.status_utils import get_readable_message
+    from ...manager.status.status_utils import get_readable_message
 
     sid = user_id or target_msg.chat.id
     is_user = bool(user_id)
@@ -255,7 +255,7 @@ async def send_status_message(target_msg: Message, user_id: int = 0) -> None:
         else:
             text, buttons = await get_readable_message(sid, is_user)
             if text is None:
-                from ..manager.status.status_utils import (
+                from ...manager.status.status_utils import (
                     get_readable_file_size,
                     get_readable_time,
                     get_system_stats_snapshot,
