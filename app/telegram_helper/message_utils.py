@@ -270,7 +270,7 @@ async def send_status_message(target_msg: Message, user_id: int = 0) -> None:
                     "No Active Tasks!\n"
                     f"CPU: {stats['cpu_percent']}% | FREE: {free}\n"
                     f"RAM: {stats['ram_percent']}% | SERVER UPTIME: {currentTime}\n"
-                    f"TOTAL NET I/O: ↑ {net_sent} | ↓ {net_recv}"
+                    f"NET I/O: ↑ {net_sent} | ↓ {net_recv}"
                 )
                 reply_msg = await send_message(target_msg, idle_text)
                 if isinstance(reply_msg, Message):

@@ -352,9 +352,10 @@ async def get_readable_message(
             stats = get_system_stats_snapshot()
             net_sent = get_readable_file_size(stats['net_sent_bytes_since_start'])
             net_recv = get_readable_file_size(stats['net_recv_bytes_since_start'])
-            msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
-            msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>SERVER UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}\n"
-            msg += f"<b>TOTAL NET I/O:</b> ↑ {net_sent} | ↓ {net_recv}"
+            msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>RAM:</b> {stats['ram_percent']}%\n"
+            msg += f"<b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
+            msg += f"<b>SERVER UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}\n"
+            msg += f"<b>NET I/O:</b> ↑ {net_sent} | ↓ {net_recv}"
             return msg, buttons.build_menu(8)
 
     pages = (max(tasks_no, 1) + STATUS_LIMIT - 1) // STATUS_LIMIT
@@ -429,8 +430,9 @@ async def get_readable_message(
     stats = get_system_stats_snapshot()
     net_sent = get_readable_file_size(stats['net_sent_bytes_since_start'])
     net_recv = get_readable_file_size(stats['net_recv_bytes_since_start'])
-    msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
-    msg += f"<b>RAM:</b> {stats['ram_percent']}% | <b>SERVER UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}\n"
-    msg += f"<b>TOTAL NET I/O:</b> ↑ {net_sent} | ↓ {net_recv}"
+    msg += f"<b>CPU:</b> {stats['cpu_percent']}% | <b>RAM:</b> {stats['ram_percent']}%\n"
+    msg += f"<b>FREE:</b> {get_readable_file_size(stats['disk_free_bytes'])}\n"
+    msg += f"<b>SERVER UPTIME:</b> {get_readable_time(stats['uptime_seconds'])}\n"
+    msg += f"<b>NET I/O:</b> ↑ {net_sent} | ↓ {net_recv}"
 
     return msg, button_markup
