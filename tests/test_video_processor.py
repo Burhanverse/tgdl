@@ -4,10 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.uploader.telegram.core import TelegramUploader
-from app.uploader.video.processor import (
-    _probe_video_sync,
+from app.utils.media.video.probe import _probe_video_sync, probe_video
+from app.utils.media.video.screenshots import (
     _take_screenshots_sync,
-    probe_video,
     take_screenshots,
 )
 

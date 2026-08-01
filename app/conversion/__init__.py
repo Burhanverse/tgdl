@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from .audio import convert_audio_async
-from .image import convert_image_to_png_async
+from ..utils.media import (
+    convert_audio_async,
+    convert_image_to_png_async,
+    convert_video_async,
+    split_video_async,
+)
 from .telegram import (
     _conversion_choices,
     _conversion_events,
@@ -9,7 +13,6 @@ from .telegram import (
     _converted_files,
     handle_conversion_choice,
 )
-from .video import convert_video_async, split_video_async
 
 CONVERSION_EXT = {
     ".ts", ".flv", ".avi", ".wmv", ".asf", ".mkv", ".m4v",

@@ -7,7 +7,7 @@ import pytest
 
 from app.db import Job
 from app.manager.state import JobState
-from app.uploader.split import split_binary
+from app.utils.media.file_split import split_binary
 
 
 def test_jobstate_split_parts_tracking():

@@ -7,9 +7,6 @@ import time
 from collections.abc import Callable, Coroutine
 from html import escape
 from pathlib import Path
-from typing import Any
-
-import av
 from pyrogram import Client
 from pyrogram.errors import BadRequest, FloodPremiumWait, FloodWait, RPCError
 from pyrogram.types import (
@@ -25,9 +22,16 @@ from tenacity import (
 )
 
 from ...config import settings
-from ...conversion import convert_image_to_png_async
 from ...pacing import telegram_limiter
-from ..video import extract_video_thumbnail, probe_video, take_screenshots
+from ...utils.media import (
+    convert_image_to_png_async,
+    extract_image_thumbnail,
+    extract_video_thumbnail,
+    is_photo_invalid_for_telegram_async,
+    probe_audio_async,
+    probe_video,
+    take_screenshots,
+)
 
 log = logging.getLogger(__name__)
 
@@ -52,66 +56,6 @@ class UploadTooLarge(Exception):
 
 def natural_sort_key(s: str) -> list[int | str]:
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', str(s))]
-
-
-def probe_audio(audio_path: Path) -> dict[str, Any]:
-    info = {"duration": 0, "artist": "", "title": ""}
-    try:
-        with av.open(str(audio_path)) as container:
-            if container.duration:
-                info["duration"] = int(round(container.duration / 1000000.0))
-            meta = container.metadata or {}
-            info["artist"] = meta.get("artist") or meta.get("ARTIST") or ""
-            info["title"] = meta.get("title") or meta.get("TITLE") or audio_path.stem
-    except Exception as e:
-        log.warning("PyAV failed to probe audio %s: %s", audio_path.name, e)
-    return info
-
-
-def is_photo_invalid_for_telegram(file_path: Path) -> bool:
-    try:
-        import PIL.Image
-        with PIL.Image.open(file_path) as img:
-            if img.mode in ("CMYK", "P", "1"):
-                return True
-            w, h = img.size
-            if w <= 0 or h <= 0:
-                return True
-            if w + h > 10000 or max(w, h) > 9900:
-                return True
-            ratio = w / h if h > 0 else 0.0
-            if ratio > 15.0 or ratio < (1.0 / 15.0):
-                return True
-    except Exception:
-        return True
-    return False
-
-
-async def probe_audio_async(audio_path: Path) -> dict[str, Any]:
-    return await asyncio.to_thread(probe_audio, audio_path)
-
-
-async def is_photo_invalid_for_telegram_async(file_path: Path) -> bool:
-    return await asyncio.to_thread(is_photo_invalid_for_telegram, file_path)
-
-
-def _make_image_thumbnail(file_path: Path) -> Path | None:
-    try:
-        import PIL.Image
-        thumb_path = file_path.with_name(f"thumb_{file_path.stem}.jpg")
-        with PIL.Image.open(file_path) as img:
-            img.thumbnail((320, 320))
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            img.save(thumb_path, "JPEG", quality=85)
-        return thumb_path
-    except Exception as e:
-        log.debug("Failed to create image thumbnail for %s: %s", file_path.name, e)
-        return None
-
-
-async def extract_image_thumbnail(file_path: Path) -> Path | None:
-    return await asyncio.to_thread(_make_image_thumbnail, file_path)
 
 
 class TelegramUploader:

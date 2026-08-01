@@ -4,7 +4,7 @@ import pytest
 
 import app.uploader.telegram.core as tg_core
 from app.db import JobStore
-from app.uploader.telegram.core import (
+from app.utils.media import (
     is_photo_invalid_for_telegram_async,
     probe_audio_async,
 )
