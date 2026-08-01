@@ -345,10 +345,14 @@ class TelegramUploader:
             elif is_video:
                 video_meta = await probe_video(file_path)
                 duration = video_meta.get("duration", 0)
-                thumb_path = await extract_video_thumbnail(file_path)
+                is_decodable = video_meta.get("decodable", True)
 
-                if duration >= 120:
-                    screenshots = await take_screenshots(file_path, duration)
+                if is_decodable:
+                    thumb_path = await extract_video_thumbnail(file_path)
+                    if duration >= 120 and thumb_path is not None:
+                        screenshots = await take_screenshots(file_path, duration)
+                else:
+                    log.warning("Skipping thumbnail and screenshot extraction for undecodable video %s", file_path.name)
 
                 kwargs = {
                     "caption": cap_mono,
