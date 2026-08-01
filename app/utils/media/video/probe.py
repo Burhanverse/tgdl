@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 VIDEO_EXT = {
     ".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".wmv",
-    ".3gp", ".mpeg", ".mpg", ".m4v", ".ts", ".f4v"
+    ".3gp", ".mpeg", ".mpg", ".m4v", ".ts", ".tts", ".f4v"
 }
 
 
