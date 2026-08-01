@@ -32,6 +32,7 @@ def is_archive(path_or_filename: str | Path) -> bool:
         mime_or_fmt = patoolib.get_archive_format(str(path))
         return mime_or_fmt is not None
     except Exception:
+        # expected: file is not a valid archive format
         return False
 
 

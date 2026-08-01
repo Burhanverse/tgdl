@@ -28,6 +28,7 @@ def register_base_handlers(app: Client) -> None:
             try:
                 await query.message.delete()
             except Exception:
+                # expected: message already deleted
                 pass
             return
 
@@ -40,6 +41,7 @@ def register_base_handlers(app: Client) -> None:
                 link_preview_options=LinkPreviewOptions(is_disabled=True)
             )
         except Exception:
+            # expected: message already edited or deleted
             pass
 
     @app.on_message(filters.service)
@@ -48,5 +50,6 @@ def register_base_handlers(app: Client) -> None:
             try:
                 await message.delete()
             except Exception:
+                # expected: service message already deleted
                 pass
 

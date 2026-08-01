@@ -98,6 +98,7 @@ def register_unzip_handlers(app: Client) -> None:
                 try:
                     await old_session["status_msg"].edit_text("**Session replaced by a new one.**")
                 except Exception:
+                    # expected: status message already deleted or unchanged
                     pass
 
             def get_split_session_keyboard(c_id: int, u_id: int) -> InlineKeyboardMarkup:
@@ -234,6 +235,7 @@ def register_unzip_handlers(app: Client) -> None:
                 try:
                     await s["status_msg"].edit_text("**Split Archive Session Expired** (Timeout due to inactivity).")
                 except Exception:
+                    # expected: status message already deleted or unchanged
                     pass
 
         session["timeout_task"] = asyncio.create_task(reset_timeout())
@@ -244,6 +246,7 @@ def register_unzip_handlers(app: Client) -> None:
                 reply_markup=session["status_msg"].reply_markup
             )
         except Exception:
+            # expected: status message already deleted or unchanged
             pass
 
     @app.on_callback_query(filters.regex(r"^split_cancel:(-?\d+):(-?\d+)$"))
@@ -337,6 +340,7 @@ async def run_split_archive_download_and_extract(
             "Downloading all split archive parts..."
         )
     except Exception:
+        # expected: status message already deleted or unchanged
         pass
 
     import time
@@ -359,6 +363,7 @@ async def run_split_archive_download_and_extract(
                     reply_markup=keyboard
                 )
             except Exception:
+                # expected: status message already deleted or unchanged
                 pass
 
         log.info("Split-unzip pipeline [%s/%s]: Downloading %s for job #%s...", idx, total_parts, part_filename, job.id)

@@ -148,6 +148,7 @@ class TelegramUploader:
             try:
                 self.client.stop_transmission()
             except Exception:
+                # expected: transmission already stopped
                 pass
         chunk_size = current - self.last_uploaded
         self.last_uploaded = current
@@ -291,6 +292,7 @@ class TelegramUploader:
                 try:
                     converted_png.unlink()
                 except Exception:
+                    # expected: converted PNG file already unlinked
                     pass
 
     @retry(
@@ -409,12 +411,14 @@ class TelegramUploader:
                 try:
                     thumb_path.unlink()
                 except Exception:
+                    # expected: thumbnail file already unlinked
                     pass
             for shot in screenshots:
                 if shot.exists():
                     try:
                         shot.unlink()
                     except Exception:
+                        # expected: screenshot file already unlinked
                         pass
 
     async def _send_screenshots(self, screenshots: list[Path], video_name: str) -> None:

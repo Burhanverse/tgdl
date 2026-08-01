@@ -112,4 +112,5 @@ def register_cancel_handlers(app: Client) -> None:
                 "Cancelled successfully by user."
             )
         except Exception:
+            # expected: message already edited or deleted
             pass

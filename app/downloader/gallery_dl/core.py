@@ -134,6 +134,7 @@ async def _stream_run(cmd: list[str]) -> tuple[int, str, Callable[[], int]]:
             proc.terminate()
             await proc.wait()
         except Exception:
+            # expected: process already terminated
             pass
         raise
 
@@ -164,8 +165,8 @@ async def run_with_progress(
                 urls = [str(u).strip() for u in parsed if str(u).strip()]
             elif isinstance(parsed, str):
                 urls = [u.strip() for u in parsed.split() if u.strip().startswith(("http://", "https://"))]
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Failed parsing JSON url string in gallery_dl: %s", e)
 
         if not urls:
             urls = [u.strip() for u in url.split() if u.strip().startswith(("http://", "https://"))]
@@ -184,8 +185,8 @@ async def run_with_progress(
         if on_progress:
             try:
                 on_progress(total_download_count, None, single_url)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Progress callback error in gallery_dl loop: %s", e)
 
         backoff = Backoff(
             base_s=settings.gdl_backoff_base_s,
@@ -232,6 +233,7 @@ async def run_with_progress(
                             try:
                                 filename = Path(last_part).name
                             except Exception:
+                                # expected: last_part is not a valid path
                                 pass
 
                     if on_progress:
@@ -256,6 +258,7 @@ async def run_with_progress(
                     proc.kill()
                     await proc.wait()
                 except Exception:
+                    # expected: process already killed or terminated
                     pass
                 raise
             finally:

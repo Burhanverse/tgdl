@@ -126,18 +126,21 @@ class QueueManager:
             try:
                 job_state.active_process.kill()
             except Exception:
+                # expected: active process may have already exited
                 pass
 
         if job_state.active_download_task:
             try:
                 job_state.active_download_task.cancel()
             except Exception:
+                # expected: download task may have already completed or cancelled
                 pass
 
         if job_state.active_upload_task:
             try:
                 job_state.active_upload_task.cancel()
             except Exception:
+                # expected: upload task may have already completed or cancelled
                 pass
 
         job_state.downloader_done.set()
@@ -225,8 +228,8 @@ class QueueManager:
                         log.warning("Host disk free space critically low (%.2f MB). Failing job #%s.", usage.free / (1024*1024), job_id)
                         await self.store.update_progress(job_id, status=JobStatus.FAILED, error="Host disk space critically low")
                         continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Failed checking free disk space safeguard: %s", e)
 
                 job_state = JobState(job, dest_dir)
                 if job.status_message_id:
@@ -289,8 +292,8 @@ class QueueManager:
                     parsed = json.loads(job.url)
                     if parsed and isinstance(parsed, list):
                         cleaned_url = parsed[0]
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Failed parsing JSON array URL for job #%s: %s", job.id, e)
 
             from ..downloader import is_direct_url
 
@@ -409,10 +412,10 @@ class QueueManager:
                                             if await safe_pin(self.client, chat_id, job_state.msg_id):
                                                 job_state.is_pinned = True
 
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
+                        except Exception as e:
+                            log.debug("Failed editing status message during timeout in download loop for job #%s: %s", job.id, e)
+                    except Exception as e:
+                        log.debug("Error in download status updater loop for job #%s: %s", job.id, e)
 
             download_updater_task = asyncio.create_task(download_status_updater_loop())
 
@@ -464,10 +467,12 @@ class QueueManager:
                                         else:
                                             last_known_sizes[p] = sz
                                     except Exception:
+                                        # expected: file may have been moved or unlinked during scan
                                         pass
 
                             current_size = on_disk + job_state.deleted_bytes
-                        except Exception:
+                        except Exception as e:
+                            log.debug("Notice on download speed monitor scan tick for job #%s: %s", job.id, e)
                             continue
 
                         now = time.time()
@@ -492,8 +497,8 @@ class QueueManager:
                     try:
                         args_data = json.loads(job.args)
                         reply_msg_id = args_data.get("reply_message_id")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Failed parsing job.args JSON for unzip job #%s: %s", job.id, e)
 
                 existing_archive_files = [p for p in dest_dir.rglob("*") if p.is_file()]
                 if not existing_archive_files and reply_msg_id:
@@ -569,8 +574,8 @@ class QueueManager:
                             archive_fmt = args_dict.get("archive_format")
                             mirror_pixeldrain = bool(args_dict.get("mirror_pixeldrain"))
                             gdrive_user_id = args_dict.get("user_id")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Failed parsing job.args JSON for GDrive job #%s: %s", job.id, e)
 
                 if not gdrive_user_id:
                     gdrive_user_id = chat_id
@@ -875,8 +880,8 @@ class QueueManager:
                 parsed = json.loads(job.url)
                 if parsed and isinstance(parsed, list):
                     cleaned_url = parsed[0]
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing JSON array URL in upload worker for job #%s: %s", job.id, e)
 
         is_torrent = (
             cleaned_url.startswith("magnet:") or
@@ -905,8 +910,8 @@ class QueueManager:
                         upload_tg = True
                     if args_dict.get("unzip"):
                         is_unzip_job = True
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing job.args JSON in upload worker for job #%s: %s", job.id, e)
 
         async def report(text: str) -> None:
             await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -937,9 +942,8 @@ class QueueManager:
                                 if not job_state.is_pinned:
                                     await safe_pin(self.client, chat_id, job_state.msg_id)
                                     job_state.is_pinned = True
-                except Exception:
-
-                    pass
+                except Exception as e:
+                    log.debug("Error in upload status updater loop for job #%s: %s", job.id, e)
 
         async def perform_uploads() -> None:
             nonlocal job
@@ -957,9 +961,10 @@ class QueueManager:
                                     try:
                                         p.unlink()
                                     except Exception:
+                                        # expected: file already unlinked
                                         pass
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Notice scanning directory for ignored files cleanup: %s", e)
 
             try:
                 files = []
@@ -967,7 +972,8 @@ class QueueManager:
                     files.extend(sorted(p for p in dest_dir.rglob("*") if p.is_file() and not should_ignore_file(p)))
                 if extract_dir.exists():
                     files.extend(sorted(p for p in extract_dir.rglob("*") if p.is_file() and not should_ignore_file(p)))
-            except Exception:
+            except Exception as e:
+                log.debug("Error listing files for upload in job #%s: %s", job.id, e)
                 return
 
             db_total = len(files)
@@ -985,6 +991,7 @@ class QueueManager:
                         try:
                             f_rel = str(f.relative_to(extract_dir))
                         except ValueError:
+                            # expected: file is in dest_dir rather than extract_dir
                             f_rel = str(f.relative_to(dest_dir))
 
                         job_state.uploading_files.add(f_rel)
@@ -1012,6 +1019,7 @@ class QueueManager:
                 try:
                     f_rel = str(f.relative_to(extract_dir))
                 except ValueError:
+                    # expected: file is in dest_dir rather than extract_dir
                     f_rel = str(f.relative_to(dest_dir))
                 if (f_rel not in job_state.uploaded_filenames and
                     f_rel not in job_state.uploading_files and
@@ -1031,11 +1039,13 @@ class QueueManager:
                             if sz1 != sz2 or sz1 == 0:
                                 continue
                         except Exception:
+                            # expected: file may have been moved or unlinked during check
                             continue
 
                     try:
                         f_rel = str(f.relative_to(extract_dir))
                     except ValueError:
+                        # expected: file is in dest_dir rather than extract_dir
                         f_rel = str(f.relative_to(dest_dir))
 
                     job_state.uploaded_filenames.add(f_rel)
@@ -1063,6 +1073,7 @@ class QueueManager:
                         if sz1 != sz2 or sz1 == 0:
                             continue
                     except Exception:
+                        # expected: file may have been moved or unlinked during check
                         continue
 
                 db_job = await self.store.get_job(job.id)
@@ -1139,6 +1150,7 @@ class QueueManager:
                                         try:
                                             await self.client.delete_messages(chat_id, archive_prompt_msg_id)
                                         except Exception:
+                                            # expected: prompt message already deleted
                                             pass
                                         archive_prompt_msg_id = None
                                     if job.id not in _archive_choices:
@@ -1169,8 +1181,8 @@ class QueueManager:
                         before_files = set()
                         try:
                             before_files = {p.resolve() for p in extract_dir.rglob("*") if p.is_file()}
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("Notice scanning extract_dir before extraction: %s", e)
 
                         try:
                             password = None
@@ -1179,8 +1191,8 @@ class QueueManager:
                                     parsed = json.loads(job.args)
                                     if isinstance(parsed, dict):
                                         password = parsed.get("password")
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    log.debug("Failed parsing job.args JSON for password in extraction: %s", e)
 
                             extracted = await extract_archive_async(f, extract_dir, password=password)
                             if extracted:
@@ -1193,13 +1205,14 @@ class QueueManager:
                                         _extracted_file_names[job.id] = set()
                                     for new_f in new_files:
                                         _extracted_file_names[job.id].add(new_f.name)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    log.debug("Notice scanning extract_dir after extraction: %s", e)
 
                                 if is_unzip_job:
                                     try:
                                         f.unlink(missing_ok=True)
                                     except Exception:
+                                        # expected: file already unlinked
                                         pass
                                     job_state.uploaded_filenames.add(f_rel)
 
@@ -1209,22 +1222,26 @@ class QueueManager:
                                                  try:
                                                      sibling.unlink(missing_ok=True)
                                                  except Exception:
+                                                     # expected: sibling already unlinked
                                                      pass
                                                  try:
                                                      sib_rel = str(sibling.relative_to(dest_dir))
                                                      job_state.uploaded_filenames.add(sib_rel)
                                                  except Exception:
+                                                     # expected: sibling is outside dest_dir
                                                      pass
 
                                 if archive_prompt_msg_id:
                                     try:
                                         await self.client.delete_messages(chat_id, archive_prompt_msg_id)
                                     except Exception:
+                                        # expected: prompt message already deleted
                                         pass
                                 try:
                                     if status_msg:
                                         await self.client.delete_messages(chat_id, status_msg.id)
                                 except Exception:
+                                    # expected: status message already deleted
                                     pass
                                 end_extraction_msg = compile_extraction_success_status_text(job.id, f.name)
                                 success_msg = await safe_send(
@@ -1238,6 +1255,7 @@ class QueueManager:
                                     try:
                                         await self.client.delete_messages(chat_id, m.id)
                                     except Exception:
+                                        # expected: success message already deleted
                                         pass
                                 if success_msg:
                                     asyncio.create_task(delete_success_msg(success_msg))
@@ -1249,6 +1267,7 @@ class QueueManager:
                                     if status_msg:
                                         await self.client.delete_messages(chat_id, status_msg.id)
                                 except Exception:
+                                    # expected: status message already deleted
                                     pass
                                 fail_msg = await safe_send(
                                     self.client,
@@ -1262,12 +1281,14 @@ class QueueManager:
                                     try:
                                         await self.client.delete_messages(chat_id, archive_prompt_msg_id)
                                     except Exception:
+                                        # expected: prompt message already deleted
                                         pass
                                 async def delete_fail_msg(m):
                                     await asyncio.sleep(5)
                                     try:
                                         await self.client.delete_messages(chat_id, m.id)
                                     except Exception:
+                                        # expected: fail message already deleted
                                         pass
                                 if fail_msg:
                                     asyncio.create_task(delete_fail_msg(fail_msg))
@@ -1277,6 +1298,7 @@ class QueueManager:
                                 if status_msg:
                                     await self.client.delete_messages(chat_id, status_msg.id)
                             except Exception:
+                                # expected: status message already deleted
                                 pass
 
                             prompt_msg = await safe_send(
@@ -1302,6 +1324,7 @@ class QueueManager:
                                         try:
                                             await asyncio.wait_for(event.wait(), timeout=2.0)
                                         except TimeoutError:
+                                            # expected: timeout waiting for password prompt event tick
                                             pass
                                     if job_state.uploader_done.is_set():
                                         return
@@ -1311,8 +1334,8 @@ class QueueManager:
                                     if job.args:
                                         try:
                                             job_args_dict = json.loads(job.args)
-                                        except Exception:
-                                            pass
+                                        except Exception as e:
+                                            log.debug("Failed parsing job.args JSON for password update: %s", e)
                                     job_args_dict["password"] = new_password
                                     await self.store.db.execute(
                                         "UPDATE jobs SET args = ? WHERE id = ?",
@@ -1326,12 +1349,14 @@ class QueueManager:
                                     try:
                                         await self.client.delete_messages(chat_id, prompt_msg.id)
                                     except Exception:
+                                        # expected: prompt message already deleted
                                         pass
                                     break
                                 except TimeoutError:
                                     try:
                                         await self.client.delete_messages(chat_id, prompt_msg.id)
                                     except Exception:
+                                        # expected: prompt message already deleted
                                         pass
                                     await safe_send(
                                         self.client,
@@ -1349,6 +1374,7 @@ class QueueManager:
                                 if status_msg:
                                     await self.client.delete_messages(chat_id, status_msg.id)
                             except Exception:
+                                # expected: status message already deleted
                                 pass
                             raise
 
@@ -1356,6 +1382,7 @@ class QueueManager:
                         try:
                             await self.client.delete_messages(chat_id, archive_prompt_msg_id)
                         except Exception:
+                            # expected: prompt message already deleted
                             pass
 
                 is_file_archive = (f.suffix.lower() in ARCHIVE_EXT) and not is_internal_split
@@ -1370,6 +1397,7 @@ class QueueManager:
                     try:
                         f.unlink(missing_ok=True)
                     except Exception:
+                        # expected: file already unlinked
                         pass
                     job_state.uploaded_filenames.add(f_rel)
 
@@ -1380,6 +1408,7 @@ class QueueManager:
                                 try:
                                     sibling.unlink(missing_ok=True)
                                 except Exception:
+                                    # expected: sibling already unlinked
                                     pass
                                 try:
                                     sib_rel = str(sibling.relative_to(dest_dir))
@@ -1424,6 +1453,7 @@ class QueueManager:
                             try:
                                 await self.client.delete_messages(chat_id, conv_msg.id)
                             except Exception:
+                                # expected: conversion message already deleted
                                 pass
 
                         if success:
@@ -1431,6 +1461,7 @@ class QueueManager:
                             try:
                                 f.unlink(missing_ok=True)
                             except Exception:
+                                # expected: original video file already unlinked
                                 pass
                             continue
                         else:
@@ -1479,6 +1510,7 @@ class QueueManager:
                                     try:
                                         await asyncio.wait_for(_conversion_events[job.id][conv_id].wait(), timeout=2.0)
                                     except TimeoutError:
+                                        # expected: timeout waiting for audio conversion prompt event tick
                                         pass
                                 if job_state.uploader_done.is_set():
                                     return
@@ -1488,6 +1520,7 @@ class QueueManager:
                                         try:
                                             await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
                                         except Exception:
+                                            # expected: prompt message already deleted
                                             pass
                                         conversion_prompt_msg_id = None
                                     if job.id not in _conversion_choices:
@@ -1532,6 +1565,7 @@ class QueueManager:
                                 try:
                                     await self.client.delete_messages(chat_id, conv_msg.id)
                                 except Exception:
+                                    # expected: conversion message already deleted
                                     pass
 
                             if success:
@@ -1539,12 +1573,14 @@ class QueueManager:
                                 try:
                                     f.unlink(missing_ok=True)
                                 except Exception:
+                                    # expected: original audio file already unlinked
                                     pass
 
                                 if conversion_prompt_msg_id:
                                     try:
                                         await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
                                     except Exception:
+                                        # expected: prompt message already deleted
                                         pass
                                 break
                             else:
@@ -1559,6 +1595,7 @@ class QueueManager:
                                     try:
                                         await self.client.delete_messages(chat_id, m.id)
                                     except Exception:
+                                        # expected: fail message already deleted
                                         pass
                                 if fail_msg:
                                     asyncio.create_task(delete_fail_msg(fail_msg))
@@ -1571,6 +1608,7 @@ class QueueManager:
                             try:
                                 await self.client.delete_messages(chat_id, conversion_prompt_msg_id)
                             except Exception:
+                                # expected: prompt message already deleted
                                 pass
 
                 from ..uploader import UploadTooLarge, handle_large_file, upload_file
@@ -1716,6 +1754,7 @@ class QueueManager:
                                     try:
                                         f.unlink(missing_ok=True)
                                     except Exception:
+                                        # expected: file already unlinked
                                         pass
                                 else:
                                     log.error("Failed to convert incompatible audio torrent file %s", f.name)
@@ -1739,6 +1778,7 @@ class QueueManager:
                                     try:
                                         snapshots[f] = f.stat().st_size
                                     except Exception:
+                                        # expected: file unlinked or moved during scan
                                         pass
                                 await asyncio.sleep(0.5)
                                 for f, sz1 in snapshots.items():
@@ -1747,9 +1787,10 @@ class QueueManager:
                                             has_completed_file = True
                                             break
                                     except Exception:
+                                        # expected: file unlinked or moved during check
                                         pass
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("Notice on download completed file checker loop: %s", e)
                     if has_completed_file:
                         break
                     await asyncio.sleep(2.0)
@@ -1772,8 +1813,8 @@ class QueueManager:
                             ]
                             if pending:
                                 has_pending = True
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("Notice checking pending files in dest_dir for job #%s: %s", job.id, e)
                     if extract_dir.exists():
                         try:
                             files = [p for p in extract_dir.rglob("*") if p.is_file() and not p.name.endswith(".part") and not should_ignore_file(p)]
@@ -1785,8 +1826,8 @@ class QueueManager:
                             ]
                             if pending:
                                 has_pending = True
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("Notice checking pending files in extract_dir for job #%s: %s", job.id, e)
                     if not has_pending:
                         break
 
@@ -1794,6 +1835,7 @@ class QueueManager:
                     await asyncio.wait_for(job_state.trigger_event.wait(), timeout=5.0)
                     job_state.trigger_event.clear()
                 except TimeoutError:
+                    # expected: timeout waiting for upload trigger event tick
                     pass
 
         updater_task = asyncio.create_task(status_updater_loop())

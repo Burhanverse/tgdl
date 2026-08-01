@@ -222,6 +222,7 @@ async def archive_folder_async(
                 try:
                     shutil.rmtree(pd_temp_dir, ignore_errors=True)
                 except Exception:
+                    # expected: temp directory already removed
                     pass
 
             asyncio.create_task(upload_bg())

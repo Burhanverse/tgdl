@@ -367,6 +367,7 @@ def register_gdlconf_handlers(app: Client) -> None:
             try:
                 await query.message.edit_text(text, reply_markup=keyboard, link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
+                # expected: message text already up to date or deleted
                 pass
             await query.answer("Refreshed status")
 
@@ -404,6 +405,7 @@ def register_gdlconf_handlers(app: Client) -> None:
             try:
                 await query.message.edit_text(text, reply_markup=keyboard, link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
+                # expected: message text already up to date or deleted
                 pass
 
         elif action == "delete":
@@ -418,6 +420,7 @@ def register_gdlconf_handlers(app: Client) -> None:
             try:
                 await query.message.edit_text(text, reply_markup=keyboard, link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
+                # expected: message text already up to date or deleted
                 pass
 
         elif action == "reset":
@@ -435,4 +438,5 @@ def register_gdlconf_handlers(app: Client) -> None:
             try:
                 await query.message.edit_text(text, reply_markup=keyboard, link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
+                # expected: message text already up to date or deleted
                 pass

@@ -62,13 +62,14 @@ def register_choice_callback_handlers(app: Client) -> None:
                 parsed_args = json.loads(job.args)
                 if isinstance(parsed_args, list):
                     user_args_display = f" (Args: `{' '.join(parsed_args)}`)"
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing job.args JSON in callback: %s", e)
 
         queued_text = compile_queued_status_text(job.id, job.url, user_args_display)
         try:
             await query.message.edit_text(queued_text)
         except Exception:
+            # expected: message text already up to date or deleted
             pass
 
         await queue_manager.add_job(job.id)
@@ -94,6 +95,7 @@ def register_choice_callback_handlers(app: Client) -> None:
         try:
             await query.message.edit_text(compile_archive_choice_status_text(job.id, display_name, choice_str))
         except Exception:
+            # expected: message text already up to date or deleted
             pass
 
         if job.id in _archive_events and archive_id in _archive_events[job.id]:
@@ -134,4 +136,5 @@ def register_choice_callback_handlers(app: Client) -> None:
         try:
             await query.message.edit_text(compile_conversion_choice_status_text(job_id, filename, choice_str))
         except Exception:
+            # expected: message text already up to date or deleted
             pass

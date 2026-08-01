@@ -170,6 +170,7 @@ async def start_aria2_daemon() -> None:
             daemon_ready = True
             break
         except Exception:
+            # expected: daemon startup polling before ready
             await asyncio.sleep(0.2)
 
     if not daemon_ready:
@@ -188,6 +189,7 @@ async def stop_aria2_daemon() -> None:
             ARIA2_PROC.terminate()
             await ARIA2_PROC.wait()
         except Exception:
+            # expected: aria2 daemon process already terminated
             pass
     ARIA2_PROC = None
     ARIA2_PORT = None
@@ -333,6 +335,7 @@ async def download_torrent_async(
         try:
             await async_rpc_call(port, "aria2.removeDownloadResult", [gid])
         except Exception:
+            # expected: download result already removed from aria2 state
             pass
 
     files = []

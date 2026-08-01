@@ -55,7 +55,7 @@ def register_status_handlers(app: Client) -> None:
 
         try:
             key = int(data[1])
-        except Exception:
+        except (ValueError, TypeError, IndexError):
             await query.answer("Invalid callback key!", show_alert=True)
             return
 
@@ -95,7 +95,8 @@ def register_status_handlers(app: Client) -> None:
                 if key in status_dict and len(data) > 3:
                     try:
                         status_dict[key]["page_step"] = int(data[3])
-                    except Exception:
+                    except (ValueError, TypeError):
+                        # expected: invalid page_step payload
                         pass
             await update_status_message(key, force=True)
         elif action == "st":

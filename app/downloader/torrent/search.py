@@ -25,7 +25,7 @@ def format_bytes(size: float) -> str:
                 return f"{size:.2f} {unit}"
             size /= 1024.0
         return f"{size:.2f} PB"
-    except Exception:
+    except (ValueError, TypeError):
         return "N/A"
 
 

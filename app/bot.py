@@ -20,6 +20,10 @@ import json
 class JsonFormatter(logging.Formatter):
     """JSON log formatter for production observability."""
 
+    def __init__(self, is_debug: bool = False):
+        super().__init__()
+        self.is_debug = is_debug
+
     def format(self, record: logging.LogRecord) -> str:
         log_obj = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
@@ -27,18 +31,30 @@ class JsonFormatter(logging.Formatter):
             "name": record.name,
             "message": record.getMessage(),
         }
+        if self.is_debug:
+            log_obj["file"] = record.filename
+            log_obj["line"] = record.lineno
+            log_obj["func"] = record.funcName
         if record.exc_info:
             log_obj["exception"] = self.formatException(record.exc_info)
         return json.dumps(log_obj)
 
 
 def setup_logging() -> None:
-    level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    level_str = settings.log_level.upper()
+    level = getattr(logging, level_str, logging.INFO)
+    is_debug = level_str == "DEBUG"
+
     fmt: logging.Formatter
     if settings.log_format.lower() == "json":
-        fmt = JsonFormatter()
+        fmt = JsonFormatter(is_debug=is_debug)
     else:
-        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        if is_debug:
+            fmt = logging.Formatter(
+                "%(asctime)s %(levelname)s %(name)s [%(filename)s:%(lineno)d in %(funcName)s]: %(message)s"
+            )
+        else:
+            fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     root = logging.getLogger()
     root.setLevel(level)
@@ -53,7 +69,14 @@ def setup_logging() -> None:
     file_handler.setFormatter(fmt)
     root.addHandler(file_handler)
 
-    logging.getLogger("pyrogram").setLevel(logging.WARNING)
+    if level_str != "DEBUG":
+        logging.getLogger("pyrogram").setLevel(logging.WARNING)
+
+    if level_str == "WARNING":
+        noisy_loggers = ["pyrogram", "aiosqlite", "asyncio", "httpx", "aiohttp", "urllib3"]
+        for logger_name in noisy_loggers:
+            logging.getLogger(logger_name).setLevel(logging.WARNING)
+        log.warning("Logging initialized in WARNING-only mode — INFO/DEBUG logs are suppressed")
 
 
 async def log_upload(job_id: int, filename: str) -> None:

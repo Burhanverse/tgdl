@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -75,10 +75,18 @@ class Settings(BaseSettings):
 
     # --- misc ---
     max_upload_bytes: int = 2 * 1024 * 1024 * 1024  # 2GB, MTProto ceiling
-    progress_edit_every_n: int = 25
-    log_level: str = "INFO"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        default="INFO", description="Log level (DEBUG, INFO, WARNING, ERROR)"
+    )
     log_format: str = Field(default="text", description="Log format: 'text' or 'json'")
     log_dir: Path = Field(default=Path("./logs"))
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _uppercase_log_level(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip().upper()
+        return v
 
     @field_validator("authorized_user_ids", mode="before")
     @classmethod

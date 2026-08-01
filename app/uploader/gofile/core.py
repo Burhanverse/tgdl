@@ -27,8 +27,8 @@ def _make_sync_progress_callback(
             res = async_cb(current, total)
             if asyncio.iscoroutine(res):
                 asyncio.run_coroutine_threadsafe(res, loop)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Progress callback error in GoFile sync_cb: %s", e)
 
     return sync_cb
 

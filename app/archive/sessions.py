@@ -122,6 +122,7 @@ async def start_multi_unzip_session(
         try:
             await old_split["status_msg"].edit_text("**Session replaced by a new one.**")
         except Exception:
+            # expected: status message already deleted or unchanged
             pass
 
     if session_key in _multi_archive_sessions:
@@ -131,6 +132,7 @@ async def start_multi_unzip_session(
         try:
             await old_session["status_msg"].edit_text("**Session replaced by a new one.**")
         except Exception:
+            # expected: status message already deleted or unchanged
             pass
 
     status_msg = await message.reply_text(
@@ -148,6 +150,7 @@ async def start_multi_unzip_session(
             try:
                 await session["status_msg"].edit_text("**Multi Archive Session Expired** (Timeout due to inactivity).")
             except Exception:
+                # expected: status message already deleted or unchanged
                 pass
 
     timeout_task = asyncio.create_task(multi_session_timeout(chat_id))
@@ -196,6 +199,7 @@ async def handle_multi_document(message: Message) -> bool:
             try:
                 await expired_session["status_msg"].edit_text("**Multi Archive Session Expired** (Timeout due to inactivity).")
             except Exception:
+                # expected: status message already deleted or unchanged
                 pass
 
     session["timeout_task"] = asyncio.create_task(multi_session_timeout(chat_id))
@@ -206,6 +210,7 @@ async def handle_multi_document(message: Message) -> bool:
     try:
         await session["status_msg"].edit_text(new_text, reply_markup=keyboard)
     except Exception:
+        # expected: status message already deleted or unchanged
         pass
 
     return True
@@ -312,6 +317,7 @@ async def run_multi_archive_download_and_extract(
             "Downloading & processing each archive..."
         )
     except Exception:
+        # expected: status message already deleted or unchanged
         pass
 
     for idx, group in enumerate(groups, start=1):
@@ -355,6 +361,7 @@ async def run_multi_archive_download_and_extract(
                                 reply_markup=keyboard
                             )
                         except Exception:
+                            # expected: status message already deleted or unchanged
                             pass
 
                     log.info("Multi-unzip pipeline [%s/%s]: Downloading split part %s for job #%s...", idx, total_groups, p_filename, job.id)
@@ -418,6 +425,7 @@ async def run_multi_archive_download_and_extract(
                             reply_markup=keyboard
                         )
                     except Exception:
+                        # expected: status message already deleted or unchanged
                         pass
 
                 target_file = dest_dir / arch_filename
@@ -454,4 +462,5 @@ async def run_multi_archive_download_and_extract(
             f"Successfully processed all {total_groups} job(s) sequentially."
         )
     except Exception:
+        # expected: status message already deleted or unchanged
         pass

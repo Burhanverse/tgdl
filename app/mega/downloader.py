@@ -78,8 +78,8 @@ class MegaDownloader:
                         u = str(item).strip()
                         if u:
                             urls.append(u)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing JSON array in MegaDownloader: %s", e)
 
         if not urls:
             lines = [u.strip() for u in link_or_json.split() if u.strip()]

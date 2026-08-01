@@ -70,6 +70,7 @@ class TelegramDownloader:
         try:
             self.client.stop_transmission()
         except Exception:
+            # expected: transmission already stopped or not started
             pass
 
     async def _on_download_progress(self, current: int, total: int) -> None:
@@ -77,6 +78,7 @@ class TelegramDownloader:
             try:
                 self.client.stop_transmission()
             except Exception:
+                # expected: transmission already stopped or not started
                 pass
         self.processed_bytes = current
         if total > 0:

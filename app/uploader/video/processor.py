@@ -45,6 +45,7 @@ def _extract_video_thumbnail_sync(video_path: Path) -> Path | None:
             try:
                 container.seek(target_pts, stream=stream)
             except Exception:
+                # expected: video container seek fallback to start
                 pass
 
             for frame in container.decode(stream):
@@ -83,6 +84,7 @@ def _take_screenshots_sync(video_path: Path, duration: int) -> list[Path]:
                 try:
                     container.seek(target_pts, stream=stream)
                 except Exception:
+                    # expected: video container seek fallback to start
                     pass
 
                 for frame in container.decode(stream):

@@ -82,8 +82,8 @@ def is_direct_url(url: str) -> bool:
                 parsed = json.loads(url)
                 if isinstance(parsed, list):
                     urls = [str(u).strip() for u in parsed if str(u).strip()]
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing JSON list URL in is_direct_url: %s", e)
         if not urls:
             urls = [u.strip() for u in url.split() if u.strip().startswith(("http://", "https://"))]
 
@@ -94,6 +94,7 @@ def is_direct_url(url: str) -> bool:
             if path_ext in DIRECT_FILE_EXTENSIONS:
                 return True
     except Exception:
+        # expected: non-standard URL structure
         pass
     return False
 
@@ -190,6 +191,7 @@ class DirectDownloader:
                 try:
                     file_size = int(resp.headers["Content-Length"])
                 except Exception:
+                    # expected: invalid or non-integer Content-Length header
                     file_size = 0
 
             self.total_bytes += file_size
@@ -231,7 +233,11 @@ class DirectDownloader:
                 return out_file
             except Exception:
                 if part_file.exists():
-                    part_file.unlink(missing_ok=True)
+                    try:
+                        part_file.unlink(missing_ok=True)
+                    except Exception:
+                        # expected: part_file already removed
+                        pass
                 raise
 
     async def download(
@@ -255,8 +261,8 @@ class DirectDownloader:
                     for u in parsed:
                         if isinstance(u, str) and u.strip():
                             items.append({"url": u.strip(), "filename": "", "path": ""})
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing JSON contents in DirectDownloader: %s", e)
 
             if not items:
                 lines = [u.strip() for u in contents.split() if u.strip().startswith(("http://", "https://"))]
@@ -288,8 +294,8 @@ class DirectDownloader:
                 if self.progress_cb:
                     try:
                         await self.progress_cb(self.processed_bytes, self.total_bytes, "", item["url"])
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Progress callback error before item download: %s", e)
                 try:
                     downloaded_file = await self._download_content_item(
                         session=session,

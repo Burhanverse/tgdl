@@ -46,6 +46,7 @@ async def split_binary(file_path: Path, max_size_bytes: int) -> list[Path]:
                     try:
                         part_path.unlink()
                     except Exception:
+                        # expected: empty part file already unlinked
                         pass
                     break
 
@@ -57,6 +58,7 @@ async def split_binary(file_path: Path, max_size_bytes: int) -> list[Path]:
             try:
                 p.unlink()
             except Exception:
+                # expected: split part file already unlinked
                 pass
         return []
 
@@ -74,6 +76,7 @@ async def handle_large_file(path: Path, split_large_files: bool) -> list[Path]:
         try:
             path.unlink()
         except Exception:
+            # expected: skipped large file already unlinked
             pass
         return []
 
@@ -89,6 +92,7 @@ async def handle_large_file(path: Path, split_large_files: bool) -> list[Path]:
         try:
             path.unlink()
         except Exception:
+            # expected: original large file already unlinked after split
             pass
         return parts
     else:
@@ -96,5 +100,6 @@ async def handle_large_file(path: Path, split_large_files: bool) -> list[Path]:
         try:
             path.unlink()
         except Exception:
+            # expected: failed split file already unlinked
             pass
         return []

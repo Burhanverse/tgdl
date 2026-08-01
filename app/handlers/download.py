@@ -118,6 +118,7 @@ async def _create_and_enqueue_job(
                     if cur_j and cur_j.status == "queued" and client_obj:
                         await client_obj.delete_messages(chat_id, status_msg.id)
                 except Exception:
+                    # expected: queued status message already deleted
                     pass
 
             asyncio.create_task(auto_delete_queued())
