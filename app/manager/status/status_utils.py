@@ -373,7 +373,7 @@ async def get_readable_message(
     ):
         tstatus = task.status()
         msg += f"<b>{index + start_position}. {tstatus}: </b><code>{escape(task.name())}</code>"
-        
+
         if tstatus not in [MirrorStatus.STATUS_QUEUEUP, MirrorStatus.STATUS_QUEUEDL, MirrorStatus.STATUS_PAUSED]:
             pct_str = task.progress()
             try:

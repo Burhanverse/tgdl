@@ -66,7 +66,7 @@ class QueueManager:
         self.is_running = True
         num_dl = settings.tg_max_concurrent_downloads
         num_ul = settings.tg_max_concurrent_uploads
-        
+
         # Start the global aria2c daemon
         try:
             from ..downloader import start_aria2_daemon
@@ -78,8 +78,8 @@ class QueueManager:
             self.download_workers.append(asyncio.create_task(self._download_worker_loop(i)))
         for i in range(num_ul):
             self.upload_workers.append(asyncio.create_task(self._upload_worker_loop(i)))
-            
-        from ..rate_limiter import telegram_limiter
+
+        from ..pacing import telegram_limiter
         self.sweep_task = asyncio.create_task(telegram_limiter.start_periodic_sweep())
 
         log.info("Queue manager started with %s download and %s upload workers", num_dl, num_ul)
@@ -97,7 +97,7 @@ class QueueManager:
             await self.cancel_job(job_id)
         self.download_workers.clear()
         self.upload_workers.clear()
-        
+
         # Stop the global aria2c daemon
         try:
             from ..downloader import stop_aria2_daemon
@@ -113,15 +113,15 @@ class QueueManager:
 
     async def cancel_job(self, job_id: str) -> bool:
         job_state = self.jobs.get(job_id)
-        
+
         if self.store:
             await self.store.update_progress(job_id, status=JobStatus.CANCELLED)
-            
+
         if not job_state:
             return False
-            
+
         log.info("Cancelling job #%s", job_id)
-        
+
         if job_state.active_process:
             try:
                 job_state.active_process.kill()
@@ -198,15 +198,15 @@ class QueueManager:
                 job_id = await self.download_queue.get()
             except asyncio.CancelledError:
                 break
-                
+
             try:
                 job = await self.store.get_job(job_id)
                 if not job or job.status == JobStatus.CANCELLED:
                     self.download_queue.task_done()
                     continue
-                    
+
                 dest_dir = (settings.downloads_dir / job.download_dir).resolve()
-                
+
                 # Disk limit safeguards
                 if settings.max_total_downloads_bytes is not None:
                     try:
@@ -249,19 +249,19 @@ class QueueManager:
                 job_id = await self.upload_queue.get()
             except asyncio.CancelledError:
                 break
-                
+
             try:
                 job_state = self.jobs.get(job_id)
                 if not job_state:
                     self.upload_queue.task_done()
                     continue
-                    
+
                 db_job = await self.store.get_job(job_id)
                 if not db_job or db_job.status == JobStatus.CANCELLED:
                     self.upload_queue.task_done()
                     self.jobs.pop(job_id, None)
                     continue
-                    
+
                 await self._process_upload(job_state)
             except asyncio.CancelledError:
                 if not self.is_running:
@@ -277,7 +277,7 @@ class QueueManager:
         job = job_state.job
         chat_id = job.chat_id
         dest_dir = job_state.dest_dir
-        
+
         async def report(text: str) -> None:
             await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
@@ -917,11 +917,11 @@ class QueueManager:
                     await asyncio.sleep(5)
                     if job_state.uploader_done.is_set():
                         break
-                        
+
                     db_job = await self.store.get_job(job.id)
                     if not db_job or db_job.status == JobStatus.CANCELLED:
                         break
-                        
+
                     if job_state.msg_id:
                         status_text = compile_job_status_text(db_job, job_state)
                         if status_text != job_state.last_edited_text:
@@ -1013,8 +1013,8 @@ class QueueManager:
                     f_rel = str(f.relative_to(extract_dir))
                 except ValueError:
                     f_rel = str(f.relative_to(dest_dir))
-                if (f_rel not in job_state.uploaded_filenames and 
-                    f_rel not in job_state.uploading_files and 
+                if (f_rel not in job_state.uploaded_filenames and
+                    f_rel not in job_state.uploading_files and
                     f_rel not in job_state.failed_uploads):
                     pending.append(f)
 
@@ -1278,7 +1278,7 @@ class QueueManager:
                                     await self.client.delete_messages(chat_id, status_msg.id)
                             except Exception:
                                 pass
-                            
+
                             prompt_msg = await safe_send(
                                 self.client,
                                 chat_id,
@@ -1293,7 +1293,7 @@ class QueueManager:
                                 data = {"password": None}
                                 _password_prompt_events[job.id][archive_id] = (event, data)
                                 _password_prompt_messages[prompt_msg.id] = (job.id, archive_id, chat_id)
-                                
+
                                 try:
                                     start_time = time.time()
                                     while not job_state.uploader_done.is_set() and not event.is_set():
@@ -1306,7 +1306,7 @@ class QueueManager:
                                     if job_state.uploader_done.is_set():
                                         return
                                     new_password = data["password"]
-                                    
+
                                     job_args_dict = {}
                                     if job.args:
                                         try:
@@ -1319,10 +1319,10 @@ class QueueManager:
                                         (json.dumps(job_args_dict), job.id)
                                     )
                                     await self.store.db.commit()
-                                    
+
                                     job_state.job = await self.store.get_job(job.id)
                                     job = job_state.job
-                                    
+
                                     try:
                                         await self.client.delete_messages(chat_id, prompt_msg.id)
                                     except Exception:
@@ -1601,10 +1601,10 @@ class QueueManager:
                 job_state.uploading_files.add(f_rel)
                 try:
                     await self.store.update_progress(job.id, status=JobStatus.UPLOADING)
-                    
+
                     last_uploaded_bytes = 0
                     last_upload_speed_time = time.time()
-                    
+
                     async def progress_cb(current, total):
                         nonlocal last_uploaded_bytes, last_upload_speed_time
                         job_state.current_upload_pct = (current / total) * 100 if total > 0 else 0.0
@@ -1636,7 +1636,7 @@ class QueueManager:
                 except UploadTooLarge as e:
                     job_state.skipped.append((f.name, str(e)))
                     job_state.failed_uploads.add(f_rel)
-                except Exception as e:  
+                except Exception as e:
                     log.exception("Upload failed for %s", f)
                     job_state.skipped.append((f.name, f"error: {e}"))
                     job_state.failed_uploads.add(f_rel)
@@ -1799,9 +1799,9 @@ class QueueManager:
         updater_task = asyncio.create_task(status_updater_loop())
         try:
             await run_uploader()
-            
+
             dl_res = getattr(job_state, "downloader_result", None)
-            
+
             if dl_res and not dl_res.ok and job_state.sent == 0:
                 await self.store.update_progress(
                     job.id, status=JobStatus.FAILED, error=dl_res.error_tail[-1500:], url=""
@@ -1835,7 +1835,7 @@ class QueueManager:
 
             shutil.rmtree(dest_dir, ignore_errors=True)
             shutil.rmtree(extract_dir, ignore_errors=True)
-            
+
         except Exception as e:
             log.exception("Upload process failed for job #%s", job.id)
             await self.store.update_progress(job.id, status=JobStatus.FAILED, error=str(e), url="")
@@ -1847,7 +1847,7 @@ class QueueManager:
             job_state.uploader_done.set()
             updater_task.cancel()
             await asyncio.gather(updater_task, return_exceptions=True)
-            
+
             # Edit the status message one final time with force=True to ensure final state is updated
             db_job = await self.store.get_job(job.id)
             if db_job and job_state.msg_id:
@@ -1867,7 +1867,6 @@ class QueueManager:
                 _conversion_ids,
                 _converted_files,
             )
-
             from .status.messaging import _last_edit_times
 
             _archive_ids.pop(job.id, None)

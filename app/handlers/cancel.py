@@ -23,7 +23,7 @@ def register_cancel_handlers(app: Client) -> None:
     @app.on_message(filters.command("cancel") & authorized_filter)
     async def cancel_cmd(_, message: Message) -> None:
         chat_id = message.chat.id
-        
+
         cmd_parts = message.text.split()
         if len(cmd_parts) > 1:
             job_id = cmd_parts[1].strip()
@@ -72,7 +72,7 @@ def register_cancel_handlers(app: Client) -> None:
             label = label.split("/")[-1] or label
             if len(label) > 25:
                 label = label[:22] + "…"
-                
+
             btn_text = f"#{jid} - {label} ({jstatus})"
             buttons.append([InlineKeyboardButton(btn_text, callback_data=f"cancel_job:{jid}")])
 

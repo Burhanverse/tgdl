@@ -448,7 +448,7 @@ def register_download_handlers(app: Client) -> None:
             if len(parts) < 2:
                 await message.reply_text("Send a magnet link or reply to a `.torrent` file with `/tor <magnet/url>`.")
                 return
-            
+
             input_url = parts[1].strip()
             if input_url.startswith("magnet:") or input_url.startswith(("http://", "https://")):
                 target_url = input_url
@@ -478,7 +478,7 @@ def register_download_handlers(app: Client) -> None:
         status_msg = await message.reply_text("Downloading media file for Pixeldrain upload...")
         temp_dir = settings.data_dir / "temp_pdup"
         temp_dir.mkdir(parents=True, exist_ok=True)
-        
+
         file_path_str = await reply_msg.download(file_name=str(temp_dir) + "/")
         if not file_path_str or not Path(file_path_str).exists():
             await status_msg.edit_text("Failed to download media file from Telegram.")

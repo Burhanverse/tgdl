@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock
+
 import pytest
 
+import app.manager.status.status_utils as status_utils
 from app.db import JobStore
 from app.manager.core import queue_manager
 from app.manager.state import JobState
-import app.manager.status.status_utils as status_utils
 from app.manager.status.status_utils import (
     get_all_active_task_adapters,
     get_system_stats_snapshot,
@@ -54,7 +55,7 @@ def test_get_system_stats_snapshot_caching(monkeypatch):
 
     monkeypatch.setattr(status_utils.time, "time", mock_time)
     monkeypatch.setattr(status_utils.psutil, "cpu_percent", mock_cpu_percent)
-    
+
     # Reset module level cache
     monkeypatch.setattr(status_utils, "_system_stats_cache", None)
     monkeypatch.setattr(status_utils, "_system_stats_timestamp", 0.0)

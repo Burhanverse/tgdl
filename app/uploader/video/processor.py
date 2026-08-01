@@ -38,7 +38,7 @@ def _extract_video_thumbnail_sync(video_path: Path) -> Path | None:
             stream = next((s for s in container.streams if s.type == "video"), None)
             if not stream:
                 return None
-            
+
             # Seek to 4.0 seconds or start of video
             target_sec = min(4.0, float(container.duration / 1000000.0) if container.duration else 0.0)
             target_pts = int(target_sec / stream.time_base)
@@ -46,7 +46,7 @@ def _extract_video_thumbnail_sync(video_path: Path) -> Path | None:
                 container.seek(target_pts, stream=stream)
             except Exception:
                 pass
-                
+
             for frame in container.decode(stream):
                 img = frame.to_image()
                 w, h = img.size
@@ -67,10 +67,10 @@ async def extract_video_thumbnail(video_path: Path) -> Path | None:
 def _take_screenshots_sync(video_path: Path, duration: int) -> list[Path]:
     if duration <= 0:
         return []
-    
+
     timestamps = sorted([random.uniform(0.05 * duration, 0.95 * duration) for _ in range(9)])
     screenshots: list[Path] = []
-    
+
     # Open/close container for each screenshot to ensure absolute robustness and prevent seek issues
     for idx, ts in enumerate(timestamps):
         try:
@@ -78,13 +78,13 @@ def _take_screenshots_sync(video_path: Path, duration: int) -> list[Path]:
                 stream = next((s for s in container.streams if s.type == "video"), None)
                 if not stream:
                     continue
-                
+
                 target_pts = int(ts / stream.time_base)
                 try:
                     container.seek(target_pts, stream=stream)
                 except Exception:
                     pass
-                
+
                 for frame in container.decode(stream):
                     img = frame.to_image()
                     shot_path = Path(tempfile.gettempdir()) / f"{video_path.stem}_screenshot_{idx}.jpg"
@@ -93,7 +93,7 @@ def _take_screenshots_sync(video_path: Path, duration: int) -> list[Path]:
                     break
         except Exception as e:
             log.warning("PyAV failed to capture screenshot at %s for %s: %s", ts, video_path.name, e)
-            
+
     return screenshots
 
 async def take_screenshots(video_path: Path, duration: int) -> list[Path]:

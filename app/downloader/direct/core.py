@@ -197,6 +197,10 @@ class DirectDownloader:
 
             log.info("Downloading direct link %s to %s (size: %s bytes)", url, out_file, file_size)
 
+            from ...config import settings
+            from ...pacing import DownloadThrottler
+            throttler = DownloadThrottler(settings.global_download_speed_limit)
+
             try:
                 async with aiopen(part_file, "wb") as f:
                     async for chunk in resp.content.iter_chunked(_CHUNK_SIZE):
@@ -207,6 +211,7 @@ class DirectDownloader:
 
                         await f.write(chunk)
                         chunk_len = len(chunk)
+                        await throttler.consume(chunk_len)
                         item_processed += chunk_len
                         self.processed_bytes += chunk_len
 

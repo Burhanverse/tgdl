@@ -9,7 +9,7 @@ def setup_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("TG_API_ID", "12345")
     monkeypatch.setenv("TG_API_HASH", "0123456789abcdef0123456789abcdef")
     monkeypatch.setenv("TG_BOT_TOKEN", "123456789:ABCdefGHIjklMNOpqrsTUVwxyz")
-    
+
     # Isolate data directory
     data_dir = tmp_path / "data"
     auth_dir = tmp_path / "auth"

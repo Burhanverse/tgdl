@@ -11,10 +11,10 @@ from ...manager.status import compile_conversion_choice_status_text
 log = logging.getLogger(__name__)
 
 # State dictionaries for managing conversion flow
-_conversion_ids: dict[str, dict[str, str]] = {}  
-_conversion_events: dict[str, dict[str, asyncio.Event]] = {}  
-_conversion_choices: dict[str, dict[str, str]] = {}  
-_converted_files: dict[str, set[str]] = {}  
+_conversion_ids: dict[str, dict[str, str]] = {}
+_conversion_events: dict[str, dict[str, asyncio.Event]] = {}
+_conversion_choices: dict[str, dict[str, str]] = {}
+_converted_files: dict[str, set[str]] = {}
 
 async def handle_conversion_choice(
     client: Client,
@@ -24,7 +24,7 @@ async def handle_conversion_choice(
 ) -> None:
     data = callback_query.data
     parts = data.split(":", 2)
-    choice = parts[0]  
+    choice = parts[0]
     job_id = parts[1]
     conv_id = parts[2]
 

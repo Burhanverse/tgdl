@@ -148,7 +148,7 @@ async def archive_folder_async(
     if is_split:
         log.info("Archive '%s' (%.2f MB) exceeds %d MB limit. Splitting into volumes for Telegram upload...",
                  output_archive.name, archive_size / (1024 * 1024), max_part_size_mb)
-        
+
         cmd7z = shutil.which("7z") or shutil.which("7zz") or shutil.which("7za")
         if cmd7z:
             type_flag = "-tzip" if fmt == "zip" else "-t7z"

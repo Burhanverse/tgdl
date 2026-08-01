@@ -70,7 +70,7 @@ class TelegramRateLimiter:
     def __init__(
         self,
         global_rate_limit: float = 30.0,  # max requests per second globally
-        per_chat_interval: float = 2.0,    # min seconds between calls in same chat
+        per_chat_interval: float = 2.0,  # min seconds between calls in same chat
     ):
         self.global_rate_limit = global_rate_limit
         self.per_chat_interval = per_chat_interval
@@ -144,7 +144,9 @@ class TelegramRateLimiter:
         """Register a FloodWait penalty so subsequent calls wait out the penalty."""
         until = time.time() + seconds + 1.0
         if chat_id is not None:
-            self._chat_floodwait_until[chat_id] = max(self._chat_floodwait_until.get(chat_id, 0.0), until)
+            self._chat_floodwait_until[chat_id] = max(
+                self._chat_floodwait_until.get(chat_id, 0.0), until
+            )
             log.warning("Registered FloodWait of %ss for chat %s", seconds, chat_id)
         else:
             self._global_floodwait_until = max(self._global_floodwait_until, until)
@@ -201,7 +203,8 @@ class TelegramRateLimiter:
         while True:
             await asyncio.sleep(sweep_interval)
             try:
-                from .manager.core import queue_manager
+                from ..manager.core import queue_manager
+
                 active_chat_ids = (
                     {js.job.chat_id for js in queue_manager.jobs.values()}
                     if queue_manager

@@ -44,7 +44,7 @@ def compile_split_session_text(prefix: str, ext: str, parts: dict[int, Message])
     sorted_parts = sorted(parts.keys())
     parts_list = []
     max_part = max(sorted_parts) if sorted_parts else 0
-    
+
     for i in range(1, max_part + 2):
         if i in parts:
             filename = parts[i].document.file_name
@@ -54,9 +54,9 @@ def compile_split_session_text(prefix: str, ext: str, parts: dict[int, Message])
                 parts_list.append(f"**Part {i}**: _Waiting for file..._")
             else:
                 break
-                
+
     parts_str = "\n".join(parts_list)
-    
+
     text = (
         f"**Split Archive Session**\n"
         f"- **Base Pattern**: `{prefix}.*`\n\n"
@@ -90,7 +90,7 @@ def register_unzip_handlers(app: Client) -> None:
             chat_id = message.chat.id
             user_id = message.from_user.id if message.from_user else chat_id
             session_key = chat_id
-            
+
             if session_key in _split_archive_sessions:
                 old_session = _split_archive_sessions.pop(session_key)
                 if old_session.get("timeout_task"):
@@ -99,7 +99,7 @@ def register_unzip_handlers(app: Client) -> None:
                     await old_session["status_msg"].edit_text("**Session replaced by a new one.**")
                 except Exception:
                     pass
-                    
+
             def get_split_session_keyboard(c_id: int, u_id: int) -> InlineKeyboardMarkup:
                 return InlineKeyboardMarkup([
                     [
@@ -107,14 +107,14 @@ def register_unzip_handlers(app: Client) -> None:
                         InlineKeyboardButton("Cancel", callback_data=f"split_cancel:{c_id}:{u_id}")
                     ]
                 ])
-                
+
             status_msg = await message.reply_text(
                 "**Split Archive Session Started**\n\n"
                 "Please send or forward the split archive parts (e.g. `.001`, `.002`, or `.part1.rar` files) to this chat.\n\n"
                 "**Waiting for files...**",
                 reply_markup=get_split_session_keyboard(chat_id, user_id)
             )
-            
+
             async def split_session_timeout(c_id: int, delay: int = 300):
                 await asyncio.sleep(delay)
                 s_key = c_id
@@ -226,7 +226,7 @@ def register_unzip_handlers(app: Client) -> None:
         session["parts"][part_num] = message
         if session.get("timeout_task"):
             session["timeout_task"].cancel()
-            
+
         async def reset_timeout():
             await asyncio.sleep(300)
             if chat_id in _split_archive_sessions:
@@ -235,7 +235,7 @@ def register_unzip_handlers(app: Client) -> None:
                     await s["status_msg"].edit_text("**Split Archive Session Expired** (Timeout due to inactivity).")
                 except Exception:
                     pass
-                    
+
         session["timeout_task"] = asyncio.create_task(reset_timeout())
         updated_text = compile_split_session_text(session["prefix"], session["ext"], session["parts"])
         try:

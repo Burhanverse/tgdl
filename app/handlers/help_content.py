@@ -5,7 +5,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
     """Generates help text and inline keyboard markup for topic-wise paged view."""
-    
+
     if page == "dl":
         text = (
             "**Topic: Direct & Gallery Downloads**\n\n"

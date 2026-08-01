@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
+
 import pytest
 
 from app.archive import _archive_ids
@@ -11,7 +12,7 @@ from app.db import JobStore
 from app.manager.core import QueueManager, _password_prompt_events
 from app.manager.state import JobState
 from app.manager.status.messaging import _last_edit_times
-from app.rate_limiter import TelegramRateLimiter
+from app.pacing import TelegramRateLimiter
 
 
 @pytest.mark.asyncio
@@ -55,7 +56,7 @@ async def test_cancel_job_full_cleanup(tmp_path: Path):
     await store.close()
 
 
-def test_rate_limiter_stale_chat_cleanup():
+def test_pacing_stale_chat_cleanup():
     limiter = TelegramRateLimiter()
 
     stale_chat = 1111

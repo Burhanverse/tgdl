@@ -97,7 +97,7 @@ def is_split_archive(target: str | Path | Sequence[str | Path]) -> bool:
     """Returns True if the file name or any file in target list matches a split archive pattern."""
     if isinstance(target, (str, Path)):
         return get_split_archive_info(Path(target).name) is not None
-    
+
     for item in target:
         if get_split_archive_info(Path(item).name) is not None:
             return True

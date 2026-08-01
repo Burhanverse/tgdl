@@ -6,7 +6,7 @@ import logging
 from pyrogram import Client
 from pyrogram.types import LinkPreviewOptions, Message
 
-from ...rate_limiter import telegram_limiter
+from ...pacing import telegram_limiter
 from ...telegram_helper.message_utils import (
     send_message as helper_send_message,
 )

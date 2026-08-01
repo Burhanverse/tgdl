@@ -40,7 +40,7 @@ def _convert_audio(input_path: Path, output_path: Path) -> bool:
     temp_wav = None
     try:
         source_path = input_path
-        
+
         # 1. Try reading with Pedalboard first. If it fails, transcode to WAV first.
         try:
             with AudioFile(str(source_path)) as f:
@@ -52,7 +52,7 @@ def _convert_audio(input_path: Path, output_path: Path) -> bool:
             temp_fd, temp_path_str = tempfile.mkstemp(suffix=".wav", dir=str(input_path.parent))
             os.close(temp_fd)
             temp_wav = Path(temp_path_str)
-            
+
             # Transcode input to temp WAV
             _transcode_to_wav_pyav(input_path, temp_wav)
             source_path = temp_wav
@@ -71,7 +71,7 @@ def _convert_audio(input_path: Path, output_path: Path) -> bool:
             HighpassFilter(cutoff_frequency_hz=30),
             Compressor(threshold_db=-12, ratio=2.0),
         ])
-        
+
         effected_audio = board(audio, samplerate)
 
         # Write out to MP3 format

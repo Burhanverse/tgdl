@@ -14,7 +14,7 @@ async def test_settings_validation(monkeypatch, tmp_path):
     monkeypatch.setenv("TG_API_HASH", "test_hash")
     monkeypatch.setenv("TG_BOT_TOKEN", "123:test_token")
     monkeypatch.setenv("LOG_FORMAT", "json")
-    
+
     settings = Settings()
     assert settings.tg_api_id == 99999
     assert settings.tg_api_hash == "test_hash"

@@ -101,6 +101,14 @@ async def start_aria2_daemon() -> None:
     """Launch the global aria2c RPC daemon with live trackers from ngosang/trackerslist."""
     global ARIA2_PORT, ARIA2_PROC, ARIA2_SECRET
     if ARIA2_PROC is not None:
+        if settings.global_download_speed_limit and str(settings.global_download_speed_limit).strip().lower() not in ("none", "0", ""):
+            limit_val = str(settings.global_download_speed_limit)
+        else:
+            limit_val = "0"
+        try:
+            await async_rpc_call(ARIA2_PORT, "aria2.changeGlobalOption", [{"max-overall-download-limit": limit_val}])
+        except Exception as e:
+            log.debug("Failed to update aria2c global download speed limit: %s", e)
         return  # Already running
 
     if shutil.which("aria2c") is None:
@@ -114,7 +122,7 @@ async def start_aria2_daemon() -> None:
     ARIA2_SECRET = secrets.token_urlsafe(32)
     tracker_str = get_tracker_string()
     tracker_arg = f"--bt-tracker={tracker_str}"
-    
+
     log_dir = settings.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "aria2c_daemon.log"
@@ -139,6 +147,8 @@ async def start_aria2_daemon() -> None:
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         tracker_arg
     ]
+    if settings.global_download_speed_limit and str(settings.global_download_speed_limit).strip().lower() not in ("none", "0", ""):
+        cmd.append(f"--max-overall-download-limit={settings.global_download_speed_limit}")
 
     log.info("Launching global aria2c RPC daemon on port %s...", port)
     try:
@@ -224,10 +234,10 @@ async def download_torrent_async(
                 target = add_trackers_to_magnet(target)
 
             response = await async_rpc_call(port, "aria2.addUri", [[target], rpc_options])
-            
+
         if "error" in response:
             raise Exception(response["error"].get("message", "unknown error"))
-            
+
         gid = response.get("result")
     except Exception as e:
         log.exception("Failed to add download to aria2c RPC daemon")

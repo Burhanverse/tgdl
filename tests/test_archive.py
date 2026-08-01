@@ -187,7 +187,7 @@ async def test_password_protected_archive_handling():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         archive_path = tmp_path / "protected.7z"
-        
+
         # Create an encrypted 7z archive
         with py7zr.SevenZipFile(archive_path, "w", password="mysecretpassword") as archive:
             archive.writestr("Top secret data content", "secret.txt")

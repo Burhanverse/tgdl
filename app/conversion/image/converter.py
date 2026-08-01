@@ -30,7 +30,7 @@ def _convert_image_to_png(input_path: Path, output_path: Path) -> bool:
             video_stream = next((s for s in container.streams if s.type == "video"), None)
             if not video_stream:
                 raise ValueError("No video/image stream found in container")
-            
+
             for frame in container.decode(video_stream):
                 # Convert PyAV frame to PIL Image
                 img = frame.to_image()
@@ -39,7 +39,7 @@ def _convert_image_to_png(input_path: Path, output_path: Path) -> bool:
                 img.save(output_path, "PNG")
                 log.info("PyAV fallback image conversion successful for %s", input_path.name)
                 return True
-                
+
         raise ValueError("No frames could be decoded from container")
     except Exception as av_err:
         log.exception("PyAV image conversion fallback failed for %s: %s", input_path.name, av_err)

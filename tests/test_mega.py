@@ -76,7 +76,7 @@ async def test_mega_downloader_progress_callback():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         dest = Path(tmpdir)
-        
+
         # Test progress hook factory directly
         factory = downloader._create_hook_factory()
         with factory("test_file.bin", 1000, "DOWN") as hook:

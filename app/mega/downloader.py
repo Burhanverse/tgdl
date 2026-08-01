@@ -32,12 +32,18 @@ class MegaDownloader:
         self._own_client = client is None
 
     def _create_hook_factory(self):
+        from ..config import settings
+        from ..pacing import DownloadThrottler
+        throttler = DownloadThrottler(settings.global_download_speed_limit)
+
         @contextlib.contextmanager
         def factory(description: str, total: float, kind: str):
             self.current_filename = description
 
             def progress_hook(advance: float) -> None:
-                self.total_downloaded_bytes += int(advance)
+                advance_bytes = int(advance)
+                throttler.consume_sync(advance_bytes)
+                self.total_downloaded_bytes += advance_bytes
                 elapsed = max(time.time() - self.start_time, 0.1)
                 speed = self.total_downloaded_bytes / elapsed
                 if self.progress_callback:
@@ -95,7 +101,7 @@ class MegaDownloader:
             for raw_url in urls:
                 clean_url = raw_url
                 clean_url = clean_url.removeprefix("mega:")
-                
+
                 log.info("Downloading MEGA url '%s' to %s", clean_url, dest_dir)
                 try:
                     await self.client.download_url(clean_url, output_dir=dest_dir)

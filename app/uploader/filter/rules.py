@@ -39,31 +39,31 @@ def should_ignore_file(path: Path) -> bool:
     """
     try:
         name_lower = path.name.lower()
-        
+
         # 1. Exact ignored filenames
         if name_lower in IGNORED_FILENAMES:
             return True
-            
+
         # 2. Hidden resource forks
         if name_lower.startswith("._"):
             return True
-            
+
         # 3. Temp/partial download extensions
         if path.suffix.lower() in IGNORED_EXTENSIONS:
             return True
-            
+
         # 4. Ignored directories in any part of the path
         for part in path.parts:
             part_lower = part.lower()
             if part_lower in IGNORED_DIRNAMES or part_lower.startswith("__macosx") or part_lower.endswith("_pd_temp"):
                 return True
-                
+
         # 5. Empty files
         if path.is_file() and path.stat().st_size == 0:
             log.debug("Ignoring empty file (0 bytes): %s", path.name)
             return True
-            
+
     except Exception as e:
         log.warning("Error evaluating ignore filter for %s: %s", path, e)
-        
+
     return False

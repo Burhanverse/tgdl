@@ -9,7 +9,7 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram.types import InlineKeyboardMarkup, LinkPreviewOptions, Message
 
-from ..rate_limiter import telegram_limiter
+from ..pacing import telegram_limiter
 
 log = logging.getLogger(__name__)
 

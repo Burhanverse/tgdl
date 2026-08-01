@@ -137,7 +137,7 @@ def compile_split_prompt_text(job_id: str, url_or_target: str, is_torrent: bool 
     else:
         title = f"**Job #{job_id} Registered**"
         target_label = "URL"
-    
+
     display = format_url_display(url_or_target) if not (is_torrent or is_unzip) else url_or_target
     return (
         f"> {title}\n"

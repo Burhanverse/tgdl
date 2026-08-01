@@ -9,7 +9,7 @@ from pyrogram import Client
 from pyrogram.errors import FloodPremiumWait, FloodWait
 from pyrogram.types import Message
 
-from ...rate_limiter import telegram_limiter
+from ...pacing import telegram_limiter
 
 _global_lock: asyncio.Lock | None = None
 

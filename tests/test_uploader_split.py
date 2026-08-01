@@ -43,7 +43,7 @@ async def test_handle_large_file_split_and_parts():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         large_file = tmp_path / "large_archive.zip"
-        
+
         # Create a dummy file exceeding small threshold test
         content = b"X" * (1024 * 1024 * 5)  # 5MB
         large_file.write_bytes(content)

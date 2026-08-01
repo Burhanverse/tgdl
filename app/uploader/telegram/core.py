@@ -26,7 +26,7 @@ from tenacity import (
 
 from ...config import settings
 from ...conversion import convert_image_to_png_async
-from ...rate_limiter import telegram_limiter
+from ...pacing import telegram_limiter
 from ..video import extract_video_thumbnail, probe_video, take_screenshots
 
 log = logging.getLogger(__name__)

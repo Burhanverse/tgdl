@@ -91,10 +91,10 @@ class JobStore:
                         has_uploaded_files = True
                     except Exception:
                         has_uploaded_files = False
-                    
+
                     # Create the new tables using the updated SCHEMA
                     await self._db.executescript(SCHEMA)
-                    
+
                     # Migrate records by converting id/job_id to string
                     await self._db.execute(
                         "INSERT INTO jobs (id, chat_id, status_message_id, url, status, total_files, sent_files, "
@@ -108,7 +108,7 @@ class JobStore:
                             "SELECT CAST(job_id AS TEXT), filename FROM uploaded_files_old"
                         )
                         await self._db.execute("DROP TABLE uploaded_files_old")
-                    
+
                     await self._db.execute("DROP TABLE jobs_old")
                     await self._db.commit()
         except Exception as migration_err:

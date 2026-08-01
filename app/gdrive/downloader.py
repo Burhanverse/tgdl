@@ -89,13 +89,22 @@ class GoogleDriveDownloader:
         initial_downloaded = self.downloaded_bytes
 
         def _do_download():
+            from ..config import settings
+            from ..pacing import DownloadThrottler
+            throttler = DownloadThrottler(settings.global_download_speed_limit)
+
             with open(file_path, "wb") as fh:
                 downloader = MediaIoBaseDownload(fh, request, chunksize=8 * 1024 * 1024)
                 done = False
+                prev_bytes = 0
                 while not done:
                     status, done = downloader.next_chunk()
                     if status:
                         current_file_bytes = status.resumable_progress
+                        chunk_size = max(0, current_file_bytes - prev_bytes)
+                        prev_bytes = current_file_bytes
+                        throttler.consume_sync(chunk_size)
+
                         self.downloaded_bytes = initial_downloaded + current_file_bytes
                         elapsed = max(time.time() - self.start_time, 0.1)
                         speed = self.downloaded_bytes / elapsed

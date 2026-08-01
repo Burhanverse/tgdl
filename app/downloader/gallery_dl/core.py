@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ...config import settings
-from ...rate_limiter import Backoff, looks_rate_limited
+from ...pacing import Backoff, looks_rate_limited
 
 log = logging.getLogger(__name__)
 
