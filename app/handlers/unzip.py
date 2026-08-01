@@ -14,12 +14,14 @@ from pyrogram.types import (
     Message,
 )
 
-from ..archive import (
+from ..utils.archive import (
     ARCHIVE_EXT,
+    archive_session_store,
     get_split_archive_info,
     handle_multi_cancel_cb,
     handle_multi_document,
     handle_multi_start_cb,
+    normalize_split_archive_filenames,
     start_multi_unzip_session,
 )
 from ..auth import authorized_filter
@@ -36,8 +38,6 @@ from ..manager.status.compiler import (
 )
 
 log = logging.getLogger(__name__)
-
-_split_archive_sessions: dict[int, dict] = {}
 
 
 def compile_split_session_text(prefix: str, ext: str, parts: dict[int, Message]) -> str:
@@ -81,7 +81,7 @@ def register_unzip_handlers(app: Client) -> None:
         if lowered_args == "multi" or lowered_args.startswith("multi "):
             password = args_text[5:].strip() if len(args_text) > 5 else None
             password = password or None
-            await start_multi_unzip_session(message, password=password, split_archive_sessions=_split_archive_sessions)
+            await start_multi_unzip_session(message, password=password)
             return
 
         if lowered_args == "split" or lowered_args.startswith("split "):
@@ -91,15 +91,16 @@ def register_unzip_handlers(app: Client) -> None:
             user_id = message.from_user.id if message.from_user else chat_id
             session_key = chat_id
 
-            if session_key in _split_archive_sessions:
-                old_session = _split_archive_sessions.pop(session_key)
-                if old_session.get("timeout_task"):
+            if archive_session_store.has_split_session(session_key):
+                old_session = archive_session_store.pop_split_session(session_key)
+                if old_session and old_session.get("timeout_task"):
                     old_session["timeout_task"].cancel()
-                try:
-                    await old_session["status_msg"].edit_text("**Session replaced by a new one.**")
-                except Exception:
-                    # expected: status message already deleted or unchanged
-                    pass
+                if old_session and "status_msg" in old_session:
+                    try:
+                        await old_session["status_msg"].edit_text("**Session replaced by a new one.**")
+                    except Exception:
+                        # expected: status message already deleted or unchanged
+                        pass
 
             def get_split_session_keyboard(c_id: int, u_id: int) -> InlineKeyboardMarkup:
                 return InlineKeyboardMarkup([
@@ -119,15 +120,16 @@ def register_unzip_handlers(app: Client) -> None:
             async def split_session_timeout(c_id: int, delay: int = 300):
                 await asyncio.sleep(delay)
                 s_key = c_id
-                if s_key in _split_archive_sessions:
-                    session = _split_archive_sessions.pop(s_key)
-                    try:
-                        await session["status_msg"].edit_text("**Split Archive Session Expired** (Timeout due to inactivity).")
-                    except Exception:
-                        pass
+                if archive_session_store.has_split_session(s_key):
+                    session = archive_session_store.pop_split_session(s_key)
+                    if session:
+                        try:
+                            await session["status_msg"].edit_text("**Split Archive Session Expired** (Timeout due to inactivity).")
+                        except Exception:
+                            pass
 
             timeout_task = asyncio.create_task(split_session_timeout(chat_id))
-            _split_archive_sessions[session_key] = {
+            archive_session_store.set_split_session(session_key, {
                 "user_id": user_id,
                 "password": password,
                 "parts": {},
@@ -135,7 +137,7 @@ def register_unzip_handlers(app: Client) -> None:
                 "ext": None,
                 "status_msg": status_msg,
                 "timeout_task": timeout_task,
-            }
+            })
             return
 
         if not message.reply_to_message or not message.reply_to_message.document:
@@ -200,10 +202,10 @@ def register_unzip_handlers(app: Client) -> None:
         if handled_multi:
             return
 
-        if chat_id not in _split_archive_sessions:
+        if not archive_session_store.has_split_session(chat_id):
             return
 
-        session = _split_archive_sessions[chat_id]
+        session = archive_session_store.get_split_session(chat_id)
         if message.from_user and message.from_user.id != session["user_id"]:
             return
 
@@ -230,13 +232,14 @@ def register_unzip_handlers(app: Client) -> None:
 
         async def reset_timeout():
             await asyncio.sleep(300)
-            if chat_id in _split_archive_sessions:
-                s = _split_archive_sessions.pop(chat_id)
-                try:
-                    await s["status_msg"].edit_text("**Split Archive Session Expired** (Timeout due to inactivity).")
-                except Exception:
-                    # expected: status message already deleted or unchanged
-                    pass
+            if archive_session_store.has_split_session(chat_id):
+                s = archive_session_store.pop_split_session(chat_id)
+                if s:
+                    try:
+                        await s["status_msg"].edit_text("**Split Archive Session Expired** (Timeout due to inactivity).")
+                    except Exception:
+                        # expected: status message already deleted or unchanged
+                        pass
 
         session["timeout_task"] = asyncio.create_task(reset_timeout())
         updated_text = compile_split_session_text(session["prefix"], session["ext"], session["parts"])
@@ -259,7 +262,7 @@ def register_unzip_handlers(app: Client) -> None:
             await query.answer("You are not authorized to cancel this session.", show_alert=True)
             return
 
-        session = _split_archive_sessions.pop(chat_id, None)
+        session = archive_session_store.pop_split_session(chat_id)
         if session and session.get("timeout_task"):
             session["timeout_task"].cancel()
 
@@ -276,7 +279,7 @@ def register_unzip_handlers(app: Client) -> None:
             await query.answer("You are not authorized to start this session.", show_alert=True)
             return
 
-        session = _split_archive_sessions.pop(chat_id, None)
+        session = archive_session_store.pop_split_session(chat_id)
         if not session or not session["parts"]:
             await query.answer("No split archive parts received yet!", show_alert=True)
             return

@@ -6,11 +6,7 @@ from pathlib import Path
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 
-from ..archive import (
-    _archive_choices,
-    _archive_events,
-    _archive_ids,
-)
+from ..utils.archive import archive_session_store
 from ..auth import authorized_filter
 from ..conversion import (
     _conversion_choices,
@@ -89,7 +85,7 @@ def register_choice_callback_handlers(app: Client) -> None:
         choice_str = "Archive Only" if choice == "only" else "Extract & Upload Both"
         await query.answer(f"Selected: {choice_str}")
 
-        filename = _archive_ids.get(job.id, {}).get(archive_id, archive_id)
+        filename = archive_session_store.get_archive_filename(job.id, archive_id) or archive_id
         display_name = Path(filename).name if filename else archive_id
 
         try:
@@ -98,11 +94,8 @@ def register_choice_callback_handlers(app: Client) -> None:
             # expected: message text already up to date or deleted
             pass
 
-        if job.id in _archive_events and archive_id in _archive_events[job.id]:
-            if job.id not in _archive_choices:
-                _archive_choices[job.id] = {}
-            _archive_choices[job.id][archive_id] = choice
-            _archive_events[job.id][archive_id].set()
+        archive_session_store.set_choice(job.id, archive_id, choice)
+        archive_session_store.set_event(job.id, archive_id)
 
     @app.on_callback_query(filters.regex(r"^convert_(mp4|mp3|orig):(\w+):(.+)$") & authorized_filter)
     async def conversion_choice_cb(_, query: CallbackQuery) -> None:

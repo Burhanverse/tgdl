@@ -10,7 +10,7 @@ from pathlib import Path
 import patoolib
 from patoolib.util import PatoolError
 
-from ..config import settings
+from ...config import settings
 
 log = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ async def archive_folder_async(
                 copied_files.append(copied_p)
 
             async def upload_bg():
-                from ..uploader import upload_to_pixeldrain
+                from ...uploader import upload_to_pixeldrain
                 domain = settings.pixeldrain_domain or "pixeldrain.com"
                 for path in copied_files:
                     try:

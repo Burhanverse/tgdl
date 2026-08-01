@@ -1,22 +1,19 @@
-from .archiver import (
+from __future__ import annotations
+
+from .create import (
     archive_all_folders_in_dir,
     archive_folder_async,
     create_archive_async,
 )
-from .core import (
+from .extract import (
     ARCHIVE_EXT,
     ArchivePasswordRequired,
     extract_archive_async,
     is_archive,
 )
 from .sessions import (
-    _archive_choices,
-    _archive_events,
-    _archive_ids,
-    _extracted_archives,
-    _extracted_file_names,
-    _multi_archive_sessions,
-    _split_archive_sessions,
+    ArchiveSessionStore,
+    archive_session_store,
     handle_archive_choice,
     handle_multi_cancel_cb,
     handle_multi_document,
@@ -24,7 +21,7 @@ from .sessions import (
     run_multi_archive_download_and_extract,
     start_multi_unzip_session,
 )
-from .split import (
+from .split_detect import (
     get_split_archive_info,
     is_split_archive,
     normalize_split_archive_filenames,
@@ -33,15 +30,10 @@ from .split import (
 __all__ = [
     "ARCHIVE_EXT",
     "ArchivePasswordRequired",
-    "_archive_choices",
-    "_archive_events",
-    "_archive_ids",
-    "_extracted_archives",
-    "_extracted_file_names",
-    "_multi_archive_sessions",
-    "_split_archive_sessions",
+    "ArchiveSessionStore",
     "archive_all_folders_in_dir",
     "archive_folder_async",
+    "archive_session_store",
     "create_archive_async",
     "extract_archive_async",
     "get_split_archive_info",

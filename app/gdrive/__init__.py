@@ -1,4 +1,4 @@
-from ..archive import archive_all_folders_in_dir, archive_folder_async
+from ..utils.archive import archive_all_folders_in_dir, archive_folder_async
 from .auth import (
     GoogleDriveAuthManager,
     create_oauth_flow_from_json,

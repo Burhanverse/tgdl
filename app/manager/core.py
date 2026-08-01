@@ -149,13 +149,7 @@ class QueueManager:
         shutil.rmtree(job_state.dest_dir, ignore_errors=True)
         shutil.rmtree(job_state.dest_dir.parent / f"{job_state.dest_dir.name}_extracted", ignore_errors=True)
 
-        from ..archive import (
-            _archive_choices,
-            _archive_events,
-            _archive_ids,
-            _extracted_archives,
-            _extracted_file_names,
-        )
+        from ..utils.archive import archive_session_store
         from ..conversion import (
             _conversion_choices,
             _conversion_events,
@@ -164,11 +158,7 @@ class QueueManager:
         )
         from .status.messaging import _last_edit_times
 
-        _archive_ids.pop(job_id, None)
-        _archive_events.pop(job_id, None)
-        _archive_choices.pop(job_id, None)
-        _extracted_archives.pop(job_id, None)
-        _extracted_file_names.pop(job_id, None)
+        archive_session_store.pop_job(job_id)
         _conversion_ids.pop(job_id, None)
         _conversion_events.pop(job_id, None)
         _conversion_choices.pop(job_id, None)
@@ -848,14 +838,10 @@ class QueueManager:
 
     async def _process_upload(self, job_state: JobState) -> None:
         job_state.active_upload_task = asyncio.current_task()
-        from ..archive import (
+        from ..utils.archive import (
             ARCHIVE_EXT,
             ArchivePasswordRequired,
-            _archive_choices,
-            _archive_events,
-            _archive_ids,
-            _extracted_archives,
-            _extracted_file_names,
+            archive_session_store,
             extract_archive_async,
             get_split_archive_info,
         )
@@ -1099,23 +1085,19 @@ class QueueManager:
 
                 if is_archive:
                     archive_prompt_msg_id = None
-                    if job.id not in _archive_ids:
-                        _archive_ids[job.id] = {}
                     archive_id = None
-                    for aid, rel_path in _archive_ids[job.id].items():
+                    for aid, rel_path in archive_session_store.get_archive_ids(job.id).items():
                         if rel_path == f_rel:
                             archive_id = aid
                             break
                     if archive_id is None:
-                        archive_id = str(len(_archive_ids[job.id]) + 1)
-                        _archive_ids[job.id][archive_id] = f_rel
+                        archive_id = archive_session_store.get_next_archive_id(job.id)
+                        archive_session_store.register_archive_id(job.id, archive_id, f_rel)
 
                     if is_unzip_job:
-                        if job.id not in _archive_choices:
-                            _archive_choices[job.id] = {}
-                        _archive_choices[job.id][archive_id] = "ext"
+                        archive_session_store.set_choice(job.id, archive_id, "ext")
                     else:
-                        if job.id not in _archive_choices or archive_id not in _archive_choices[job.id]:
+                        if not archive_session_store.has_choice(job.id, archive_id):
                             prompt_text = compile_archive_prompt_text(job.id, f.name)
                             kb = InlineKeyboardMarkup([
                                 [
@@ -1129,23 +1111,20 @@ class QueueManager:
                             prompt_msg = await safe_send(self.client, chat_id, prompt_text, reply_markup=kb)
                             if prompt_msg:
                                 archive_prompt_msg_id = prompt_msg.id
-
-                                if job.id not in _archive_events:
-                                    _archive_events[job.id] = {}
-                                _archive_events[job.id][archive_id] = asyncio.Event()
+                                evt = archive_session_store.create_event(job.id, archive_id)
 
                                 start_t = time.time()
-                                while not job_state.uploader_done.is_set() and not _archive_events[job.id][archive_id].is_set():
+                                while not job_state.uploader_done.is_set() and not evt.is_set():
                                     if time.time() - start_t >= 15.0:
                                         break
                                     try:
-                                        await asyncio.wait_for(_archive_events[job.id][archive_id].wait(), timeout=2.0)
+                                        await asyncio.wait_for(evt.wait(), timeout=2.0)
                                     except TimeoutError:
                                         pass
                                 if job_state.uploader_done.is_set():
                                     return
 
-                                if not _archive_events[job.id][archive_id].is_set():
+                                if not evt.is_set():
                                     if archive_prompt_msg_id:
                                         try:
                                             await self.client.delete_messages(chat_id, archive_prompt_msg_id)
@@ -1153,19 +1132,13 @@ class QueueManager:
                                             # expected: prompt message already deleted
                                             pass
                                         archive_prompt_msg_id = None
-                                    if job.id not in _archive_choices:
-                                        _archive_choices[job.id] = {}
-                                    _archive_choices[job.id][archive_id] = "only"
+                                    archive_session_store.set_choice(job.id, archive_id, "only")
                             else:
-                                if job.id not in _archive_choices:
-                                    _archive_choices[job.id] = {}
-                                _archive_choices[job.id][archive_id] = "only"
+                                archive_session_store.set_choice(job.id, archive_id, "only")
 
-                    choice = _archive_choices[job.id][archive_id]
-                    if choice == "ext" and f_rel not in _extracted_archives.get(job.id, set()):
-                        if job.id not in _extracted_archives:
-                            _extracted_archives[job.id] = set()
-                        _extracted_archives[job.id].add(f_rel)
+                    choice = archive_session_store.get_choice(job.id, archive_id)
+                    if choice == "ext" and f_rel not in archive_session_store.get_extracted_archives(job.id):
+                        archive_session_store.add_extracted_archive(job.id, f_rel)
 
                         status_msg = await safe_send(
                             self.client,
@@ -1201,10 +1174,8 @@ class QueueManager:
                                 try:
                                     after_files = {p.resolve() for p in extract_dir.rglob("*") if p.is_file()}
                                     new_files = after_files - before_files
-                                    if job.id not in _extracted_file_names:
-                                        _extracted_file_names[job.id] = set()
                                     for new_f in new_files:
-                                        _extracted_file_names[job.id].add(new_f.name)
+                                        archive_session_store.add_extracted_file_name(job.id, new_f.name)
                                 except Exception as e:
                                     log.debug("Notice scanning extract_dir after extraction: %s", e)
 
@@ -1896,13 +1867,7 @@ class QueueManager:
                 final_text = compile_job_status_text(db_job, job_state)
                 await safe_edit(self.client, chat_id, job_state.msg_id, final_text, reply_markup=None, force=True)
 
-            from ..archive import (
-                _archive_choices,
-                _archive_events,
-                _archive_ids,
-                _extracted_archives,
-                _extracted_file_names,
-            )
+            from ..utils.archive import archive_session_store
             from ..conversion import (
                 _conversion_choices,
                 _conversion_events,
@@ -1911,11 +1876,7 @@ class QueueManager:
             )
             from .status.messaging import _last_edit_times
 
-            _archive_ids.pop(job.id, None)
-            _archive_events.pop(job.id, None)
-            _archive_choices.pop(job.id, None)
-            _extracted_archives.pop(job.id, None)
-            _extracted_file_names.pop(job.id, None)
+            archive_session_store.pop_job(job.id)
             _conversion_ids.pop(job.id, None)
             _conversion_events.pop(job.id, None)
             _conversion_choices.pop(job.id, None)

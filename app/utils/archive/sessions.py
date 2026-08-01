@@ -14,21 +14,134 @@ from pyrogram.types import (
     Message,
 )
 
-from ..config import settings
-from ..db import JobStatus, JobStore
-from .core import ARCHIVE_EXT
-from .split import get_split_archive_info
+from ...config import settings
+from ...db import JobStatus, JobStore
+from .extract import ARCHIVE_EXT
+from .split_detect import get_split_archive_info, normalize_split_archive_filenames
 
 log = logging.getLogger(__name__)
 
-_archive_ids: dict[str, dict[str, str]] = {}
-_archive_events: dict[str, dict[str, asyncio.Event]] = {}
-_archive_choices: dict[str, dict[str, str]] = {}
-_extracted_archives: dict[str, set[str]] = {}
-_extracted_file_names: dict[str, set[str]] = {}
 
-_multi_archive_sessions: dict[int, dict] = {}
-_split_archive_sessions: dict[int, dict] = {}
+class ArchiveSessionStore:
+    """Encapsulates per-job archive state and multi/split session state."""
+
+    def __init__(self) -> None:
+        self._archive_ids: dict[str, dict[str, str]] = {}
+        self._archive_events: dict[str, dict[str, asyncio.Event]] = {}
+        self._archive_choices: dict[str, dict[str, str]] = {}
+        self._extracted_archives: dict[str, set[str]] = {}
+        self._extracted_file_names: dict[str, set[str]] = {}
+
+        self._multi_archive_sessions: dict[int, dict] = {}
+        self._split_archive_sessions: dict[int, dict] = {}
+
+    def register_archive_id(self, job_id: str, archive_id: str, filename: str) -> None:
+        if job_id not in self._archive_ids:
+            self._archive_ids[job_id] = {}
+        self._archive_ids[job_id][archive_id] = filename
+
+    def get_archive_filename(self, job_id: str, archive_id: str) -> str | None:
+        return self._archive_ids.get(job_id, {}).get(archive_id)
+
+    def get_archive_ids(self, job_id: str) -> dict[str, str]:
+        return self._archive_ids.get(job_id, {})
+
+    def get_next_archive_id(self, job_id: str) -> str:
+        return str(len(self._archive_ids.get(job_id, {})) + 1)
+
+    def set_choice(self, job_id: str, archive_id: str, choice: str) -> None:
+        if job_id not in self._archive_choices:
+            self._archive_choices[job_id] = {}
+        self._archive_choices[job_id][archive_id] = choice
+
+    def get_choice(self, job_id: str, archive_id: str) -> str | None:
+        return self._archive_choices.get(job_id, {}).get(archive_id)
+
+    def has_choice(self, job_id: str, archive_id: str) -> bool:
+        return job_id in self._archive_choices and archive_id in self._archive_choices[job_id]
+
+    def create_event(self, job_id: str, archive_id: str) -> asyncio.Event:
+        if job_id not in self._archive_events:
+            self._archive_events[job_id] = {}
+        evt = asyncio.Event()
+        self._archive_events[job_id][archive_id] = evt
+        return evt
+
+    def get_event(self, job_id: str, archive_id: str) -> asyncio.Event | None:
+        return self._archive_events.get(job_id, {}).get(archive_id)
+
+    def set_event(self, job_id: str, archive_id: str) -> bool:
+        evt = self.get_event(job_id, archive_id)
+        if evt:
+            evt.set()
+            return True
+        return False
+
+    def is_event_set(self, job_id: str, archive_id: str) -> bool:
+        evt = self.get_event(job_id, archive_id)
+        return evt.is_set() if evt else False
+
+    def add_extracted_archive(self, job_id: str, archive_name: str) -> None:
+        if job_id not in self._extracted_archives:
+            self._extracted_archives[job_id] = set()
+        self._extracted_archives[job_id].add(archive_name)
+
+    def get_extracted_archives(self, job_id: str) -> set[str]:
+        return self._extracted_archives.get(job_id, set())
+
+    def add_extracted_file_name(self, job_id: str, file_name: str) -> None:
+        if job_id not in self._extracted_file_names:
+            self._extracted_file_names[job_id] = set()
+        self._extracted_file_names[job_id].add(file_name)
+
+    def get_extracted_file_names(self, job_id: str) -> set[str]:
+        return self._extracted_file_names.get(job_id, set())
+
+    def pop_job(self, job_id: str) -> None:
+        """Clears all tracking entries across all per-job dictionaries at once."""
+        self._archive_ids.pop(job_id, None)
+        self._archive_events.pop(job_id, None)
+        self._archive_choices.pop(job_id, None)
+        self._extracted_archives.pop(job_id, None)
+        self._extracted_file_names.pop(job_id, None)
+
+    def contains_job(self, job_id: str) -> bool:
+        return (
+            job_id in self._archive_ids
+            or job_id in self._archive_choices
+            or job_id in self._archive_events
+            or job_id in self._extracted_archives
+            or job_id in self._extracted_file_names
+        )
+
+    # Multi session methods
+    def get_multi_session(self, session_key: int) -> dict | None:
+        return self._multi_archive_sessions.get(session_key)
+
+    def set_multi_session(self, session_key: int, session: dict) -> None:
+        self._multi_archive_sessions[session_key] = session
+
+    def pop_multi_session(self, session_key: int) -> dict | None:
+        return self._multi_archive_sessions.pop(session_key, None)
+
+    def has_multi_session(self, session_key: int) -> bool:
+        return session_key in self._multi_archive_sessions
+
+    # Split session methods
+    def get_split_session(self, session_key: int) -> dict | None:
+        return self._split_archive_sessions.get(session_key)
+
+    def set_split_session(self, session_key: int, session: dict) -> None:
+        self._split_archive_sessions[session_key] = session
+
+    def pop_split_session(self, session_key: int) -> dict | None:
+        return self._split_archive_sessions.pop(session_key, None)
+
+    def has_split_session(self, session_key: int) -> bool:
+        return session_key in self._split_archive_sessions
+
+
+archive_session_store = ArchiveSessionStore()
 
 
 async def handle_archive_choice(
@@ -52,27 +165,23 @@ async def handle_archive_choice(
         await callback_query.answer("Unauthorized: You cannot manage archive choices for this job.", show_alert=True)
         return
 
-    filename = _archive_ids.get(job_id, {}).get(archive_id)
+    filename = archive_session_store.get_archive_filename(job_id, archive_id)
     if not filename:
         await callback_query.answer("Archive choice expired or not found.", show_alert=True)
         return
 
-    if job_id not in _archive_choices:
-        _archive_choices[job_id] = {}
-    _archive_choices[job_id][archive_id] = choice
-
-    if job_id in _archive_events and archive_id in _archive_events[job_id]:
-        _archive_events[job_id][archive_id].set()
+    archive_session_store.set_choice(job_id, archive_id, choice)
+    archive_session_store.set_event(job_id, archive_id)
 
     choice_str = "Upload Archive Only" if choice == "only" else "Upload Archive + Extract Contents"
-    from ..manager.status.compiler import compile_archive_choice_status_text
+    from ...manager.status.compiler import compile_archive_choice_status_text
     status_text = compile_archive_choice_status_text(job.id, Path(filename).name, choice_str)
     await callback_query.message.edit_text(status_text, link_preview_options=LinkPreviewOptions(is_disabled=True))
     await callback_query.answer(f"Selected: {choice_str}")
 
 
 def compile_multi_session_text(archives: list[Message]) -> str:
-    from ..manager.status.messaging import format_size
+    from ...manager.status.messaging import format_size
     if not archives:
         archives_str = "_Waiting for archive files..._"
     else:
@@ -125,15 +234,25 @@ async def start_multi_unzip_session(
             # expected: status message already deleted or unchanged
             pass
 
-    if session_key in _multi_archive_sessions:
-        old_session = _multi_archive_sessions.pop(session_key)
-        if old_session.get("timeout_task"):
+    if archive_session_store.has_split_session(session_key):
+        old_split = archive_session_store.pop_split_session(session_key)
+        if old_split and old_split.get("timeout_task"):
+            old_split["timeout_task"].cancel()
+        if old_split and "status_msg" in old_split:
+            try:
+                await old_split["status_msg"].edit_text("**Session replaced by a new one.**")
+            except Exception:
+                pass
+
+    if archive_session_store.has_multi_session(session_key):
+        old_session = archive_session_store.pop_multi_session(session_key)
+        if old_session and old_session.get("timeout_task"):
             old_session["timeout_task"].cancel()
-        try:
-            await old_session["status_msg"].edit_text("**Session replaced by a new one.**")
-        except Exception:
-            # expected: status message already deleted or unchanged
-            pass
+        if old_session and "status_msg" in old_session:
+            try:
+                await old_session["status_msg"].edit_text("**Session replaced by a new one.**")
+            except Exception:
+                pass
 
     status_msg = await message.reply_text(
         "**Multi Archive Session Started**\n\n"
@@ -145,28 +264,28 @@ async def start_multi_unzip_session(
     async def multi_session_timeout(c_id: int, delay: int = 300):
         await asyncio.sleep(delay)
         s_key = c_id
-        if s_key in _multi_archive_sessions:
-            session = _multi_archive_sessions.pop(s_key)
-            try:
-                await session["status_msg"].edit_text("**Multi Archive Session Expired** (Timeout due to inactivity).")
-            except Exception:
-                # expected: status message already deleted or unchanged
-                pass
+        if archive_session_store.has_multi_session(s_key):
+            session = archive_session_store.pop_multi_session(s_key)
+            if session:
+                try:
+                    await session["status_msg"].edit_text("**Multi Archive Session Expired** (Timeout due to inactivity).")
+                except Exception:
+                    pass
 
     timeout_task = asyncio.create_task(multi_session_timeout(chat_id))
 
-    _multi_archive_sessions[session_key] = {
+    archive_session_store.set_multi_session(session_key, {
         "archives": [],
         "status_msg": status_msg,
         "password": password,
         "timeout_task": timeout_task
-    }
+    })
 
 
 async def handle_multi_document(message: Message) -> bool:
     chat_id = message.chat.id
     session_key = chat_id
-    if session_key not in _multi_archive_sessions:
+    if not archive_session_store.has_multi_session(session_key):
         return False
 
     if not message.document:
@@ -182,7 +301,10 @@ async def handle_multi_document(message: Message) -> bool:
         log.debug("Filename %s not recognized as an archive in multi session", filename)
         return False
 
-    session = _multi_archive_sessions[session_key]
+    session = archive_session_store.get_multi_session(session_key)
+    if not session:
+        return False
+
     existing_ids = [m.id for m in session["archives"]]
     if message.id not in existing_ids:
         session["archives"].append(message)
@@ -194,13 +316,13 @@ async def handle_multi_document(message: Message) -> bool:
     async def multi_session_timeout(c_id: int, delay: int = 300):
         await asyncio.sleep(delay)
         s_key = c_id
-        if s_key in _multi_archive_sessions:
-            expired_session = _multi_archive_sessions.pop(s_key)
-            try:
-                await expired_session["status_msg"].edit_text("**Multi Archive Session Expired** (Timeout due to inactivity).")
-            except Exception:
-                # expected: status message already deleted or unchanged
-                pass
+        if archive_session_store.has_multi_session(s_key):
+            expired_session = archive_session_store.pop_multi_session(s_key)
+            if expired_session:
+                try:
+                    await expired_session["status_msg"].edit_text("**Multi Archive Session Expired** (Timeout due to inactivity).")
+                except Exception:
+                    pass
 
     session["timeout_task"] = asyncio.create_task(multi_session_timeout(chat_id))
 
@@ -210,7 +332,6 @@ async def handle_multi_document(message: Message) -> bool:
     try:
         await session["status_msg"].edit_text(new_text, reply_markup=keyboard)
     except Exception:
-        # expected: status message already deleted or unchanged
         pass
 
     return True
@@ -228,9 +349,9 @@ async def handle_multi_cancel_cb(client: Client, callback_query: CallbackQuery) 
         return
 
     session_key = chat_id
-    if session_key in _multi_archive_sessions:
-        session = _multi_archive_sessions.pop(session_key)
-        if session.get("timeout_task"):
+    if archive_session_store.has_multi_session(session_key):
+        session = archive_session_store.pop_multi_session(session_key)
+        if session and session.get("timeout_task"):
             session["timeout_task"].cancel()
         await callback_query.message.edit_text("**Multi Archive Session Cancelled.**")
         await callback_query.answer("Session cancelled.")
@@ -250,18 +371,22 @@ async def handle_multi_start_cb(client: Client, callback_query: CallbackQuery, s
         return
 
     session_key = chat_id
-    if session_key not in _multi_archive_sessions:
+    if not archive_session_store.has_multi_session(session_key):
         await callback_query.answer("Session not found or already expired.", show_alert=True)
         return
 
-    session = _multi_archive_sessions[session_key]
+    session = archive_session_store.get_multi_session(session_key)
+    if not session:
+        await callback_query.answer("Session not found or already expired.", show_alert=True)
+        return
+
     archives = session["archives"]
 
     if not archives:
         await callback_query.answer("No archives uploaded yet. Please send some archive files first.", show_alert=True)
         return
 
-    _multi_archive_sessions.pop(session_key)
+    archive_session_store.pop_multi_session(session_key)
     if session.get("timeout_task"):
         session["timeout_task"].cancel()
 
@@ -317,7 +442,6 @@ async def run_multi_archive_download_and_extract(
             "Downloading & processing each archive..."
         )
     except Exception:
-        # expected: status message already deleted or unchanged
         pass
 
     for idx, group in enumerate(groups, start=1):
@@ -352,7 +476,7 @@ async def run_multi_archive_download_and_extract(
                             return
                         last_edit_time = now
                         try:
-                            from ..manager.status.compiler import (
+                            from ...manager.status.compiler import (
                                 compile_unzip_download_status_text,
                             )
                             progress_name = f"{p_filename} (part {part_idx}/{total_parts_in_group}, job {idx}/{total_groups})"
@@ -361,13 +485,11 @@ async def run_multi_archive_download_and_extract(
                                 reply_markup=keyboard
                             )
                         except Exception:
-                            # expected: status message already deleted or unchanged
                             pass
 
                     log.info("Multi-unzip pipeline [%s/%s]: Downloading split part %s for job #%s...", idx, total_groups, p_filename, job.id)
                     await p_msg.download(file_name=str(target_file), progress=on_split_part_progress)
 
-                from .split import normalize_split_archive_filenames
                 normalize_split_archive_filenames(dest_dir)
 
                 log.info("Multi-unzip pipeline [%s/%s]: All parts downloaded for split archive job #%s. Enqueuing!", idx, total_groups, job.id)
@@ -416,7 +538,7 @@ async def run_multi_archive_download_and_extract(
                         return
                     last_edit_time = now
                     try:
-                        from ..manager.status.compiler import (
+                        from ...manager.status.compiler import (
                             compile_unzip_download_status_text,
                         )
                         progress_name = f"{arch_filename} ({idx}/{total_groups})"
@@ -425,7 +547,6 @@ async def run_multi_archive_download_and_extract(
                             reply_markup=keyboard
                         )
                     except Exception:
-                        # expected: status message already deleted or unchanged
                         pass
 
                 target_file = dest_dir / arch_filename
@@ -462,5 +583,4 @@ async def run_multi_archive_download_and_extract(
             f"Successfully processed all {total_groups} job(s) sequentially."
         )
     except Exception:
-        # expected: status message already deleted or unchanged
         pass

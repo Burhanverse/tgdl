@@ -9,6 +9,8 @@ from pathlib import Path
 import patoolib
 from patoolib.util import PatoolError
 
+from .split_detect import get_split_archive_info, normalize_split_archive_filenames
+
 log = logging.getLogger(__name__)
 
 ARCHIVE_EXT = {
@@ -72,7 +74,6 @@ async def extract_archive_async(
         log.error("Archive path %s does not exist", archive_path)
         return False
 
-    from .split import get_split_archive_info, normalize_split_archive_filenames
     renamed_map = normalize_split_archive_filenames(archive_path.parent)
     if archive_path in renamed_map:
         archive_path = renamed_map[archive_path]

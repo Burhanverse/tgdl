@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.archive import (
+from app.utils.archive import (
     ArchivePasswordRequired,
     archive_folder_async,
     create_archive_async,
@@ -165,7 +165,7 @@ async def test_multi_part_split_archive_assembly():
 @pytest.mark.asyncio
 async def test_split_archive_filename_normalization():
     """Test normalizing split filenames with random Telegram hash suffixes."""
-    from app.archive.split import normalize_split_archive_filenames
+    from app.utils.archive import normalize_split_archive_filenames
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         f1 = tmp_path / "xxyyzz -zzz.part1-tnfHAaap.rar"

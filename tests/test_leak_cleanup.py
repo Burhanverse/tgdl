@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.archive import _archive_ids
+from app.utils.archive import archive_session_store
 from app.conversion import _conversion_ids
 from app.db import JobStore
 from app.manager.core import QueueManager, _password_prompt_events
@@ -32,13 +32,13 @@ async def test_cancel_job_full_cleanup(tmp_path: Path):
     qm.jobs[job.id] = job_state
 
     # Populate tracking dicts
-    _archive_ids[job.id] = "archive_data"
+    archive_session_store.register_archive_id(job.id, "1", "archive_data")
     _conversion_ids[job.id] = "conversion_data"
     _password_prompt_events[job.id] = {}
     _last_edit_times[(job.chat_id, msg_id)] = time.time()
 
     assert job.id in qm.jobs
-    assert job.id in _archive_ids
+    assert archive_session_store.get_archive_filename(job.id, "1") == "archive_data"
     assert job.id in _conversion_ids
     assert job.id in _password_prompt_events
     assert (job.chat_id, msg_id) in _last_edit_times
@@ -48,7 +48,7 @@ async def test_cancel_job_full_cleanup(tmp_path: Path):
 
     # Assert all references evicted
     assert job.id not in qm.jobs
-    assert job.id not in _archive_ids
+    assert not archive_session_store.contains_job(job.id)
     assert job.id not in _conversion_ids
     assert job.id not in _password_prompt_events
     assert (job.chat_id, msg_id) not in _last_edit_times
