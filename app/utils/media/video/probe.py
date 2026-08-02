@@ -14,6 +14,17 @@ VIDEO_EXT = {
     ".3gp", ".mpeg", ".mpg", ".m4v", ".ts", ".tts", ".f4v"
 }
 
+CONVERSION_EXT = {
+    ".ts", ".f4v", ".tts", ".flv", ".avi", ".wmv", ".asf", ".mkv", ".m4v",
+    ".webm", ".mov", ".3gp", ".mpeg", ".mpg", ".vob"
+}
+
+
+async def convert_media_async(input_path: Path | str, output_path: Path | str) -> bool:
+    """Asynchronously convert video media to standard MP4 using PyAV."""
+    from .convert import convert_video_async
+    return await convert_video_async(input_path, output_path)
+
 
 def _probe_video_sync(video_path: Path) -> dict[str, Any]:
     info: dict[str, Any] = {"decodable": False}

@@ -830,7 +830,7 @@ class QueueManager:
 
     async def _process_upload(self, job_state: JobState) -> None:
         job_state.active_upload_task = asyncio.current_task()
-        from ..conversion import (
+        from ..utils.media import (
             AUDIO_CONVERSION_EXT,
             CONVERSION_EXT,
             convert_audio_async,
@@ -1649,7 +1649,7 @@ class QueueManager:
                     await asyncio.sleep(delay)
 
         async def run_uploader() -> None:
-            from ..conversion import (
+            from ..utils.media import (
                 AUDIO_CONVERSION_EXT,
                 CONVERSION_EXT,
                 convert_audio_async,

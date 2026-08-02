@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .audio import convert_audio_async, probe_audio, probe_audio_async
+from .audio import AUDIO_CONVERSION_EXT, convert_audio_async, probe_audio, probe_audio_async
 from .file_split import split_binary
 from .image import (
     convert_image_to_png_async,
@@ -9,7 +9,9 @@ from .image import (
     is_photo_invalid_for_telegram_async,
 )
 from .video import (
+    CONVERSION_EXT,
     VIDEO_EXT,
+    convert_media_async,
     convert_video_async,
     extract_video_thumbnail,
     probe_video,
@@ -18,9 +20,12 @@ from .video import (
 )
 
 __all__ = [
+    "AUDIO_CONVERSION_EXT",
+    "CONVERSION_EXT",
     "VIDEO_EXT",
     "convert_audio_async",
     "convert_image_to_png_async",
+    "convert_media_async",
     "convert_video_async",
     "extract_image_thumbnail",
     "extract_video_thumbnail",
