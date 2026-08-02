@@ -52,11 +52,12 @@ def _parse_flags(text_tokens: list[str]) -> tuple[bool, bool, bool, str | None, 
                 i += 1
         elif any(low.startswith(prefix) for prefix in ("-p=", "-pass=", "--pass=", "--password=")):
             password = token.split("=", 1)[1].strip() or None
-        elif token.startswith(("http://", "https://")):
+        elif token.startswith(("http://", "https://", "magnet:")):
             urls.append(token)
         i += 1
 
     return is_mirror, upload_tg, unzip, password, urls
+
 
 
 async def _create_and_enqueue_job(
@@ -422,11 +423,15 @@ def register_download_handlers(app: Client) -> None:
 
     @app.on_message(filters.command("tor") & authorized_filter)
     async def tor_cmd(client: Client, message: Message) -> None:
+        raw_text = message.text or message.caption or ""
+        text_tokens = raw_text.split() if raw_text else []
+        is_mirror, upload_tg, unzip, password, parsed_urls = _parse_flags(text_tokens)
+
         target_url = None
 
         if message.reply_to_message and message.reply_to_message.document:
             doc = message.reply_to_message.document
-            if doc.file_name.endswith(".torrent") or (doc.mime_type and "torrent" in doc.mime_type):
+            if (doc.file_name and doc.file_name.endswith(".torrent")) or (doc.mime_type and "torrent" in doc.mime_type):
                 temp_path = await message.reply_to_message.download()
                 if temp_path:
                     torrents_dir = settings.data_dir / "torrents"
@@ -444,17 +449,17 @@ def register_download_handlers(app: Client) -> None:
                     return
 
         if not target_url:
-            parts = message.text.split(maxsplit=1)
-            if len(parts) < 2:
-                await message.reply_text("Send a magnet link or reply to a `.torrent` file with `/tor <magnet/url>`.")
+            if not parsed_urls:
+                await message.reply_text(
+                    "Send a magnet link, reply to a `.torrent` file, or use `/tor [-m|-mirror] [-tg] [-uz] [-p password] <magnet/url>`."
+                )
                 return
 
-            input_url = parts[1].strip()
-            if input_url.startswith("magnet:") or input_url.startswith(("http://", "https://")):
-                target_url = input_url
-            else:
-                await message.reply_text("Please provide a valid magnet link or torrent URL.")
+            if len(parsed_urls) > 1:
+                await message.reply_text("Please provide only one magnet link or torrent URL per `/tor` command.")
                 return
+
+            target_url = parsed_urls[0]
 
         url_display = target_url
         if target_url.startswith("magnet:"):
@@ -462,7 +467,11 @@ def register_download_handlers(app: Client) -> None:
         elif target_url.startswith("torrent:"):
             url_display = "local torrent file"
 
-        await _create_and_enqueue_job(client, message.chat.id, target_url, message, url_display)
+        await _create_and_enqueue_job(
+            client, message.chat.id, target_url, message, url_display,
+            is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
+        )
+
 
     @app.on_message(filters.command("pdup") & authorized_filter)
     async def pdup_cmd(_, message: Message) -> None:
