@@ -52,8 +52,8 @@ def test_html_to_nodes_disallowed_tag():
 
 
 def test_html_to_nodes_invalid_html():
-    html = "<div><p>Unclosed div</p>"
-    with pytest.raises(NotAllowedTag):  # div is not allowed in _ALLOWED_TAGS
+    html = "<canvas>Unallowed canvas</canvas>"
+    with pytest.raises(NotAllowedTag):
         html_to_nodes(html)
 
     html_unclosed = "<p><b>Tag not closed</p>"
@@ -183,3 +183,41 @@ async def test_telegraph_helper_retry_on_flood_wait():
         assert res["path"] == "success-path"
         assert attempts == 2
         mock_sleep.assert_called_once_with(1)
+
+
+def test_html_to_nodes_heading_mapping_and_unwrapping():
+    html = "<div><h1>Title</h1><span>Text</span></div>"
+    nodes = html_to_nodes(html)
+    assert len(nodes) == 2
+    assert nodes[0]["tag"] == "h3"
+    assert nodes[0]["children"] == ["Title"]
+    assert nodes[1] == "Text"
+
+
+def test_html_to_nodes_attribute_whitelisting():
+    html = '<p style="color:red" class="main"><a href="https://example.com" onclick="alert(1)">Link</a></p>'
+    nodes = html_to_nodes(html)
+    assert nodes[0]["tag"] == "p"
+    assert "attrs" not in nodes[0]
+    assert nodes[0]["children"][0]["tag"] == "a"
+    assert nodes[0]["children"][0]["attrs"] == {"href": "https://example.com"}
+
+
+@pytest.mark.asyncio
+async def test_telegraph_client_context_manager_and_new_methods():
+    async with Telegraph(access_token="test_token") as client:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"ok": True, "result": {"short_name": "updated_name"}}
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_resp
+
+            res_edit = await client.edit_account_info("updated_name")
+            assert res_edit["short_name"] == "updated_name"
+
+            mock_resp.json.return_value = {"ok": True, "result": {"views": 100}}
+            res_views = await client.get_views("test-path")
+            assert res_views["views"] == 100
+

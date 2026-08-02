@@ -32,6 +32,12 @@ class Telegraph:
             self._client = httpx.AsyncClient(timeout=30.0)
             self._owns_client = True
 
+    async def __aenter__(self) -> Telegraph:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.close()
+
     async def close(self) -> None:
         """Close underlying HTTP client if owned."""
         if self._owns_client and not self._client.is_closed:
@@ -49,8 +55,13 @@ class Telegraph:
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         try:
             resp = await self._client.post(endpoint, data=payload, headers=headers)
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", 5))
+                raise RetryAfterError(retry_after)
             resp.raise_for_status()
             data = resp.json()
+        except RetryAfterError:
+            raise
         except httpx.HTTPError as exc:
             raise TelegraphError(f"HTTP request failed: {exc}") from exc
 
@@ -58,12 +69,14 @@ class Telegraph:
             return data.get("result")
 
         error = data.get("error")
-        if isinstance(error, str) and error.startswith("FLOOD_WAIT_"):
-            try:
-                seconds = int(error.rsplit("_", 1)[-1])
-            except ValueError:
-                seconds = 5
-            raise RetryAfterError(seconds)
+        if isinstance(error, str):
+            if "FLOOD_WAIT" in error:
+                try:
+                    parts = error.replace("_", " ").split()
+                    seconds = int(parts[-1])
+                except (ValueError, IndexError):
+                    seconds = 5
+                raise RetryAfterError(seconds)
 
         raise TelegraphError(str(error or "Unknown Telegraph API error"))
 
@@ -85,19 +98,66 @@ class Telegraph:
             self.access_token = res["access_token"]
         return res
 
+    async def edit_account_info(
+        self,
+        short_name: str,
+        author_name: str | None = None,
+        author_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Edits account info for the current access token."""
+        params: dict[str, Any] = {"short_name": short_name}
+        if author_name:
+            params["author_name"] = author_name
+        if author_url:
+            params["author_url"] = author_url
+
+        return await self._method("editAccountInfo", params)
+
+    async def get_account_info(
+        self,
+        fields: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Gets info about a Telegraph account."""
+        params: dict[str, Any] = {}
+        if fields:
+            params["fields"] = _json_serialize(fields)
+        return await self._method("getAccountInfo", params)
+
+    async def revoke_access_token(self) -> dict[str, Any]:
+        """Revokes the current access token and returns a new one."""
+        res = await self._method("revokeAccessToken")
+        if isinstance(res, dict) and "access_token" in res:
+            self.access_token = res["access_token"]
+        return res
+
+    def _prepare_content(
+        self,
+        html_content: str | None = None,
+        content: str | list[Any] | None = None,
+    ) -> str:
+        target = content if content is not None else html_content
+        if target is None:
+            raise TelegraphError("No content provided for page creation/editing")
+        if isinstance(target, str):
+            nodes = html_to_nodes(target)
+        else:
+            nodes = target
+        return _json_serialize(nodes)
+
     async def create_page(
         self,
         title: str,
-        html_content: str,
+        html_content: str | None = None,
         author_name: str | None = None,
         author_url: str | None = None,
         return_content: bool = False,
+        content: str | list[Any] | None = None,
     ) -> dict[str, Any]:
         """Creates a new page on Telegraph."""
-        nodes = html_to_nodes(html_content)
+        serialized_content = self._prepare_content(html_content, content)
         params: dict[str, Any] = {
             "title": title,
-            "content": _json_serialize(nodes),
+            "content": serialized_content,
             "return_content": "true" if return_content else "false",
         }
         if author_name:
@@ -111,16 +171,17 @@ class Telegraph:
         self,
         path: str,
         title: str,
-        html_content: str,
+        html_content: str | None = None,
         author_name: str | None = None,
         author_url: str | None = None,
         return_content: bool = False,
+        content: str | list[Any] | None = None,
     ) -> dict[str, Any]:
         """Edits an existing Telegraph page."""
-        nodes = html_to_nodes(html_content)
+        serialized_content = self._prepare_content(html_content, content)
         params: dict[str, Any] = {
             "title": title,
-            "content": _json_serialize(nodes),
+            "content": serialized_content,
             "return_content": "true" if return_content else "false",
         }
         if author_name:
@@ -141,3 +202,24 @@ class Telegraph:
     async def get_page_list(self, offset: int = 0, limit: int = 50) -> dict[str, Any]:
         """Gets list of pages created by this account."""
         return await self._method("getPageList", {"offset": offset, "limit": limit})
+
+    async def get_views(
+        self,
+        path: str,
+        year: int | None = None,
+        month: int | None = None,
+        day: int | None = None,
+        hour: int | None = None,
+    ) -> dict[str, Any]:
+        """Gets page views statistics."""
+        params: dict[str, Any] = {}
+        if year is not None:
+            params["year"] = year
+        if month is not None:
+            params["month"] = month
+        if day is not None:
+            params["day"] = day
+        if hour is not None:
+            params["hour"] = hour
+        return await self._method("getViews", values=params, path=path)
+

@@ -29,7 +29,7 @@ def format_bytes(size: float) -> str:
         return "N/A"
 
 
-async def search_prowlarr(query: str, limit: int = 20) -> list[dict[str, Any]]:
+async def search_prowlarr(query: str, limit: int = 200) -> list[dict[str, Any]]:
     """Performs torrent search using Prowlarr API via prowlarr-py wrapper."""
     if not settings.prowlarr_url or not settings.prowlarr_api_key:
         return []

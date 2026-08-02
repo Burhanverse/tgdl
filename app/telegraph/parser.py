@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from html.entities import name2codepoint
 from html.parser import HTMLParser
 from re import compile as re_compile
 from typing import Any
 
-_RE_WHITESPACE = re_compile(r"(\s+)")
+_RE_WHITESPACE = re_compile(r"\s+")
 
 _ALLOWED_TAGS = {
     "a",
@@ -34,6 +33,46 @@ _ALLOWED_TAGS = {
     "video",
 }
 
+_ALLOWED_ATTRS = {
+    "a": {"href"},
+    "img": {"src"},
+    "video": {"src"},
+    "iframe": {"src"},
+}
+
+_TAG_MAP = {
+    "h1": "h3",
+    "h2": "h3",
+    "h5": "h4",
+    "h6": "h4",
+}
+
+_UNWRAP_TAGS = {
+    "div",
+    "span",
+    "article",
+    "section",
+    "header",
+    "footer",
+    "main",
+    "html",
+    "body",
+    "font",
+    "center",
+    "tbody",
+    "thead",
+    "tfoot",
+    "tr",
+    "td",
+    "th",
+    "table",
+}
+
+_IGNORE_TAGS = {
+    "script",
+    "style",
+}
+
 _VOID_ELEMENTS = {
     "area",
     "base",
@@ -51,44 +90,6 @@ _VOID_ELEMENTS = {
     "source",
     "track",
     "wbr",
-}
-
-_BLOCK_ELEMENTS = {
-    "address",
-    "article",
-    "aside",
-    "blockquote",
-    "canvas",
-    "dd",
-    "div",
-    "dl",
-    "dt",
-    "fieldset",
-    "figcaption",
-    "figure",
-    "footer",
-    "form",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "header",
-    "hgroup",
-    "hr",
-    "li",
-    "main",
-    "nav",
-    "noscript",
-    "ol",
-    "p",
-    "pre",
-    "section",
-    "table",
-    "tfoot",
-    "ul",
-    "video",
 }
 
 
@@ -120,24 +121,19 @@ class RetryAfterError(TelegraphError):
 
 class _HTMLToNodes(HTMLParser):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(convert_charrefs=True)
         self.nodes: list[Any] = []
         self._current: list[Any] = self.nodes
         self._parents: list[list[Any]] = []
-        self._last_text: str | None = None
-        self._tags: list[str] = []
+        self._open_tags: list[str] = []
 
     def _add_text(self, s: str) -> None:
         if not s:
             return
-        if "pre" not in self._tags:
+        if "pre" not in self._open_tags:
             s = _RE_WHITESPACE.sub(" ", s)
-            if self._last_text is None or self._last_text.endswith(" "):
-                s = s.lstrip(" ")
-            if not s:
-                self._last_text = None
+            if not s or (s == " " and self._current and isinstance(self._current[-1], str) and self._current[-1].endswith(" ")):
                 return
-            self._last_text = s
         if self._current and isinstance(self._current[-1], str):
             self._current[-1] += s
         else:
@@ -145,53 +141,64 @@ class _HTMLToNodes(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag_lower = tag.lower()
+
+        if tag_lower in _UNWRAP_TAGS:
+            return
+
+        tag_lower = _TAG_MAP.get(tag_lower, tag_lower)
+
         if tag_lower not in _ALLOWED_TAGS:
             raise NotAllowedTag(f"<{tag}> not allowed")
-        if tag_lower in _BLOCK_ELEMENTS:
-            self._last_text = None
+
         node: dict[str, Any] = {"tag": tag_lower}
-        self._tags.append(tag_lower)
-        self._current.append(node)
-        valid_attrs = {k: v for k, v in attrs if v is not None}
+
+        allowed = _ALLOWED_ATTRS.get(tag_lower, set())
+        valid_attrs = {k.lower(): v for k, v in attrs if k.lower() in allowed and v is not None}
         if valid_attrs:
             node["attrs"] = valid_attrs
+
+        self._current.append(node)
+
         if tag_lower not in _VOID_ELEMENTS:
             self._parents.append(self._current)
+            self._open_tags.append(tag_lower)
             children: list[Any] = []
             node["children"] = children
             self._current = children
 
     def handle_endtag(self, tag: str) -> None:
         tag_lower = tag.lower()
+
+        if tag_lower in _UNWRAP_TAGS:
+            return
+
+        tag_lower = _TAG_MAP.get(tag_lower, tag_lower)
+
         if tag_lower in _VOID_ELEMENTS:
             return
-        if not self._parents:
+
+        if not self._parents or not self._open_tags:
             raise InvalidHTML(f"</{tag}> missing start tag")
+
+        expected_tag = self._open_tags.pop()
+        if expected_tag != tag_lower:
+            raise InvalidHTML(f"</{tag}> closed instead of </{expected_tag}>")
+
         self._current = self._parents.pop()
         last = self._current[-1]
-        if last["tag"] != tag_lower:
-            raise InvalidHTML(f"</{tag}> closed instead of </{last['tag']}>")
-        self._tags.pop()
         if not last.get("children"):
             last.pop("children", None)
 
     def handle_data(self, data: str) -> None:
         self._add_text(data)
 
-    def handle_entityref(self, name: str) -> None:
-        if name in name2codepoint:
-            self._add_text(chr(name2codepoint[name]))
-
-    def handle_charref(self, name: str) -> None:
-        try:
-            val = int(name[1:], 16) if name.startswith("x") or name.startswith("X") else int(name)
-            self._add_text(chr(val))
-        except (ValueError, OverflowError):
-            pass
-
     def get_nodes(self) -> list[Any]:
-        if self._parents:
-            raise InvalidHTML(f"<{self._parents[-1][-1]['tag']}> not closed")
+        while self._parents and self._open_tags:
+            self._open_tags.pop()
+            self._current = self._parents.pop()
+            last = self._current[-1]
+            if not last.get("children"):
+                last.pop("children", None)
         return self.nodes
 
 

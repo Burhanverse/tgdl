@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     search_api_link: str | None = Field(default=None, description="External Torrent Search API link")
     prowlarr_url: str | None = Field(default=None, description="Prowlarr server URL (e.g. http://localhost:9696)")
     prowlarr_api_key: str | None = Field(default=None, description="Prowlarr API key")
-    search_limit: int = Field(default=20, description="Limit of search results to fetch")
+    search_limit: int = Field(default=200, description="Limit of search results to fetch for Telegraph pagination")
     yts_mirror_domain: str | None = Field(default=None, description="Custom YTS mirror domain override (e.g. yts.lt or yts.vg)")
     torrent_public_indexers: list[str] = Field(
         default=["apibay", "torrents_csv", "nyaa", "yts", "torrentgalaxy"],

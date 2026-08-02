@@ -12,6 +12,8 @@ from .parser import RetryAfterError
 
 log = logging.getLogger(__name__)
 
+FALLBACK_DOMAINS = ["graph.org", "telegra.ph"]
+
 
 class TelegraphHelper:
     """Helper to manage Telegraph accounts, page creation, flood-wait retries, and paginated HTML search results."""
@@ -26,6 +28,14 @@ class TelegraphHelper:
         self.author_url = author_url
         self.default_domain = default_domain
         self._tokens: dict[str, str] = {}
+
+    def _get_domain_candidates(self, domain: str | None = None) -> list[str]:
+        primary = domain or self.default_domain
+        candidates = [primary]
+        for fallback in FALLBACK_DOMAINS:
+            if fallback not in candidates:
+                candidates.append(fallback)
+        return candidates
 
     async def get_client(self, domain: str | None = None) -> Telegraph:
         """Gets or initializes a Telegraph client for a specific domain with a cached account token."""
@@ -50,23 +60,37 @@ class TelegraphHelper:
         title: str,
         content: str,
         domain: str | None = None,
+        max_retry_wait: float = 60.0,
+        max_retries: int = 3,
     ) -> dict[str, Any]:
         """Creates a page with flood-wait auto-retry handling."""
         dom = domain or self.default_domain
-        client = await self.get_client(dom)
-        try:
-            return await client.create_page(
-                title=title,
-                html_content=content,
-                author_name=self.author_name,
-                author_url=self.author_url,
-            )
-        except RetryAfterError as st:
-            log.warning("Telegraph flood control reached for domain %s. Waiting %d seconds.", dom, st.retry_after)
-            await sleep(st.retry_after)
-            return await self.create_page(title, content, domain=dom)
-        finally:
-            await client.close()
+        retries = 0
+        while True:
+            client = await self.get_client(dom)
+            try:
+                return await client.create_page(
+                    title=title,
+                    html_content=content,
+                    author_name=self.author_name,
+                    author_url=self.author_url,
+                )
+            except RetryAfterError as st:
+                retries += 1
+                if st.retry_after > max_retry_wait or retries > max_retries:
+                    log.warning(
+                        "Telegraph flood control exceeded limits (%ds > %ds or retries %d/%d) on %s",
+                        st.retry_after,
+                        max_retry_wait,
+                        retries,
+                        max_retries,
+                        dom,
+                    )
+                    raise
+                log.warning("Telegraph flood control reached for domain %s. Waiting %d seconds.", dom, st.retry_after)
+                await sleep(st.retry_after)
+            finally:
+                await client.close()
 
     async def edit_page(
         self,
@@ -74,24 +98,38 @@ class TelegraphHelper:
         title: str,
         content: str,
         domain: str | None = None,
+        max_retry_wait: float = 60.0,
+        max_retries: int = 3,
     ) -> dict[str, Any]:
         """Edits a page with flood-wait auto-retry handling."""
         dom = domain or self.default_domain
-        client = await self.get_client(dom)
-        try:
-            return await client.edit_page(
-                path=path,
-                title=title,
-                html_content=content,
-                author_name=self.author_name,
-                author_url=self.author_url,
-            )
-        except RetryAfterError as st:
-            log.warning("Telegraph flood control reached for domain %s. Waiting %d seconds.", dom, st.retry_after)
-            await sleep(st.retry_after)
-            return await self.edit_page(path, title, content, domain=dom)
-        finally:
-            await client.close()
+        retries = 0
+        while True:
+            client = await self.get_client(dom)
+            try:
+                return await client.edit_page(
+                    path=path,
+                    title=title,
+                    html_content=content,
+                    author_name=self.author_name,
+                    author_url=self.author_url,
+                )
+            except RetryAfterError as st:
+                retries += 1
+                if st.retry_after > max_retry_wait or retries > max_retries:
+                    log.warning(
+                        "Telegraph flood control exceeded limits (%ds > %ds or retries %d/%d) on %s",
+                        st.retry_after,
+                        max_retry_wait,
+                        retries,
+                        max_retries,
+                        dom,
+                    )
+                    raise
+                log.warning("Telegraph flood control reached for domain %s. Waiting %d seconds.", dom, st.retry_after)
+                await sleep(st.retry_after)
+            finally:
+                await client.close()
 
     async def link_paginated_pages(
         self,
@@ -156,9 +194,14 @@ class TelegraphHelper:
             links_html = []
             if raw_magnet_link:
                 quoted_mag = html.escape(urllib.parse.quote(raw_magnet_link), quote=True)
-                links_html.append(f"<a href='http://t.me/share/url?url={quoted_mag}'>Share Magnet to Telegram</a>")
+                links_html.append(f"<a href='http://t.me/share/url?url={quoted_mag}'>Share Magnet</a>")
             if raw_torrent_link and raw_torrent_link != "#" and not raw_torrent_link.startswith("magnet:"):
-                links_html.append(f"<a href='{safe_torrent_link}'>Direct Link</a>")
+                parsed_url = urllib.parse.urlparse(raw_torrent_link)
+                domain_text = parsed_url.hostname or parsed_url.netloc or "Direct Link"
+                if domain_text.startswith("www."):
+                    domain_text = domain_text[4:]
+                safe_domain = html.escape(domain_text)
+                links_html.append(f"<a href='{safe_torrent_link}'>{safe_domain}</a>")
 
             if links_html:
                 item_html += f"<blockquote>{' &nbsp;•&nbsp; '.join(links_html)}</blockquote>"
@@ -182,8 +225,9 @@ class TelegraphHelper:
 
         page_title = f"Torrent Search - {query[:25]}"
 
-        # Domain fallback: Try graph.org, fallback to telegra.ph
-        for domain in [self.default_domain, "telegra.ph"]:
+        # Domain fallback order
+        domains = self._get_domain_candidates()
+        for domain in domains:
             try:
                 paths: list[str] = []
                 for content in telegraph_content:
