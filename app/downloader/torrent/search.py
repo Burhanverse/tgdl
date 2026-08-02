@@ -82,10 +82,6 @@ async def search_prowlarr(query: str, limit: int = 20) -> list[dict[str, Any]]:
 from .indexers import run_enabled_indexers
 
 
-async def search_apibay_and_csv(query: str, limit: int = 20) -> list[dict[str, Any]]:
-    """Legacy public fallback wrapper. Uses new indexer registry runner."""
-    return await run_enabled_indexers(query, limit=limit, enabled_names=settings.torrent_public_indexers)
-
 
 async def initiate_search_tools() -> None:
     """Initializes Prowlarr and external search API sites if configured."""
