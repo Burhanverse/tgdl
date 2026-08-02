@@ -511,3 +511,117 @@ def test_parse_yts_rss_user_format() -> None:
     assert item["torrent"] == "https://yts.gg/torrent/download/42C91BA97A65A063535B98C0AB7FE8778AE51E73"
     assert item["url"] == "https://yts.gg/movies/chop-suey-2001#720p.web"
 
+
+def test_yts_build_magnet() -> None:
+    import urllib.parse
+    from app.downloader.torrent.indexers.yts import _YTS_TRACKERS, _build_magnet
+
+    info_hash = "FEEDFACE1234567890ABCDEF"
+    title = "Test Movie (2024)"
+    magnet = _build_magnet(info_hash, title)
+
+    assert magnet.startswith(f"magnet:?xt=urn:btih:{info_hash}&dn=Test%20Movie%20%282024%29")
+    for tracker in _YTS_TRACKERS:
+        quoted_tr = urllib.parse.quote(tracker)
+        assert f"&tr={quoted_tr}" in magnet
+
+
+@pytest.mark.asyncio
+async def test_yts_api_non_ok_status_triggers_rss_fallback() -> None:
+    from app.downloader.torrent.indexers import yts
+
+    error_json = {"status": "error", "status_message": "Query invalid or database offline"}
+    rss_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>RSS for YTS.GG</title>
+        <item>
+          <title><![CDATA[Fallback Movie (2024) [1080p]]]></title>
+          <link>https://yts.gg/movies/fallback-movie-2024</link>
+          <guid>https://yts.gg/movies/fallback-movie-2024#1080p</guid>
+          <enclosure url="https://yts.gg/torrent/download/HASH123456789" type="application/x-bittorrent" length="10000"/>
+        </item>
+      </channel>
+    </rss>"""
+
+    mock_resp_api = MagicMock()
+    mock_resp_api.status = 200
+    mock_resp_api.json = AsyncMock(return_value=error_json)
+    mock_resp_api.__aenter__ = AsyncMock(return_value=mock_resp_api)
+    mock_resp_api.__aexit__ = AsyncMock(return_value=None)
+
+    mock_resp_rss = MagicMock()
+    mock_resp_rss.status = 200
+    mock_resp_rss.text = AsyncMock(return_value=rss_xml)
+    mock_resp_rss.__aenter__ = AsyncMock(return_value=mock_resp_rss)
+    mock_resp_rss.__aexit__ = AsyncMock(return_value=None)
+
+    call_urls = []
+
+    def mock_get(url, timeout=10):
+        call_urls.append(url)
+        if "api/v2" in url:
+            return mock_resp_api
+        return mock_resp_rss
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(side_effect=mock_get)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        results = await yts.search("Fallback", limit=10)
+
+    assert len(results) == 1
+    assert results[0]["name"] == "Fallback Movie (2024) [1080p]"
+    assert len(call_urls) == 2
+    assert "api/v2" in call_urls[0]
+    assert call_urls[1] == "https://yts.gg/rss"
+
+
+@pytest.mark.asyncio
+async def test_yts_empty_query_returns_empty_list() -> None:
+    from app.downloader.torrent.indexers import yts
+
+    results = await yts.search("   ", limit=10)
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_yts_limit_capping() -> None:
+    from app.downloader.torrent.indexers import yts
+
+    api_json = {
+        "status": "ok",
+        "data": {
+            "movie_count": 0,
+            "movies": [],
+        },
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value=api_json)
+    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+    called_urls = []
+
+    def mock_get(url, timeout=10):
+        called_urls.append(url)
+        return mock_resp
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(side_effect=mock_get)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        results = await yts.search("Test", limit=100)
+
+    assert results == []
+    assert len(called_urls) == 1
+    assert "limit=50" in called_urls[0]
+
+
+
