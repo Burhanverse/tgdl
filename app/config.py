@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     prowlarr_api_key: str | None = Field(default=None, description="Prowlarr API key")
     search_limit: int = Field(default=200, description="Limit of search results to fetch for Telegraph pagination")
     yts_mirror_domain: str | None = Field(default=None, description="Custom YTS mirror domain override (e.g. yts.lt or yts.vg)")
-    torrent_public_indexers: list[str] = Field(
+    torrent_public_indexers: list[str] | str = Field(
         default=["apibay", "torrents_csv", "nyaa", "yts"],
         description="Enabled public fallback torrent indexers when Prowlarr/Search API are unavailable.",
     )
