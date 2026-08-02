@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import logging
 import urllib.parse
-import xml.etree.ElementTree as ET
 from typing import Any
 
 import aiohttp
+import feedparser
 
 log = logging.getLogger(__name__)
 
 
 async def search(query: str, limit: int) -> list[dict[str, Any]]:
-    """Public torrent search using Nyaa RSS feed."""
+    """Public torrent search using Nyaa RSS feed via feedparser."""
     results: list[dict[str, Any]] = []
     encoded_query = urllib.parse.quote(query)
     url = f"https://nyaa.si/?page=rss&q={encoded_query}"
@@ -25,70 +25,45 @@ async def search(query: str, limit: int) -> list[dict[str, Any]]:
                     return []
                 content = await resp.text()
 
-        try:
-            root = ET.fromstring(content)
-        except ET.ParseError as pe:
-            log.warning("Nyaa search XML parse error: %s", pe)
-            return []
+        parsed = feedparser.parse(content)
+        if parsed.bozo and not parsed.entries:
+            log.warning("Nyaa search feed parse warning: %s", parsed.bozo_exception)
 
-        channel = root.find("channel")
-        if channel is None:
-            return []
-
-        items = channel.findall("item")
-        for item in items[:limit]:
-            title = ""
-            link = ""
-            guid = ""
-            size = "N/A"
-            seeders = 0
-            leechers = 0
-            info_hash = ""
-
-            for child in item:
-                tag_name = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-                text = (child.text or "").strip()
-
-                if tag_name == "title":
-                    title = text
-                elif tag_name == "link":
-                    link = text
-                elif tag_name == "guid":
-                    guid = text
-                elif tag_name == "size":
-                    size = text
-                elif tag_name == "seeders":
-                    try:
-                        seeders = int(text)
-                    except ValueError:
-                        seeders = 0
-                elif tag_name == "leechers":
-                    try:
-                        leechers = int(text)
-                    except ValueError:
-                        leechers = 0
-                elif tag_name == "infoHash":
-                    info_hash = text
-
+        for entry in parsed.entries[:limit]:
+            title = entry.get("title", "").strip()
             if not title:
                 continue
 
+            link = entry.get("link", "").strip()
+            guid = entry.get("id") or entry.get("guid") or link or "https://nyaa.si"
+            size = entry.get("nyaa_size") or "N/A"
+
+            try:
+                seeders = int(entry.get("nyaa_seeders", 0))
+            except (ValueError, TypeError):
+                seeders = 0
+
+            try:
+                leechers = int(entry.get("nyaa_leechers", 0))
+            except (ValueError, TypeError):
+                leechers = 0
+
+            info_hash = entry.get("nyaa_infohash") or entry.get("infohash") or ""
             magnet = (
                 f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote(title)}"
                 if info_hash
                 else None
             )
             torrent_url = link if (link and not link.startswith("magnet:")) else None
-            info_url = guid or link or "https://nyaa.si"
 
             results.append({
                 "name": title,
-                "size": size or "N/A",
+                "size": size,
                 "seeders": seeders,
                 "leechers": leechers,
                 "magnet": magnet,
                 "torrent": torrent_url,
-                "url": info_url,
+                "url": guid,
             })
 
     except Exception as e:

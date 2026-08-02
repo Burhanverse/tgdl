@@ -1,6 +1,6 @@
 [project]
 name = "tgdl-bot"
-version = "0.1.250"
+version = "0.1.251"
 description = "An all-in-one Telegram media & file downloader, archive extractor, cloud storage mirror, and torrent manager"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,6 +11,7 @@ dependencies = [
     "async-mega-py",
     "av>=18.0.0",
     "filetype>=1.2.0",
+    "feedparser>=6.0.11",
     "gallery-dl>=1.32.8",
     "google-api-python-client>=2.198.0",
     "google-auth-httplib2>=0.4.0",
