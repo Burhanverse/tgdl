@@ -6,9 +6,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from .apibay import search as apibay_search
-from .limetorrents import search as limetorrents_search
 from .nyaa import search as nyaa_search
-from .torrentgalaxy import search as torrentgalaxy_search
 from .torrents_csv import search as torrents_csv_search
 from .yts import search as yts_search
 
@@ -19,8 +17,6 @@ INDEXERS: dict[str, Callable[[str, int], Coroutine[Any, Any, list[dict[str, Any]
     "torrents_csv": torrents_csv_search,
     "nyaa": nyaa_search,
     "yts": yts_search,
-    "torrentgalaxy": torrentgalaxy_search,
-    "limetorrents": limetorrents_search,
 }
 
 
@@ -58,7 +54,7 @@ async def run_enabled_indexers(
 ) -> list[dict[str, Any]]:
     """Fires requested indexers concurrently, logs warnings on error, merges, dedupes, and sorts by seeders."""
     if not enabled_names:
-        enabled_names = ["apibay", "torrents_csv", "nyaa", "yts", "torrentgalaxy"]
+        enabled_names = ["apibay", "torrents_csv", "nyaa", "yts"]
 
     selected_indexers: list[tuple[str, Callable[[str, int], Coroutine[Any, Any, list[dict[str, Any]]]]]] = []
     for name in enabled_names:

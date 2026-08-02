@@ -13,7 +13,7 @@ from app.downloader.torrent.indexers import (
     extract_info_hash,
     run_enabled_indexers,
 )
-from app.downloader.torrent.indexers import apibay, limetorrents, nyaa, torrentgalaxy, torrents_csv, yts
+from app.downloader.torrent.indexers import apibay, nyaa, torrents_csv, yts
 
 
 def test_indexers_registry() -> None:
@@ -21,8 +21,6 @@ def test_indexers_registry() -> None:
     assert "torrents_csv" in INDEXERS
     assert "nyaa" in INDEXERS
     assert "yts" in INDEXERS
-    assert "torrentgalaxy" in INDEXERS
-    assert "limetorrents" in INDEXERS
 
 
 
@@ -204,40 +202,6 @@ async def test_yts_search() -> None:
 
 
 @pytest.mark.asyncio
-async def test_limetorrents_search() -> None:
-    html_data = """<html><body>
-    <table class="table2">
-        <tr>
-            <td><a href="/Sample-Movie-torrent-1234.html">Sample Movie (2024)</a></td>
-            <td>1.5 GB</td>
-            <td>120</td>
-            <td>15</td>
-        </tr>
-    </table>
-    </body></html>"""
-
-    mock_resp = MagicMock()
-    mock_resp.status = 200
-    mock_resp.text = AsyncMock(return_value=html_data)
-    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-    mock_resp.__aexit__ = AsyncMock(return_value=None)
-
-    mock_session = MagicMock()
-    mock_session.get = MagicMock(return_value=mock_resp)
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=None)
-
-    with patch("aiohttp.ClientSession", return_value=mock_session):
-        results = await limetorrents.search("sample", limit=10)
-
-    assert len(results) == 1
-    assert results[0]["name"] == "Sample Movie (2024)"
-    assert results[0]["size"] == "1.5 GB"
-    assert results[0]["seeders"] == 120
-    assert "limetorrents.lol" in results[0]["url"]
-
-
-@pytest.mark.asyncio
 async def test_run_enabled_indexers_concurrency_dedupe_sorting() -> None:
     async def mock_indexer_a(query: str, limit: int) -> list[dict[str, Any]]:
         return [
@@ -301,51 +265,12 @@ async def test_run_enabled_indexers_concurrency_dedupe_sorting() -> None:
     assert results[2]["seeders"] == 2
 
 
-@pytest.mark.asyncio
-async def test_torrentgalaxy_search() -> None:
-    xml_content = """<?xml version="1.0" encoding="utf-8"?>
-    <rss version="2.0">
-      <channel>
-        <title>TorrentGalaxy RSS Feed</title>
-        <item>
-          <title>TGX Movie Release (1080p)</title>
-          <link>https://torrentgalaxy.info/torrent/12345/TGX-Movie-Release</link>
-          <guid>https://torrentgalaxy.info/torrent/12345/TGX-Movie-Release</guid>
-          <magnet>magnet:?xt=urn:btih:TGX1234567890ABCDEF&amp;dn=TGX+Movie</magnet>
-          <seeders>250</seeders>
-          <leechers>15</leechers>
-          <size>2.4 GB</size>
-        </item>
-      </channel>
-    </rss>"""
-
-    mock_resp = MagicMock()
-    mock_resp.status = 200
-    mock_resp.text = AsyncMock(return_value=xml_content)
-    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-    mock_resp.__aexit__ = AsyncMock(return_value=None)
-
-    mock_session = MagicMock()
-    mock_session.get = MagicMock(return_value=mock_resp)
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=None)
-
-    with patch("aiohttp.ClientSession", return_value=mock_session):
-        results = await torrentgalaxy.search("TGX", limit=10)
-
-    assert len(results) == 1
-    assert results[0]["name"] == "TGX Movie Release (1080p)"
-    assert results[0]["size"] == "2.4 GB"
-    assert results[0]["seeders"] == 250
-    assert "TGX1234567890ABCDEF" in results[0]["magnet"]
-
-
 def test_config_torrent_public_indexers() -> None:
     s = Settings(torrent_public_indexers="apibay, nyaa, yts")
     assert s.torrent_public_indexers == ["apibay", "nyaa", "yts"]
 
     s_default = Settings()
-    assert s_default.torrent_public_indexers == ["apibay", "torrents_csv", "nyaa", "yts", "torrentgalaxy"]
+    assert s_default.torrent_public_indexers == ["apibay", "torrents_csv", "nyaa", "yts"]
 
 
 def test_format_search_results_html_escaping() -> None:
@@ -398,9 +323,23 @@ async def test_yts_mirror_fallback_on_connection_error() -> None:
         },
     }
 
+    rss_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>RSS for YTS.GG</title>
+        <item>
+          <title><![CDATA[Fallback Movie (2024) [1080p]]]></title>
+          <link>https://yts.gg/movies/fallback-movie-2024</link>
+          <guid>https://yts.gg/movies/fallback-movie-2024#1080p</guid>
+          <enclosure url="https://yts.gg/torrent/download/HASH12345" type="application/x-bittorrent" length="10000"/>
+        </item>
+      </channel>
+    </rss>"""
+
     mock_resp_success = MagicMock()
     mock_resp_success.status = 200
     mock_resp_success.json = AsyncMock(return_value=json_data)
+    mock_resp_success.text = AsyncMock(return_value=rss_xml)
     mock_resp_success.__aenter__ = AsyncMock(return_value=mock_resp_success)
     mock_resp_success.__aexit__ = AsyncMock(return_value=None)
 
@@ -543,3 +482,32 @@ async def test_yts_rss_fallback() -> None:
     assert results[0]["name"] == "Possessed (1931) [1080p] [BluRay]"
     assert "949CA5ABE25C3E915DD82A3A8BE39EFE0FA879EC" in results[0]["magnet"]
     assert any("/rss" in u for u in call_urls)
+
+
+def test_parse_yts_rss_user_format() -> None:
+    from app.downloader.torrent.indexers.yts import _parse_yts_rss
+
+    xml_content = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>RSS for YTS.GG - YTS.BZ (old YTS.MX) - Feed</title>
+        <item>
+          <title><![CDATA[ Chop Suey (2001) [720p] [WEBRip] [YTS.GG-YTS.BZ] ]]></title>
+          <description><![CDATA[ <a href="https://yts.gg/movies/chop-suey-2001"><img src="https://img.yts.gg/assets/images/movies/chop_suey_2001/medium-cover.jpg" alt="Chop Suey (2001)" /></a><br />IMDB Rating: 6.6/10<br />Genre: Biography / Documentary<br />Size: 904.5 MB<br />Runtime: 1hr 38 min<br /><br />A homage to Bruce Weber's Favourite things. ]]></description>
+          <link>https://yts.gg/movies/chop-suey-2001</link>
+          <guid>https://yts.gg/movies/chop-suey-2001#720p.web</guid>
+          <pubDate>Sun, 02 Aug 2026 07:51:16 +0200</pubDate>
+          <enclosure url="https://yts.gg/torrent/download/42C91BA97A65A063535B98C0AB7FE8778AE51E73" type="application/x-bittorrent" length="10000"/>
+        </item>
+      </channel>
+    </rss>"""
+
+    results = _parse_yts_rss(xml_content, query="Chop Suey", limit=5)
+    assert len(results) == 1
+    item = results[0]
+    assert item["name"] == "Chop Suey (2001) [720p] [WEBRip] [YTS.GG-YTS.BZ]"
+    assert item["size"] == "904.5 MB"
+    assert "42C91BA97A65A063535B98C0AB7FE8778AE51E73" in item["magnet"]
+    assert item["torrent"] == "https://yts.gg/torrent/download/42C91BA97A65A063535B98C0AB7FE8778AE51E73"
+    assert item["url"] == "https://yts.gg/movies/chop-suey-2001#720p.web"
+

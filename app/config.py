@@ -67,8 +67,8 @@ class Settings(BaseSettings):
     search_limit: int = Field(default=200, description="Limit of search results to fetch for Telegraph pagination")
     yts_mirror_domain: str | None = Field(default=None, description="Custom YTS mirror domain override (e.g. yts.lt or yts.vg)")
     torrent_public_indexers: list[str] = Field(
-        default=["apibay", "torrents_csv", "nyaa", "yts", "torrentgalaxy"],
-        description="Enabled public fallback torrent indexers when Prowlarr/Search API are unavailable. 'limetorrents' is HTML-scraped and unstable — opt in explicitly if desired.",
+        default=["apibay", "torrents_csv", "nyaa", "yts"],
+        description="Enabled public fallback torrent indexers when Prowlarr/Search API are unavailable.",
     )
 
     # --- Authorization / Access Control ---
@@ -117,7 +117,7 @@ class Settings(BaseSettings):
             return [x.strip().lower() for x in v_clean.split(",") if x.strip()]
         if isinstance(v, list):
             return [str(x).strip().lower() for x in v if str(x).strip()]
-        return ["apibay", "torrents_csv", "nyaa", "yts", "torrentgalaxy"]
+        return ["apibay", "torrents_csv", "nyaa", "yts"]
 
 
     @field_validator("max_total_downloads_bytes", mode="before")
