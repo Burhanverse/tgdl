@@ -12,11 +12,11 @@ from pyrogram.types import (
     Message,
 )
 
+from app.telegraph import telegraph_helper
 from ..downloader.torrent import (
     SITES,
     format_search_results_html,
     search_torrents,
-    telegraph_helper,
 )
 
 log = logging.getLogger(__name__)

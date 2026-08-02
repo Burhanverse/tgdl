@@ -5,7 +5,7 @@ from .search import (
     initiate_search_tools,
     search_torrents,
 )
-from .telegraph_helper import telegraph_helper
+from app.telegraph import telegraph_helper
 from .trackers import (
     add_trackers_to_magnet,
     fetch_latest_trackers,

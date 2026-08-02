@@ -1815,18 +1815,6 @@ wheels = [
 ]
 
 [[package]]
-name = "telegraph"
-version = "2.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/49/81/1c9f99004e23555fb21b80a2ef6ddbecb3a7a4eefbc4aac75ffb5a9ccf71/telegraph-2.2.0.tar.gz", hash = "sha256:012908f18208c451c7189f4bda7c39a1369241ac436c7543bb6c3fccbe9cfd5d", size = 8011, upload-time = "2022-10-26T18:37:49.049Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/75/1bc2f8c4e4a736e2e582a1518eb4621db3c9dcb100f379fab5ab49c8d1ac/telegraph-2.2.0-py3-none-any.whl", hash = "sha256:d20b2a5d7cfdd66890c8c3fd60aa8585cabb7c6b03579d3eb1cd8af056ed9971", size = 10749, upload-time = "2022-10-26T18:37:47.899Z" },
-]
-
-[[package]]
 name = "tenacity"
 version = "9.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1852,7 +1840,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/33/59/7cf5ced989e3139a7
 
 [[package]]
 name = "tgdl-bot"
-version = "0.1.252"
+version = "0.1.253"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -1877,7 +1865,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyunpack" },
-    { name = "telegraph" },
     { name = "tenacity" },
     { name = "tgcrypto" },
     { name = "webhost" },
@@ -1913,7 +1900,6 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pyunpack", specifier = ">=0.3" },
-    { name = "telegraph", specifier = ">=2.2.0" },
     { name = "tenacity", specifier = ">=9.1.4" },
     { name = "tgcrypto", specifier = ">=1.2.5" },
     { name = "webhost", git = "https://github.com/Burhanverse/webhost.git" },

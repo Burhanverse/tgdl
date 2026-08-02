@@ -8,7 +8,7 @@ import pytest
 
 from app.config import settings
 from app.downloader.direct.core import is_url_private_ip
-from app.downloader.torrent.telegraph_helper import TelegraphHelper
+from app.telegraph import TelegraphHelper
 from app.uploader.user_keys import (
     delete_user_upload_key,
     get_user_upload_keys,
