@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     prowlarr_url: str | None = Field(default=None, description="Prowlarr server URL (e.g. http://localhost:9696)")
     prowlarr_api_key: str | None = Field(default=None, description="Prowlarr API key")
     search_limit: int = Field(default=20, description="Limit of search results to fetch")
+    torrent_public_indexers: list[str] = Field(
+        default=["apibay", "torrents_csv", "nyaa", "yts", "torrentgalaxy"],
+        description="Enabled public fallback torrent indexers when Prowlarr/Search API are unavailable. 'limetorrents' is HTML-scraped and unstable — opt in explicitly if desired.",
+    )
 
     # --- Authorization / Access Control ---
     authorized_user_ids: list[int] | str = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")
@@ -101,6 +105,19 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return [int(x) for x in v if str(x).strip().lstrip("-").isdigit()]
         return []
+
+    @field_validator("torrent_public_indexers", mode="before")
+    @classmethod
+    def _parse_indexer_list(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v_clean = v.strip()
+            if not v_clean:
+                return []
+            return [x.strip().lower() for x in v_clean.split(",") if x.strip()]
+        if isinstance(v, list):
+            return [str(x).strip().lower() for x in v if str(x).strip()]
+        return ["apibay", "torrents_csv", "nyaa", "yts", "torrentgalaxy"]
+
 
     @field_validator("max_total_downloads_bytes", mode="before")
     @classmethod

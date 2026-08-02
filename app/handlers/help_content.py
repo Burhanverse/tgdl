@@ -36,7 +36,8 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "• `/tor <magnet/url>` or reply to a `.torrent` file\n"
             "> _Download torrents or magnet links headlessly with real-time peer count and speed stats._\n\n"
             "• `/ts <query>` or `/torsearch <query>` or `/search <query>`\n"
-            "> _Interactive multi-provider torrent search engine (1337x, YTS, PirateBay, TorrentProject)._\n\n"
+            "> _Interactive multi-provider torrent search engine (Apibay/PirateBay, Torrents-CSV, Nyaa, YTS, TorrentGalaxy, LimeTorrents, Prowlarr)._\n\n"
+
             "**Search Engine Features:**\n"
             "• Browse search results with inline pagination buttons.\n"
             "• One-click **Download with /tor** trigger directly from search results."

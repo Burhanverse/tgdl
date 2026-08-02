@@ -79,71 +79,12 @@ async def search_prowlarr(query: str, limit: int = 20) -> list[dict[str, Any]]:
     return results
 
 
+from .indexers import run_enabled_indexers
+
+
 async def search_apibay_and_csv(query: str, limit: int = 20) -> list[dict[str, Any]]:
-    """Free public fallback torrent search using Apibay (PirateBay) and Torrents-CSV."""
-    results: list[dict[str, Any]] = []
-    encoded_query = urllib.parse.quote(query)
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-
-    async with aiohttp.ClientSession(headers=headers) as session:
-        # 1. Query Apibay (PirateBay)
-        try:
-            url = f"https://apibay.org/q.php?q={encoded_query}"
-            async with session.get(url, timeout=8) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if isinstance(data, list):
-                        for item in data[:limit]:
-                            name = item.get("name")
-                            if not name or name == "No results found":
-                                continue
-                            info_hash = item.get("info_hash")
-                            size = format_bytes(item.get("size", 0))
-                            seeders = int(item.get("seeders", 0))
-                            leechers = int(item.get("leechers", 0))
-                            magnet = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote(name)}" if info_hash else None
-
-                            results.append({
-                                "name": name,
-                                "size": size,
-                                "seeders": seeders,
-                                "leechers": leechers,
-                                "magnet": magnet,
-                                "url": f"https://thepiratebay.org/description.php?id={item.get('id')}",
-                            })
-        except Exception as e:
-            log.warning("Apibay search error: %s", e)
-
-        # 2. Query Torrents-CSV if needed
-        if len(results) < limit:
-            try:
-                url = f"https://torrents-csv.com/service/search?q={encoded_query}"
-                async with session.get(url, timeout=8) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        torrents = data.get("torrents", [])
-                        for item in torrents[:limit - len(results)]:
-                            name = item.get("name")
-                            if not name:
-                                continue
-                            info_hash = item.get("infohash")
-                            size = format_bytes(item.get("size", 0))
-                            seeders = int(item.get("seeders", 0))
-                            leechers = int(item.get("leechers", 0))
-                            magnet = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote(name)}" if info_hash else None
-
-                            results.append({
-                                "name": name,
-                                "size": size,
-                                "seeders": seeders,
-                                "leechers": leechers,
-                                "magnet": magnet,
-                                "url": "https://torrents-csv.com",
-                            })
-            except Exception as e:
-                log.warning("Torrents-CSV search error: %s", e)
-
-    return results
+    """Legacy public fallback wrapper. Uses new indexer registry runner."""
+    return await run_enabled_indexers(query, limit=limit, enabled_names=settings.torrent_public_indexers)
 
 
 async def initiate_search_tools() -> None:
@@ -217,9 +158,10 @@ async def search_torrents(key: str, site: str = "all", method: str = "apisearch"
 
     # 3. Public fallback if no results yet
     if not results:
-        results = await search_apibay_and_csv(key, limit=limit)
+        results = await run_enabled_indexers(key, limit=limit, enabled_names=settings.torrent_public_indexers)
 
     return results
+
 
 
 def format_search_results_html(results: list[dict[str, Any]], query: str, site: str) -> str:
