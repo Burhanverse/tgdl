@@ -164,10 +164,10 @@ async def test_yts_search() -> None:
                     "title": "Inception",
                     "year": 2010,
                     "slug": "inception-2010",
-                    "url": "https://yts.mx/movies/inception-2010",
+                    "url": "https://yts.gg/movies/inception-2010",
                     "torrents": [
                         {
-                            "url": "https://yts.mx/torrent/download/1080p",
+                            "url": "https://yts.gg/torrent/download/1080p",
                             "hash": "FEEDFACE1234567890",
                             "quality": "1080p",
                             "seeds": 800,
@@ -198,7 +198,8 @@ async def test_yts_search() -> None:
     assert results[0]["name"] == "Inception (2010) [1080p]"
     assert results[0]["size"] == "2.1 GB"
     assert results[0]["seeders"] == 800
-    assert "FEEDFACE1234567890" in results[0]["magnet"]
+    assert results[0]["torrent"] == "https://yts.gg/torrent/download/1080p"
+    assert results[0]["magnet"] is None
 
 
 @pytest.mark.asyncio
@@ -480,7 +481,8 @@ async def test_yts_rss_fallback() -> None:
 
     assert len(results) == 1
     assert results[0]["name"] == "Possessed (1931) [1080p] [BluRay]"
-    assert "949CA5ABE25C3E915DD82A3A8BE39EFE0FA879EC" in results[0]["magnet"]
+    assert results[0]["torrent"] == "https://yts.gg/torrent/download/949CA5ABE25C3E915DD82A3A8BE39EFE0FA879EC"
+    assert results[0]["magnet"] is None
     assert any("/rss" in u for u in call_urls)
 
 
@@ -490,7 +492,7 @@ def test_parse_yts_rss_user_format() -> None:
     xml_content = """<?xml version="1.0" encoding="utf-8"?>
     <rss version="2.0">
       <channel>
-        <title>RSS for YTS.GG - YTS.BZ (old YTS.MX) - Feed</title>
+        <title>RSS for YTS.GG - YTS.BZ (old yts.gg) - Feed</title>
         <item>
           <title><![CDATA[ Chop Suey (2001) [720p] [WEBRip] [YTS.GG-YTS.BZ] ]]></title>
           <description><![CDATA[ <a href="https://yts.gg/movies/chop-suey-2001"><img src="https://img.yts.gg/assets/images/movies/chop_suey_2001/medium-cover.jpg" alt="Chop Suey (2001)" /></a><br />IMDB Rating: 6.6/10<br />Genre: Biography / Documentary<br />Size: 904.5 MB<br />Runtime: 1hr 38 min<br /><br />A homage to Bruce Weber's Favourite things. ]]></description>
@@ -507,7 +509,7 @@ def test_parse_yts_rss_user_format() -> None:
     item = results[0]
     assert item["name"] == "Chop Suey (2001) [720p] [WEBRip] [YTS.GG-YTS.BZ]"
     assert item["size"] == "904.5 MB"
-    assert "42C91BA97A65A063535B98C0AB7FE8778AE51E73" in item["magnet"]
+    assert item["magnet"] is None
     assert item["torrent"] == "https://yts.gg/torrent/download/42C91BA97A65A063535B98C0AB7FE8778AE51E73"
     assert item["url"] == "https://yts.gg/movies/chop-suey-2001#720p.web"
 

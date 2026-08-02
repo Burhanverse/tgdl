@@ -66,12 +66,10 @@ def _parse_api_movie(movie: dict[str, Any], api_domain: str) -> list[dict[str, A
         if not isinstance(torrent, dict):
             continue
 
-        info_hash = torrent.get("hash")
         quality = torrent.get("quality")
         type_name = torrent.get("type")
         name_variant = _format_torrent_name(title, year, quality, type_name)
 
-        magnet = _build_magnet(info_hash, title) if info_hash else None
         size_bytes = torrent.get("size_bytes")
         size = torrent.get("size") or (
             format_bytes(float(size_bytes)) if size_bytes else "N/A"
@@ -85,7 +83,7 @@ def _parse_api_movie(movie: dict[str, Any], api_domain: str) -> list[dict[str, A
             "size": size,
             "seeders": seeders,
             "leechers": leechers,
-            "magnet": magnet,
+            "magnet": None,
             "torrent": torrent_download_url,
             "url": movie_url,
         })
@@ -123,13 +121,8 @@ def _parse_yts_rss(content: str, query: str, limit: int) -> list[dict[str, Any]]
             length = enc.get("length", "")
             if href.startswith("magnet:"):
                 magnet = href
-            elif ".torrent" in href or "/torrent/download/" in href or "download" in href:
+            elif ".torrent" in href or "/torrent/" in href or "download" in href:
                 torrent_url = href
-                if not magnet:
-                    hash_match = re.search(r"/torrent/download/([a-fA-F0-9]{40})", href)
-                    if hash_match:
-                        info_hash = hash_match.group(1)
-                        magnet = _build_magnet(info_hash, title)
 
             if length and str(length).isdigit() and size == "N/A" and int(length) > 10000:
                 size = format_bytes(float(length))
