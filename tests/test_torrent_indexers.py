@@ -368,3 +368,178 @@ def test_format_search_results_html_escaping() -> None:
     assert "&lt;query&gt;" in html_out
 
 
+@pytest.mark.asyncio
+async def test_yts_mirror_fallback_on_connection_error() -> None:
+    """Verifies that if the first mirror raises a connection error, the second mirror is tried."""
+    import aiohttp
+    from app.downloader.torrent.indexers import yts
+
+    json_data = {
+        "status": "ok",
+        "data": {
+            "movie_count": 1,
+            "movies": [
+                {
+                    "title": "Fallback Movie",
+                    "year": 2024,
+                    "slug": "fallback-movie-2024",
+                    "torrents": [
+                        {
+                            "url": "https://yts.lt/torrent/download/1080p",
+                            "hash": "HASH12345",
+                            "quality": "1080p",
+                            "seeds": 10,
+                            "peers": 2,
+                            "size": "1.5 GB",
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+
+    mock_resp_success = MagicMock()
+    mock_resp_success.status = 200
+    mock_resp_success.json = AsyncMock(return_value=json_data)
+    mock_resp_success.__aenter__ = AsyncMock(return_value=mock_resp_success)
+    mock_resp_success.__aexit__ = AsyncMock(return_value=None)
+
+    call_urls = []
+
+    def mock_get(url, timeout=10):
+        call_urls.append(url)
+        if "movies-api.accel.li" in url:
+            raise aiohttp.ClientConnectorError(connection_key=MagicMock(), os_error=OSError("DNS failure"))
+        return mock_resp_success
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(side_effect=mock_get)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        results = await yts.search("Fallback", limit=10)
+
+    assert len(results) == 1
+    assert results[0]["name"] == "Fallback Movie (2024) [1080p]"
+    assert len(call_urls) == 2
+    assert "movies-api.accel.li" in call_urls[0]
+    assert call_urls[1] == "https://yts.gg/rss"
+
+
+@pytest.mark.asyncio
+async def test_yts_search_empty_result_does_not_fall_through() -> None:
+    """Verifies that an empty valid result on a working mirror is returned and does not fall through."""
+    from app.downloader.torrent.indexers import yts
+
+    empty_json = {"status": "ok", "data": {"movie_count": 0, "movies": []}}
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value=empty_json)
+    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+    call_urls = []
+
+    def mock_get(url, timeout=10):
+        call_urls.append(url)
+        return mock_resp
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(side_effect=mock_get)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        results = await yts.search("NonExistentMovie12345", limit=10)
+
+    assert results == []
+    assert len(call_urls) == 1
+    assert "movies-api.accel.li" in call_urls[0]
+
+
+@pytest.mark.asyncio
+async def test_yts_search_config_override() -> None:
+    """Verifies that yts_mirror_domain config override prioritizes custom domain."""
+    from app.config import settings
+    from app.downloader.torrent.indexers import yts
+
+    json_data = {"status": "ok", "data": {"movies": []}}
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value=json_data)
+    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+    call_urls = []
+
+    def mock_get(url, timeout=10):
+        call_urls.append(url)
+        return mock_resp
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(side_effect=mock_get)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch.object(settings, "yts_mirror_domain", "custom-yts.org"), \
+         patch("aiohttp.ClientSession", return_value=mock_session):
+        results = await yts.search("Test", limit=10)
+
+    assert results == []
+    assert len(call_urls) == 1
+    assert "custom-yts.org" in call_urls[0]
+
+
+@pytest.mark.asyncio
+async def test_yts_rss_fallback() -> None:
+    """Verifies that if JSON API returns 404, RSS feed fallback (e.g. yts.gg/rss) is used."""
+    from app.downloader.torrent.indexers import yts
+
+    rss_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>RSS for YTS.GG</title>
+        <item>
+          <title><![CDATA[Possessed (1931) [1080p] [BluRay]]]></title>
+          <link>https://yts.gg/movies/possessed-1931</link>
+          <guid>https://yts.gg/movies/possessed-1931#1080p.blu</guid>
+          <enclosure url="https://yts.gg/torrent/download/949CA5ABE25C3E915DD82A3A8BE39EFE0FA879EC" type="application/x-bittorrent" length="10000"/>
+          <description><![CDATA[Size: 1.27 GB<br />IMDB Rating: 6.9/10]]></description>
+        </item>
+      </channel>
+    </rss>"""
+
+    mock_resp_404 = MagicMock()
+    mock_resp_404.status = 404
+    mock_resp_404.__aenter__ = AsyncMock(return_value=mock_resp_404)
+    mock_resp_404.__aexit__ = AsyncMock(return_value=None)
+
+    mock_resp_rss = MagicMock()
+    mock_resp_rss.status = 200
+    mock_resp_rss.text = AsyncMock(return_value=rss_xml)
+    mock_resp_rss.__aenter__ = AsyncMock(return_value=mock_resp_rss)
+    mock_resp_rss.__aexit__ = AsyncMock(return_value=None)
+
+    call_urls = []
+
+    def mock_get(url, timeout=10):
+        call_urls.append(url)
+        if "api/v2" in url:
+            return mock_resp_404
+        return mock_resp_rss
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(side_effect=mock_get)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        results = await yts.search("Possessed", limit=10)
+
+    assert len(results) == 1
+    assert results[0]["name"] == "Possessed (1931) [1080p] [BluRay]"
+    assert "949CA5ABE25C3E915DD82A3A8BE39EFE0FA879EC" in results[0]["magnet"]
+    assert any("/rss" in u for u in call_urls)
