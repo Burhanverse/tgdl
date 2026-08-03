@@ -59,6 +59,90 @@ def _parse_flags(text_tokens: list[str]) -> tuple[bool, bool, bool, str | None, 
     return is_mirror, upload_tg, unzip, password, urls
 
 
+def _parse_aria_flags(text_tokens: list[str]) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+    flag_map = {
+        "-c": "max-connection-per-server",
+        "--connections": "max-connection-per-server",
+        "-s": "split",
+        "--split": "split",
+        "--min-split-size": "min-split-size",
+        "--max-tries": "max-tries",
+        "--retry-wait": "retry-wait",
+        "--header": "header",
+        "--ua": "user-agent",
+        "--referer": "referer",
+        "--proxy": "all-proxy",
+        "--checksum": "checksum",
+        "--out": "out",
+        "--speed": "max-download-limit",
+    }
+
+    def _set_opt(k: str, v: str) -> None:
+        if k == "header":
+            options.setdefault("header", [])
+            if isinstance(options["header"], list):
+                options["header"].append(v)
+            else:
+                options["header"] = [options["header"], v]
+        elif k in options:
+            if isinstance(options[k], list):
+                options[k].append(v)
+            else:
+                options[k] = [options[k], v]
+        else:
+            options[k] = v
+
+    i = 1
+    while i < len(text_tokens):
+        token = text_tokens[i].strip()
+        if not token:
+            i += 1
+            continue
+
+        matched_key = None
+        inline_val = None
+
+        if "=" in token and token.startswith("-"):
+            parts = token.split("=", 1)
+            flag_candidate = parts[0].lower()
+            if flag_candidate in flag_map:
+                matched_key = flag_map[flag_candidate]
+                inline_val = parts[1]
+                _set_opt(matched_key, inline_val)
+                i += 1
+                continue
+            elif flag_candidate == "--opt":
+                if "=" in parts[1]:
+                    opt_k, opt_v = parts[1].split("=", 1)
+                    _set_opt(opt_k.strip(), opt_v.strip())
+                i += 1
+                continue
+
+        token_low = token.lower()
+        if token_low in flag_map:
+            matched_key = flag_map[token_low]
+            if i + 1 < len(text_tokens) and not text_tokens[i + 1].startswith("-"):
+                inline_val = text_tokens[i + 1].strip()
+                i += 1
+            if matched_key and inline_val is not None:
+                _set_opt(matched_key, inline_val)
+        elif token_low == "--opt":
+            if i + 1 < len(text_tokens) and not text_tokens[i + 1].startswith("-"):
+                opt_expr = text_tokens[i + 1].strip()
+                i += 1
+                if "=" in opt_expr:
+                    opt_k, opt_v = opt_expr.split("=", 1)
+                    _set_opt(opt_k.strip(), opt_v.strip())
+
+        i += 1
+
+    if "max-download-limit" not in options:
+        if settings.global_download_speed_limit and str(settings.global_download_speed_limit).strip().lower() not in ("none", "0", ""):
+            options["max-download-limit"] = str(settings.global_download_speed_limit)
+
+    return options
+
 
 async def _create_and_enqueue_job(
     client: Client,
@@ -69,7 +153,9 @@ async def _create_and_enqueue_job(
     is_mirror: bool = False,
     upload_tg: bool = False,
     unzip: bool = False,
-    password: str | None = None
+    password: str | None = None,
+    engine: str | None = None,
+    aria_options: dict | None = None,
 ) -> None:
     active_jobs = queue_manager.get_active_jobs_for_chat(chat_id)
     if settings.max_jobs_per_chat > 0 and len(active_jobs) >= settings.max_jobs_per_chat:
@@ -88,6 +174,10 @@ async def _create_and_enqueue_job(
         args_dict["unzip"] = True
     if password:
         args_dict["password"] = password
+    if engine:
+        args_dict["engine"] = engine
+    if aria_options:
+        args_dict["aria_options"] = aria_options
     args_json = json.dumps(args_dict) if args_dict else None
     job = await store.create_job(chat_id, target_url, split_large_files=1, args=args_json)
     await store.update_progress(job.id, status="queued")
@@ -471,6 +561,116 @@ def register_download_handlers(app: Client) -> None:
             client, message.chat.id, target_url, message, url_display,
             is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password
         )
+
+
+    @app.on_message(filters.command("aria") & authorized_filter)
+    async def aria_cmd(client: Client, message: Message) -> None:
+        raw_text = message.text or message.caption or ""
+        text_tokens = raw_text.split() if raw_text else []
+        is_mirror, upload_tg, unzip, password, parsed_urls = _parse_flags(text_tokens)
+        aria_opts = _parse_aria_flags(text_tokens)
+
+        target_url = None
+
+        if message.reply_to_message and message.reply_to_message.document:
+            doc = message.reply_to_message.document
+            if (doc.file_name and doc.file_name.endswith(".torrent")) or (doc.mime_type and "torrent" in doc.mime_type):
+                temp_path = await message.reply_to_message.download()
+                if temp_path:
+                    torrents_dir = settings.data_dir / "torrents"
+                    torrents_dir.mkdir(parents=True, exist_ok=True)
+                    dest_path = torrents_dir / f"{uuid.uuid4()}.torrent"
+                    try:
+                        shutil.move(temp_path, dest_path)
+                        target_url = f"torrent:{dest_path.absolute()}"
+                    except Exception as e:
+                        log.exception("Failed to save replied torrent file for aria_cmd")
+                        await message.reply_text(f"Failed to save torrent file: {e}")
+                        return
+                else:
+                    await message.reply_text("Failed to download replied torrent file.")
+                    return
+
+        if not target_url:
+            urls = []
+            if message.reply_to_message:
+                reply_msg = message.reply_to_message
+                if reply_msg.document and (
+                    reply_msg.document.file_name.endswith(".txt") or
+                    (reply_msg.document.mime_type and reply_msg.document.mime_type.startswith("text/"))
+                ):
+                    temp_path = await reply_msg.download()
+                    if temp_path and Path(temp_path).exists():
+                        try:
+                            content = Path(temp_path).read_text(encoding="utf-8", errors="ignore")
+                            for line in content.splitlines():
+                                line = line.strip()
+                                if line.startswith(("http://", "https://", "ftp://", "magnet:")):
+                                    urls.append(line)
+                        except Exception as e:
+                            log.warning("Failed reading replied txt file for aria_cmd: %s", e)
+                        finally:
+                            Path(temp_path).unlink(missing_ok=True)
+
+                reply_text = reply_msg.text or reply_msg.caption
+                if reply_text and not urls:
+                    for token in reply_text.split():
+                        token = token.strip()
+                        if token.startswith(("http://", "https://", "ftp://", "magnet:")):
+                            urls.append(token)
+
+            if not urls:
+                urls = parsed_urls
+
+            if not urls:
+                await message.reply_text(
+                    "Provide a URL or magnet link, reply to a `.torrent` file, or use `/aria [flags] <url/magnet>`."
+                )
+                return
+
+            target_url = urls[0] if len(urls) == 1 else json.dumps(urls)
+
+        check_urls = []
+        if target_url.startswith(("http://", "https://", "ftp://")):
+            check_urls.append(target_url)
+        elif target_url.startswith("["):
+            try:
+                parsed_list = json.loads(target_url)
+                if isinstance(parsed_list, list):
+                    for u in parsed_list:
+                        if isinstance(u, str) and u.startswith(("http://", "https://", "ftp://")):
+                            check_urls.append(u)
+            except Exception:
+                pass
+
+        if not settings.allow_private_network_urls:
+            from ..downloader.direct.core import is_url_private_ip
+            for check_u in check_urls:
+                if await is_url_private_ip(check_u):
+                    log.warning("SSRF protection blocked URL %s (resolves to private/reserved IP)", check_u)
+                    await message.reply_text(f"Access to private/internal network URL '{check_u}' is prohibited.")
+                    return
+
+        url_display = target_url
+        if target_url.startswith("magnet:"):
+            url_display = target_url[:60] + "..." if len(target_url) > 60 else target_url
+        elif target_url.startswith("torrent:"):
+            url_display = "local torrent file"
+
+        prefix_parts = []
+        if is_mirror:
+            prefix_parts.append("mirror")
+        if unzip:
+            prefix_parts.append("unzip")
+        prefix_str = f" [{', '.join(prefix_parts)}]" if prefix_parts else ""
+        display_text = f"aria2{prefix_str}: {url_display}"
+
+        await _create_and_enqueue_job(
+            client, message.chat.id, target_url, message, display_text,
+            is_mirror=is_mirror, upload_tg=upload_tg, unzip=unzip, password=password,
+            engine="aria2", aria_options=aria_opts
+        )
+
 
 
     @app.on_message(filters.command("pdup") & authorized_filter)

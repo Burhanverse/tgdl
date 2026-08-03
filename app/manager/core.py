@@ -404,7 +404,16 @@ class QueueManager:
             def reg(proc):
                 job_state.active_process = proc
 
-            if not is_torrent and not is_unzip and not is_gdrive and not is_mega:
+            is_aria = False
+            if job.args:
+                try:
+                    args_data = json.loads(job.args)
+                    if isinstance(args_data, dict) and args_data.get("engine") == "aria2":
+                        is_aria = True
+                except Exception:
+                    pass
+
+            if not is_torrent and not is_unzip and not is_gdrive and not is_mega and not is_aria:
                 async def monitor_download_speed():
                     last_download_size = 0
                     last_download_time = time.time()
@@ -642,10 +651,16 @@ class QueueManager:
                         job_state.torrent_name = name
                     job_state.trigger_event.set()
 
-                from ..downloader import download_torrent_async
-                result = await download_torrent_async(
-                    cleaned_url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
-                )
+                if args_dict.get("engine") == "aria2":
+                    from ..downloader import download_via_aria2_async
+                    result = await download_via_aria2_async(
+                        cleaned_url, dest_dir, options=args_dict.get("aria_options") or {}, on_progress=on_torrent_progress, register_proc=reg
+                    )
+                else:
+                    from ..downloader import download_torrent_async
+                    result = await download_torrent_async(
+                        cleaned_url, dest_dir, on_progress=on_torrent_progress, register_proc=reg
+                    )
 
             elif cleaned_url.startswith("mirror_tg:"):
                 parts = cleaned_url.split(":")
@@ -707,6 +722,7 @@ class QueueManager:
                 from ..downloader import (
                     DownloadResult,
                     download_direct,
+                    download_via_aria2_async,
                     run_with_progress,
                 )
                 async def on_direct_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
@@ -719,25 +735,46 @@ class QueueManager:
                     if url:
                         job_state.current_download_url = url
                     job_state.trigger_event.set()
-                try:
-                    downloaded_paths = await download_direct(target_u, dest_dir, progress_cb=on_direct_progress)
-                    result = DownloadResult(ok=True, files=downloaded_paths)
-                except Exception as de:
-                    log.warning("DirectDownloader failed for mirror link %s, attempting gallery-dl fallback: %s", target_u, de)
-                    def on_dl_progress(count: int, filename: str | None = None, current_url: str | None = None) -> None:
-                        job_state.download_count = count
-                        if filename:
-                            job_state.current_download_file = filename
-                        if current_url:
-                            job_state.current_download_url = current_url
+
+                if args_dict.get("engine") == "aria2":
+                    def on_aria_progress(
+                        pct: float,
+                        downloaded_bytes: float,
+                        speed_bytes: float,
+                        seeders: int = 0,
+                        connections: int = 0,
+                        name: str | None = None
+                    ) -> None:
+                        job_state.download_pct = pct
+                        job_state.total_downloaded_bytes = downloaded_bytes
+                        job_state.download_speed = speed_bytes
+                        if name:
+                            job_state.current_download_file = name
                         job_state.trigger_event.set()
-                    result = await run_with_progress(
-                        target_u,
-                        dest_dir,
-                        on_progress=on_dl_progress,
-                        register_proc=reg,
-                        user_id=job.chat_id,
+
+                    result = await download_via_aria2_async(
+                        target_u, dest_dir, options=args_dict.get("aria_options") or {}, on_progress=on_aria_progress, register_proc=reg
                     )
+                else:
+                    try:
+                        downloaded_paths = await download_direct(target_u, dest_dir, progress_cb=on_direct_progress)
+                        result = DownloadResult(ok=True, files=downloaded_paths)
+                    except Exception as de:
+                        log.warning("DirectDownloader failed for mirror link %s, attempting gallery-dl fallback: %s", target_u, de)
+                        def on_dl_progress(count: int, filename: str | None = None, current_url: str | None = None) -> None:
+                            job_state.download_count = count
+                            if filename:
+                                job_state.current_download_file = filename
+                            if current_url:
+                                job_state.current_download_url = current_url
+                            job_state.trigger_event.set()
+                        result = await run_with_progress(
+                            target_u,
+                            dest_dir,
+                            on_progress=on_dl_progress,
+                            register_proc=reg,
+                            user_id=job.chat_id,
+                        )
 
             elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url):
                 direct_url = cleaned_url.removeprefix("direct:")
@@ -752,9 +789,29 @@ class QueueManager:
                         job_state.current_download_url = url
                     job_state.trigger_event.set()
 
-                from ..downloader import DownloadResult, download_direct
-                downloaded_paths = await download_direct(direct_url, dest_dir, progress_cb=on_direct_progress)
-                result = DownloadResult(ok=True, files=downloaded_paths)
+                from ..downloader import DownloadResult, download_direct, download_via_aria2_async
+                if args_dict.get("engine") == "aria2":
+                    def on_aria_progress(
+                        pct: float,
+                        downloaded_bytes: float,
+                        speed_bytes: float,
+                        seeders: int = 0,
+                        connections: int = 0,
+                        name: str | None = None
+                    ) -> None:
+                        job_state.download_pct = pct
+                        job_state.total_downloaded_bytes = downloaded_bytes
+                        job_state.download_speed = speed_bytes
+                        if name:
+                            job_state.current_download_file = name
+                        job_state.trigger_event.set()
+
+                    result = await download_via_aria2_async(
+                        direct_url, dest_dir, options=args_dict.get("aria_options") or {}, on_progress=on_aria_progress, register_proc=reg
+                    )
+                else:
+                    downloaded_paths = await download_direct(direct_url, dest_dir, progress_cb=on_direct_progress)
+                    result = DownloadResult(ok=True, files=downloaded_paths)
             else:
                 extra_args_list: list[str] = []
                 if job.args:
@@ -772,44 +829,65 @@ class QueueManager:
                     except Exception as e:
                         log.warning("Failed to parse job.args for job #%s: %s", job.id, e)
 
-                def on_download_progress(count: int, filename: str | None = None, current_url: str | None = None) -> None:
-                    job_state.download_count = count
-                    if filename:
-                        job_state.current_download_file = filename
-                    if current_url:
-                        job_state.current_download_url = current_url
-                    job_state.trigger_event.set()
-
                 from ..downloader import (
                     DownloadResult,
                     download_direct,
+                    download_via_aria2_async,
                     run_with_progress,
                 )
-                result = await run_with_progress(
-                    job.url,
-                    dest_dir,
-                    on_progress=on_download_progress,
-                    extra_args=extra_args_list if extra_args_list else None,
-                    register_proc=reg,
-                    user_id=job.chat_id,
-                )
-                if not result.ok:
-                    log.info("gallery-dl failed or unsupported site for %s. Falling back to DirectDownloader...", job.url)
-                    async def on_fallback_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
-                        job_state.total_downloaded_bytes = current
-                        job_state.total_expected_bytes = total
-                        if total > 0:
-                            job_state.download_pct = min(100.0, (current / total) * 100.0)
+                if args_dict.get("engine") == "aria2":
+                    def on_aria_progress(
+                        pct: float,
+                        downloaded_bytes: float,
+                        speed_bytes: float,
+                        seeders: int = 0,
+                        connections: int = 0,
+                        name: str | None = None
+                    ) -> None:
+                        job_state.download_pct = pct
+                        job_state.total_downloaded_bytes = downloaded_bytes
+                        job_state.download_speed = speed_bytes
+                        if name:
+                            job_state.current_download_file = name
+                        job_state.trigger_event.set()
+
+                    result = await download_via_aria2_async(
+                        job.url, dest_dir, options=args_dict.get("aria_options") or {}, on_progress=on_aria_progress, register_proc=reg
+                    )
+                else:
+                    def on_download_progress(count: int, filename: str | None = None, current_url: str | None = None) -> None:
+                        job_state.download_count = count
                         if filename:
                             job_state.current_download_file = filename
-                        if url:
-                            job_state.current_download_url = url
+                        if current_url:
+                            job_state.current_download_url = current_url
                         job_state.trigger_event.set()
-                    try:
-                        downloaded_paths = await download_direct(job.url, dest_dir, progress_cb=on_fallback_progress)
-                        result = DownloadResult(ok=True, files=downloaded_paths)
-                    except Exception as fallback_err:
-                        log.warning("DirectDownloader fallback also failed for %s: %s", job.url, fallback_err)
+
+                    result = await run_with_progress(
+                        job.url,
+                        dest_dir,
+                        on_progress=on_download_progress,
+                        extra_args=extra_args_list if extra_args_list else None,
+                        register_proc=reg,
+                        user_id=job.chat_id,
+                    )
+                    if not result.ok:
+                        log.info("gallery-dl failed or unsupported site for %s. Falling back to DirectDownloader...", job.url)
+                        async def on_fallback_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
+                            job_state.total_downloaded_bytes = current
+                            job_state.total_expected_bytes = total
+                            if total > 0:
+                                job_state.download_pct = min(100.0, (current / total) * 100.0)
+                            if filename:
+                                job_state.current_download_file = filename
+                            if url:
+                                job_state.current_download_url = url
+                            job_state.trigger_event.set()
+                        try:
+                            downloaded_paths = await download_direct(job.url, dest_dir, progress_cb=on_fallback_progress)
+                            result = DownloadResult(ok=True, files=downloaded_paths)
+                        except Exception as fallback_err:
+                            log.warning("DirectDownloader fallback also failed for %s: %s", job.url, fallback_err)
 
 
             job_state.downloader_result = result

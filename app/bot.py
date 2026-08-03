@@ -111,6 +111,7 @@ async def main() -> None:
         await app.set_bot_commands([
             BotCommand("m", "Mirror file/URL to GoFile, FileDitch & Pixeldrain"),
             BotCommand("dl", "Download direct HTTP link"),
+            BotCommand("aria", "Download link or torrent using aria2 engine"),
             BotCommand("tor", "Download torrent or magnet link"),
             BotCommand("ts", "Search torrents across indexers & plugins"),
             BotCommand("gdl", "Batch download URLs from replied .txt file"),
@@ -130,7 +131,7 @@ async def main() -> None:
     except Exception as e:
         log.warning("Failed to set bot commands: %s", e)
 
-    from .downloader.torrent import initiate_search_tools
+    from .downloader.aria2c.torrent import initiate_search_tools
     from .manager import cleanup_orphaned_directories, queue_manager, store
     await initiate_search_tools()
     await store.open()

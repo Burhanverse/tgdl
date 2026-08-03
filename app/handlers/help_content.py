@@ -12,6 +12,8 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "**Commands:**\n"
             "• `/dl [flags] <url>` or `/direct [flags] <url>`\n"
             "> _Fast multi-connection direct HTTP/HTTPS file downloader via aria2c or direct HTTP streams._\n\n"
+            "• `/aria [flags] <url/magnet>`\n"
+            "> _Full-featured multi-protocol downloader via aria2c engine._\n\n"
             "• `/gdl [flags] <url>` or `/gallerydl [flags] <url>`\n"
             "> _Download media albums, posts, and videos from 100+ sites via gallery-dl engine._\n\n"
             "• `/mega [flags] <mega_url>` or `/meganz [flags] <mega_url>`\n"
@@ -26,8 +28,30 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "• `-uz` or `-unzip`: Automatically extract downloaded archives.\n"
             "• `-p <password>` or `-pass <password>`: Specify extraction password.\n\n"
             "**Batch Processing:**\n"
-            "• Reply to a `.txt` file containing URLs (one per line) with `/dl`, `/gdl`, or `/mega`."
-
+            "• Reply to a `.txt` file containing URLs (one per line) with `/dl`, `/aria`, `/gdl`, or `/mega`."
+        )
+    elif page == "aria":
+        text = (
+            "**Topic: Aria2 Downloader Engine**\n\n"
+            "**Commands:**\n"
+            "• `/aria [flags] <url/magnet>` or reply to `.torrent` file\n"
+            "> _General-purpose multi-protocol downloader (HTTP/HTTPS/FTP/magnet/torrent) using aria2c engine._\n\n"
+            "**Curated Flags:**\n"
+            "• `-c` / `--connections <n>`: Max connections per server (`max-connection-per-server`)\n"
+            "• `-s` / `--split <n>`: Number of connections to open (`split`)\n"
+            "• `--min-split-size <size>`: Min size per split, e.g. `5M` (`min-split-size`)\n"
+            "• `--max-tries <n>`: Max retry attempts (`max-tries`)\n"
+            "• `--retry-wait <n>`: Retry wait time in seconds (`retry-wait`)\n"
+            "• `--header \"Header: Value\"`: Custom HTTP header (repeatable)\n"
+            "• `--ua <string>`: Custom User-Agent (`user-agent`)\n"
+            "• `--referer <url>`: Referer URL (`referer`)\n"
+            "• `--proxy <url>`: Proxy server URL (`all-proxy`)\n"
+            "• `--checksum <algo>=<hex>`: Verification checksum (`checksum`)\n"
+            "• `--out <filename>`: Output filename (`out`)\n"
+            "• `--speed <limit>`: Per-download speed limit, e.g. `5M` (`max-download-limit`)\n\n"
+            "**Generic Option Passthrough Escape Hatch:**\n"
+            "• `--opt key=value`: Set arbitrary aria2 RPC option (repeatable).\n"
+            "> Example: `/aria https://example.com/file.zip -s 8 -c 8 --opt timeout=60 --header \"Authorization: Bearer token\"`\n"
         )
     elif page == "tor":
         text = (
@@ -35,9 +59,10 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "**Commands:**\n"
             "• `/tor [flags] <magnet/url>` or reply to a `.torrent` file\n"
             "> _Download torrents or magnet links headlessly with real-time peer count and speed stats._\n\n"
+            "• `/aria [flags] <magnet/url>`\n"
+            "> _Download magnet links or torrent files via generalized aria2 engine._\n\n"
             "• `/ts <query>` or `/torsearch <query>` or `/search <query>`\n"
             "> _Interactive multi-provider torrent search engine (Apibay/PirateBay, Torrents-CSV, Nyaa, YTS, TorrentGalaxy, LimeTorrents, Prowlarr)._\n\n"
-
             "**Search Engine Features:**\n"
             "• Browse search results with inline pagination buttons.\n"
             "• One-click **Download with /tor** trigger directly from search results."
@@ -95,7 +120,7 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "• Send or paste any direct URL, magnet link, or file into chat to start processing.\n"
             "• Select a topic below to view detailed command syntax, flags, and usage instructions.\n\n"
             "**Available Topics:**\n"
-            "• **Downloads**: Direct HTTP, Gallery-dl, and Mirror options.\n"
+            "• **Downloads**: Direct HTTP, Aria2 Engine, Gallery-dl, and Mirror options.\n"
             "• **Torrents**: Magnet links, torrent files, and interactive Torrent Search.\n"
             "• **Archives**: Decompression, multi-part split sessions, and password handling.\n"
             "• **Cloud & Drive**: Google Drive downloads and direct uploads to Pixeldrain, GoFile, FileDitch.\n"
@@ -107,6 +132,7 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
         buttons = [
             [
                 InlineKeyboardButton("Downloads", callback_data="help_page:dl"),
+                InlineKeyboardButton("Aria2 Engine", callback_data="help_page:aria"),
                 InlineKeyboardButton("Torrents", callback_data="help_page:tor"),
             ],
             [
@@ -122,6 +148,7 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
         buttons = [
             [
                 InlineKeyboardButton("Downloads", callback_data="help_page:dl"),
+                InlineKeyboardButton("Aria2 Engine", callback_data="help_page:aria"),
                 InlineKeyboardButton("Torrents", callback_data="help_page:tor"),
                 InlineKeyboardButton("Archives", callback_data="help_page:unzip"),
             ],

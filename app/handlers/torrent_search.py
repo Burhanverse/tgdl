@@ -13,7 +13,7 @@ from pyrogram.types import (
 )
 
 from app.telegraph import telegraph_helper
-from ..downloader.torrent import (
+from ..downloader.aria2c.torrent import (
     SITES,
     format_search_results_html,
     search_torrents,

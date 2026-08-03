@@ -1,4 +1,4 @@
-from app.downloader.aria2c.torrent.core import (
+from .torrent import (
     DownloadResult,
     download_torrent_async,
     download_via_aria2_async,
