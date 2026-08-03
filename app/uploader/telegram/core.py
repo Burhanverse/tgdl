@@ -106,8 +106,8 @@ class TelegramUploader:
     def _prepare_filename_and_caption(self, file_path: Path) -> tuple[str, Path]:
         filename = file_path.name
 
-        # Check for split part pattern like _part001.mp4, .part001.mp4, .001
-        part_match = re.search(r'((?:_part|\.part)\d+\.[^.]+$|\.\d+$)', filename, re.IGNORECASE)
+        # Check for split part pattern like _part001.mp4, .part001.mp4, .mp4.001, .001
+        part_match = re.search(r'((?:_part|\.part)\d+\.[^.]+$|\.[^.]+\.\d+$|\.\d+$)', filename, re.IGNORECASE)
         if part_match:
             part_suffix = part_match.group(1)
             base_stem = filename[:-len(part_suffix)]
