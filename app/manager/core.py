@@ -263,6 +263,15 @@ class QueueManager:
         chat_id = job.chat_id
         dest_dir = job_state.dest_dir
 
+        args_dict: dict = {}
+        if job.args:
+            try:
+                args_dict = json.loads(job.args)
+                if not isinstance(args_dict, dict):
+                    args_dict = {}
+            except Exception as e:
+                log.debug("Failed parsing job.args JSON for job #%s: %s", job.id, e)
+
         async def report(text: str) -> None:
             await safe_send(self.client, chat_id, text, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
@@ -404,14 +413,7 @@ class QueueManager:
             def reg(proc):
                 job_state.active_process = proc
 
-            is_aria = False
-            if job.args:
-                try:
-                    args_data = json.loads(job.args)
-                    if isinstance(args_data, dict) and args_data.get("engine") == "aria2":
-                        is_aria = True
-                except Exception:
-                    pass
+            is_aria = (args_dict.get("engine") == "aria2")
 
             if not is_torrent and not is_unzip and not is_gdrive and not is_mega and not is_aria:
                 async def monitor_download_speed():
@@ -555,21 +557,9 @@ class QueueManager:
                     job_state.current_download_file = filename
                     job_state.trigger_event.set()
 
-                gdrive_user_id = None
-                archive_fmt = None
-                mirror_pixeldrain = False
-                if job.args:
-                    try:
-                        args_dict = json.loads(job.args)
-                        if isinstance(args_dict, dict):
-                            archive_fmt = args_dict.get("archive_format")
-                            mirror_pixeldrain = bool(args_dict.get("mirror_pixeldrain"))
-                            gdrive_user_id = args_dict.get("user_id")
-                    except Exception as e:
-                        log.debug("Failed parsing job.args JSON for GDrive job #%s: %s", job.id, e)
-
-                if not gdrive_user_id:
-                    gdrive_user_id = chat_id
+                archive_fmt = args_dict.get("archive_format")
+                mirror_pixeldrain = bool(args_dict.get("mirror_pixeldrain"))
+                gdrive_user_id = args_dict.get("user_id") or chat_id
 
                 downloader = GoogleDriveDownloader(user_id=gdrive_user_id, progress_callback=on_gdrive_progress)
 

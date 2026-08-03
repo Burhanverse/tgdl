@@ -7,6 +7,8 @@ from typing import Any
 
 import av
 
+log = logging.getLogger(__name__)
+
 AUDIO_CONVERSION_EXT = {".wav", ".flac", ".ogg", ".opus", ".aiff", ".aac"}
 
 

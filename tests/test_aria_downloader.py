@@ -157,3 +157,50 @@ async def test_aria_cmd_ssrf_rejection():
         mock_message.reply_text.assert_awaited_once_with(
             "Access to private/internal network URL 'http://192.168.1.1/private.zip' is prohibited."
         )
+
+
+@pytest.mark.asyncio
+async def test_process_download_no_args_regression(tmp_path: Path):
+    """Regression test ensuring _process_download handles job.args = None without UnboundLocalError across all 4 dispatch branches."""
+    from app.manager.core import JobState, QueueManager
+
+    mock_client = MagicMock()
+    mock_store = AsyncMock()
+
+    qm = QueueManager()
+    qm.client = mock_client
+    qm.store = mock_store
+
+    urls = [
+        "magnet:?xt=urn:btih:1234567890abcdef1234567890abcdef12345678",  # torrent
+        "mirror:http://example.com/file.zip",                           # mirror
+        "direct:http://example.com/file.zip",                           # direct
+        "http://example.com/file.zip",                                  # fallback / generic
+    ]
+
+    for url in urls:
+        mock_job = MagicMock()
+        mock_job.id = "test_job_1"
+        mock_job.chat_id = 12345
+        mock_job.url = url
+        mock_job.args = None
+        mock_job.status_message_id = None
+
+        job_state = JobState(mock_job, tmp_path)
+
+        with patch("app.downloader.download_torrent_async", new_callable=AsyncMock) as mock_tor, \
+             patch("app.downloader.download_direct", new_callable=AsyncMock) as mock_dir, \
+             patch("app.downloader.run_with_progress", new_callable=AsyncMock) as mock_gdl, \
+             patch("app.manager.core.safe_send", new_callable=AsyncMock), \
+             patch("app.manager.core.safe_delete", new_callable=AsyncMock), \
+             patch("app.manager.core.safe_pin", new_callable=AsyncMock):
+
+            mock_tor.return_value = DownloadResult(ok=True, files=[])
+            mock_dir.return_value = [tmp_path / "file.zip"]
+            mock_gdl.return_value = DownloadResult(ok=True, files=[])
+
+            # Must run without throwing UnboundLocalError
+            await qm._process_download(job_state)
+            assert job_state.downloader_result is not None
+            assert job_state.downloader_result.ok is True
+
