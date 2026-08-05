@@ -62,10 +62,11 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "• `/aria [flags] <magnet/url>`\n"
             "> _Download magnet links or torrent files via generalized aria2 engine._\n\n"
             "• `/ts <query>` or `/torsearch <query>` or `/search <query>`\n"
-            "> _Interactive multi-provider torrent search engine (Apibay/PirateBay, Torrents-CSV, Nyaa, YTS, TorrentGalaxy, LimeTorrents, Prowlarr)._\n\n"
+            "> _Interactive multi-provider torrent search engine (22 providers: PirateBay, 1337x, YTS, Kickass, Nyaa, LimeTorrents, Bitsearch, BT4G, BTdig, etc. via Magnetio JSON-RPC)._\n\n"
             "**Search Engine Features:**\n"
-            "• Browse search results with inline pagination buttons.\n"
-            "• One-click **Download with /tor** trigger directly from search results."
+            "• Query 22 providers simultaneously with automatic deduplication.\n"
+            "• Select specific providers dynamically or search all providers.\n"
+            "• Share pre-built magnet links directly or view formatted Telegraph result pages."
         )
     elif page == "unzip":
         text = (

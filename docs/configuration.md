@@ -69,3 +69,13 @@ Configure access control and security policies in `.env`:
 - `ALLOW_SHARED_UPLOAD_KEYS`: Fall back to owner's global API keys for uploaders (default `false`).
 - `ALLOW_PRIVATE_NETWORK_URLS`: Allow downloading URLs resolving to private/reserved IP ranges (default `false` for SSRF protection).
 
+---
+
+## Torrent Search Engine (`.env`)
+
+- `MAGNETIO_RPC_URL`: JSON-RPC 2.0 URL for the Magnetio scraper sidecar (default `http://magnetio-scraper:8080/rpc`).
+- `MAGNETIO_RPC_SECRET`: Shared secret authentication token matching the scraper sidecar (`RPC_SHARED_SECRET`).
+- `MAGNETIO_RPC_TIMEOUT`: Timeout in seconds for search RPC queries (default `20`).
+- `MAGNETIO_SEARCH_LIMIT`: Maximum search results fetched from the sidecar per query (default `50`).
+
+
