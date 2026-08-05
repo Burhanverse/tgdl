@@ -58,10 +58,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
    - `MAGNETIO_RPC_URL`: `http://localhost:8080/rpc` (or `http://magnetio-scraper:8080/rpc` when using Docker Compose).
    - `MAGNETIO_RPC_SECRET`: Shared secret matching the scraper service (optional).
 
-5. **Start Bot**:
+5. **Start Everything with `./start.sh` (Recommended)**:
+   Run the launcher script to automatically manage the Node.js scraper sidecar and Python bot together:
    ```bash
-   uv run python -m app.bot
+   ./start.sh
    ```
+   *Alternatively, you can start the sidecar and bot manually as shown in step 3.*
 
 ---
 

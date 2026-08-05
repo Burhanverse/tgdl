@@ -80,7 +80,7 @@ cd tgdl
 # 2. Synchronize dependencies using uv
 uv sync
 
-# 3. Configure credentials in .env and launch
+# 3. Configure credentials in .env and launch with ./start.sh
 cp .env.example .env
-uv run python -m app.bot
+./start.sh
 ```
