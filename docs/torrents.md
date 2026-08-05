@@ -46,6 +46,6 @@ Search for torrents across multiple providers directly within Telegram.
 ```
 
 ### Key Search Engine Features
-- **Multi-Provider Querying**: Searches across 1337x, YTS, PirateBay, TorrentProject, and other public indexers.
-- **Inline Pagination**: Navigate through search result pages using interactive `Prev` and `Next` buttons.
-- **1-Click Download**: Each search result includes a direct **Download with /tor** inline button to enqueue the torrent instantly.
+- **Magnetio JSON-RPC Architecture**: Searches across 22 independent torrent providers (ThePirateBay, 1337x, YTS, Kickass, Nyaa, LimeTorrents, Bitsearch, BT4G, BTdig, etc.) via an isolated Node.js Express JSON-RPC 2.0 sidecar (`magnetio-scraper`).
+- **Inline Pagination & Telegraph Rendering**: View formatted HTML results directly in Telegram or full telegraph pages for large query results.
+- **1-Click Magnet Share**: Each search result includes pre-constructed magnet links for instant sharing and downloading via `/tor`.

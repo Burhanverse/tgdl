@@ -61,15 +61,11 @@ class Settings(BaseSettings):
 
     # --- Torrent Search settings ---
     torrent_timeout: int = Field(default=120, description="Torrent download timeout in seconds for dead/stalled torrents")
-    search_api_link: str | None = Field(default=None, description="External Torrent Search API link")
-    prowlarr_url: str | None = Field(default=None, description="Prowlarr server URL (e.g. http://localhost:9696)")
-    prowlarr_api_key: str | None = Field(default=None, description="Prowlarr API key")
+    magnetio_rpc_url: str = Field(default="http://magnetio-scraper:8080/rpc", description="Magnetio JSON-RPC sidecar URL")
+    magnetio_rpc_secret: str | None = Field(default=None, description="Optional Magnetio JSON-RPC secret token")
+    magnetio_rpc_timeout: int = Field(default=20, description="Magnetio JSON-RPC request timeout in seconds")
+    magnetio_search_limit: int = Field(default=50, description="Default max search results to fetch")
     search_limit: int = Field(default=200, description="Limit of search results to fetch for Telegraph pagination")
-    yts_mirror_domain: str | None = Field(default=None, description="Custom YTS mirror domain override (e.g. yts.lt or yts.vg)")
-    torrent_public_indexers: list[str] | str = Field(
-        default=["apibay", "torrents_csv", "nyaa", "yts"],
-        description="Enabled public fallback torrent indexers when Prowlarr/Search API are unavailable.",
-    )
 
     # --- Authorization / Access Control ---
     authorized_user_ids: list[int] | str = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")
@@ -107,19 +103,6 @@ class Settings(BaseSettings):
             return [int(x) for x in v if str(x).strip().lstrip("-").isdigit()]
         return []
 
-    @field_validator("torrent_public_indexers", mode="before")
-    @classmethod
-    def _parse_indexer_list(cls, v: Any) -> list[str]:
-        if isinstance(v, str):
-            v_clean = v.strip()
-            if not v_clean:
-                return []
-            return [x.strip().lower() for x in v_clean.split(",") if x.strip()]
-        if isinstance(v, list):
-            return [str(x).strip().lower() for x in v if str(x).strip()]
-        return ["apibay", "torrents_csv", "nyaa", "yts"]
-
-
     @field_validator("max_total_downloads_bytes", mode="before")
     @classmethod
     def _parse_optional_int(cls, v: Any) -> int | None:
@@ -132,7 +115,7 @@ class Settings(BaseSettings):
             return int(v_clean)
         return int(v) if v is not None else None
 
-    @field_validator("search_api_link", "prowlarr_url", "prowlarr_api_key", "pixeldrain_api_key", "gofile_api_key", mode="before")
+    @field_validator("magnetio_rpc_secret", "pixeldrain_api_key", "gofile_api_key", mode="before")
     @classmethod
     def _parse_optional_str(cls, v: Any) -> str | None:
         if isinstance(v, str):

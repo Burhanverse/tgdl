@@ -1,6 +1,6 @@
 [project]
 name = "tgdl-bot"
-version = "0.1.262"
+version = "0.1.263"
 description = "An all-in-one Telegram media & file downloader, archive extractor, cloud storage mirror, and torrent manager"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,7 +21,6 @@ dependencies = [
     "patool>=4.0.5",
     "pedalboard>=0.9.24",
     "pillow>=12.3.0",
-    "prowlarr-py>=1.1.0",
     "psutil>=7.2.2",
     "py7zr>=1.1.3",
     "pydantic>=2.13.4",

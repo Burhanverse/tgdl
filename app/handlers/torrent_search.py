@@ -15,6 +15,7 @@ from pyrogram.types import (
 from app.telegraph import telegraph_helper
 from ..downloader.aria2c.torrent import (
     SITES,
+    MagnetioRPCError,
     format_search_results_html,
     search_torrents,
 )
@@ -79,6 +80,9 @@ async def handle_torrent_search(client: Client, message: Message) -> None:
             else:
                 formatted_html = format_search_results_html(results, query, "Public Indexers")
                 await status_msg.edit_text(formatted_html, disable_web_page_preview=True)
+        except MagnetioRPCError as e:
+            log.warning("Torrent search backend unavailable: %s", e)
+            await status_msg.edit_text("<b>Search backend is unavailable right now, try again shortly.</b>")
         except Exception as e:
             log.exception("Torrent search failed: %s", e)
             await status_msg.edit_text(f"<b>Search error:</b> {e}")
@@ -146,6 +150,9 @@ async def handle_torrent_search_callback(client: Client, callback: CallbackQuery
         else:
             formatted_html = format_search_results_html(results, query_text or "trending", site)
             await callback.message.edit_text(formatted_html, disable_web_page_preview=True)
+    except MagnetioRPCError as e:
+        log.warning("Torrent search backend unavailable: %s", e)
+        await callback.message.edit_text("<b>⚠️ Search backend is unavailable right now, try again shortly.</b>")
     except Exception as e:
         log.exception("Torrent search failed: %s", e)
         await callback.message.edit_text(f"<b>Search error:</b> {e}")

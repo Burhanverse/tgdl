@@ -1,6 +1,7 @@
 from app.downloader.aria2c.torrent import (
     SITES,
     DownloadResult,
+    MagnetioRPCError,
     add_trackers_to_magnet,
     download_torrent_async,
     download_via_aria2_async,
@@ -10,6 +11,7 @@ from app.downloader.aria2c.torrent import (
     get_trackers,
     initiate_search_tools,
     search_torrents,
+    search_torrents_rpc,
     start_aria2_daemon,
     stop_aria2_daemon,
     telegraph_helper,
@@ -18,6 +20,7 @@ from app.downloader.aria2c.torrent import (
 __all__ = [
     "SITES",
     "DownloadResult",
+    "MagnetioRPCError",
     "add_trackers_to_magnet",
     "download_torrent_async",
     "download_via_aria2_async",
@@ -27,6 +30,7 @@ __all__ = [
     "get_trackers",
     "initiate_search_tools",
     "search_torrents",
+    "search_torrents_rpc",
     "start_aria2_daemon",
     "stop_aria2_daemon",
     "telegraph_helper",
