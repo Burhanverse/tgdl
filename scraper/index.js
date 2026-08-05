@@ -77,7 +77,7 @@ app.get('/streams/:type/:id', async (req, res) => {
       logger.info(`Scraping ${label} [${type}] from ${providerIds?.join(',') ?? 'all providers'}`);
 
       // 2. Scrape all providers in parallel
-      return scrapeAll(type, meta, providerIds, context);
+      return scrapeAll(type, meta, providerIds, { ...context, strict: true }, true);
     }, TTL_STREAMS);
 
     res.json({ streams, cached });

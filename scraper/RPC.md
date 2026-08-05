@@ -29,7 +29,7 @@ Scrapes enabled torrent providers for free-text or structured media queries.
 | `episode` | `number` | No | Episode number (for series) |
 | `providers` | `string[]` | No | List of provider IDs to scrape (e.g. `["thepiratebay", "yts"]`). Scrapes all providers if omitted |
 | `limit` | `number` | No | Maximum number of results to return |
-| `strict` | `boolean` | No | Default `true`. If `false`, disables title phrase content matching for looser free-text queries |
+| `strict` | `boolean` | No | Default `false` in JSON-RPC `torrent.search` (allows broad free-text matching). Set to `true` to enforce strict title phrase matching (default in REST `/streams` route). |
 
 #### Example Request
 
@@ -147,3 +147,17 @@ Standard JSON-RPC 2.0 batch array requests are fully supported:
   { "jsonrpc": "2.0", "method": "torrent.providers", "id": 2 }
 ]
 ```
+
+---
+
+## Sidecar Timing & Concurrency Configuration
+
+The scraper sidecar uses the following environment variables to control provider timeouts and early-return behavior:
+
+| Environment Variable | Default Value | Description |
+|---|---|---|
+| `SCRAPER_PROVIDER_TIMEOUT_MS` | `20000` (20s) | Per-provider scrape timeout |
+| `SCRAPER_EARLY_RETURN_MS` | `20000` (20s) | Minimum time to collect results before triggering early return |
+| `SCRAPER_HARD_TIMEOUT_MS` | `25000` (25s) | Hard cutoff deadline for all providers in `scrapeAll()` |
+| `SCRAPER_MIN_EARLY_RESULTS` | `20` | Minimum deduplicated result count required to trigger early return |
+

@@ -75,10 +75,10 @@ async function handleSingleRpc(req, reqObj) {
         const episode = paramsObj.episode ? parseInt(paramsObj.episode, 10) : undefined;
         const providers = Array.isArray(paramsObj.providers) ? paramsObj.providers : null;
         const limit = paramsObj.limit ? parseInt(paramsObj.limit, 10) : null;
-        const strict = paramsObj.strict !== false;
+        const strict = paramsObj.strict !== undefined ? Boolean(paramsObj.strict) : false;
 
         const meta = { name: query, year, season, episode, type };
-        const records = await scrapeAll(type, meta, providers, {}, strict);
+        const records = await scrapeAll(type, meta, providers, { strict }, strict);
 
         let mapped = records.map(r => {
           const magnet = r.magnet || buildMagnetUrl({ infoHash: r.infoHash, title: r.title, trackers: r.trackers });

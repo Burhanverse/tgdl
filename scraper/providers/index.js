@@ -53,10 +53,10 @@ const ALL_PROVIDERS = [
 ];
 
 const limit = pLimit(Math.max(1, parseInt(process.env.SCRAPER_CONCURRENCY ?? '12', 10) || 12));
-const PROVIDER_TIMEOUT_MS = parseInt(process.env.SCRAPER_PROVIDER_TIMEOUT_MS ?? '15000', 10);
-const HARD_TIMEOUT_MS     = parseInt(process.env.SCRAPER_HARD_TIMEOUT_MS     ?? String(PROVIDER_TIMEOUT_MS + 2000), 10);
-const EARLY_RETURN_MS     = parseInt(process.env.SCRAPER_EARLY_RETURN_MS     ?? '3000', 10);
-const MIN_EARLY_RESULTS   = parseInt(process.env.SCRAPER_MIN_EARLY_RESULTS   ?? '3', 10);
+const PROVIDER_TIMEOUT_MS = parseInt(process.env.SCRAPER_PROVIDER_TIMEOUT_MS ?? '20000', 10);
+const HARD_TIMEOUT_MS     = parseInt(process.env.SCRAPER_HARD_TIMEOUT_MS     ?? '25000', 10);
+const EARLY_RETURN_MS     = parseInt(process.env.SCRAPER_EARLY_RETURN_MS     ?? '20000', 10);
+const MIN_EARLY_RESULTS   = parseInt(process.env.SCRAPER_MIN_EARLY_RESULTS   ?? '20', 10);
 
 /**
  * Scrape all (or a subset of) providers for a given content item.
@@ -66,11 +66,12 @@ const MIN_EARLY_RESULTS   = parseInt(process.env.SCRAPER_MIN_EARLY_RESULTS   ?? 
  * @param {string}   type        'movie' | 'series' | 'anime'
  * @param {object}   meta        From cinemeta: { name, year, imdbId, season, episode }
  * @param {string[]} providerIds Optional whitelist of provider IDs
- * @param {object}   context     Optional per-request context (e.g. { torznabUrl, torznabApiKey })
- * @param {boolean}  strict      Whether to filter by content phrase match (default true)
+ * @param {object}   context     Optional per-request context (e.g. { torznabUrl, torznabApiKey, strict })
+ * @param {boolean}  [strict]    Whether to filter by content phrase match (default true, unless context.strict is specified)
  * @returns {Promise<TorrentRecord[]>}
  */
-export async function scrapeAll(type, meta, providerIds = null, context = {}, strict = true) {
+export async function scrapeAll(type, meta, providerIds = null, context = {}, strict = undefined) {
+  const isStrict = context?.strict !== undefined ? Boolean(context.strict) : (strict !== undefined ? Boolean(strict) : true);
   const providers = ALL_PROVIDERS.filter(p =>
     !providerIds || providerIds.includes(p.id)
   );
@@ -88,7 +89,7 @@ export async function scrapeAll(type, meta, providerIds = null, context = {}, st
 
       logger.info(`Scrape totals: ${collected.length} raw, ${completedCount}/${providers.length} providers responded`);
       const deduped = deduplicate(collected);
-      const matched = strict ? filterByContent(deduped, meta) : deduped;
+      const matched = isStrict ? filterByContent(deduped, meta) : deduped;
       if (deduped.length !== matched.length) {
         logger.info(`Content filter: ${deduped.length} -> ${matched.length} (dropped ${deduped.length - matched.length} unrelated)`);
       }
