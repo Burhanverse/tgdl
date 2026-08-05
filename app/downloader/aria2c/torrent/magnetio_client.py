@@ -46,7 +46,7 @@ async def _rpc_call(method: str, params: dict[str, Any] | None = None) -> Any:
     if settings.magnetio_rpc_secret:
         headers["Authorization"] = f"Bearer {settings.magnetio_rpc_secret}"
 
-    timeout = aiohttp.ClientTimeout(total=settings.magnetio_rpc_timeout)
+    timeout = aiohttp.ClientTimeout(total=settings.torrent_timeout)
 
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -60,7 +60,7 @@ async def _rpc_call(method: str, params: dict[str, Any] | None = None) -> Any:
                 if not isinstance(data, dict):
                     raise MagnetioRPCError("Invalid response format: expected JSON object.")
 
-                if "error" in data and data["error"]:
+                if data.get("error"):
                     err = data["error"]
                     code = err.get("code")
                     msg = err.get("message", "Unknown RPC error")
@@ -87,7 +87,7 @@ async def search_torrents_rpc(
     media_type: str = "movie",
 ) -> list[dict[str, Any]]:
     """Performs torrent search via Magnetio RPC torrent.search method."""
-    eff_limit = limit or settings.magnetio_search_limit or 50
+    eff_limit = limit or settings.search_limit or 300
     params: dict[str, Any] = {
         "query": query,
         "limit": eff_limit,

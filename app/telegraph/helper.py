@@ -176,7 +176,7 @@ class TelegraphHelper:
 
         telegraph_content: list[str] = []
         header = f"<h3>Torrent Search Results: <code>{safe_query}</code></h3>"
-        header += f"<blockquote><b>Source Indexer:</b> {safe_site} &nbsp;•&nbsp; <b>Total Results:</b> {len(results)}</blockquote><hr>"
+        header += f"<blockquote><b>Source:</b> {safe_site} &nbsp;•&nbsp; <b>Count:</b> {len(results)}</blockquote><hr>"
         current_msg = header
 
         for idx, result in enumerate(results, start=1):
@@ -198,8 +198,7 @@ class TelegraphHelper:
             if raw_torrent_link and raw_torrent_link != "#" and not raw_torrent_link.startswith("magnet:"):
                 parsed_url = urllib.parse.urlparse(raw_torrent_link)
                 domain_text = parsed_url.hostname or parsed_url.netloc or "Direct Link"
-                if domain_text.startswith("www."):
-                    domain_text = domain_text[4:]
+                domain_text = domain_text.removeprefix("www.")
                 safe_domain = html.escape(domain_text)
                 links_html.append(f"<a href='{safe_torrent_link}'>{safe_domain}</a>")
 

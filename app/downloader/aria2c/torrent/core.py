@@ -7,9 +7,10 @@ import logging
 import secrets
 import shutil
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from app.config import settings
 

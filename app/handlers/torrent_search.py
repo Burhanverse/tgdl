@@ -13,6 +13,7 @@ from pyrogram.types import (
 )
 
 from app.telegraph import telegraph_helper
+
 from ..downloader.aria2c.torrent import (
     SITES,
     MagnetioRPCError,
@@ -72,13 +73,13 @@ async def handle_torrent_search(client: Client, message: Message) -> None:
         status_msg = await message.reply_text(f"<b>Searching torrents for:</b> <code>{safe_query}</code>...")
         try:
             results = await search_torrents(query, site="public", method="fallback")
-            telegraph_url = await telegraph_helper.generate_telegraph_page(results, query, "Public Indexers")
+            telegraph_url = await telegraph_helper.generate_telegraph_page(results, query, "Magnetio")
             if telegraph_url:
                 reply_kb = InlineKeyboardMarkup([[InlineKeyboardButton("VIEW", url=telegraph_url)]])
-                msg = f"<b>Found {len(results)} result(s) for <i>{html.escape(query)}</i>\nTorrent Site: <i>Public Indexers</i></b>"
+                msg = f"<b>Found {len(results)} result(s) for <i>{html.escape(query)}</i>\nTorrent Site: <i>Magnetio</i></b>"
                 await status_msg.edit_text(msg, reply_markup=reply_kb)
             else:
-                formatted_html = format_search_results_html(results, query, "Public Indexers")
+                formatted_html = format_search_results_html(results, query, "Magnetio")
                 await status_msg.edit_text(formatted_html, disable_web_page_preview=True)
         except MagnetioRPCError as e:
             log.warning("Torrent search backend unavailable: %s", e)

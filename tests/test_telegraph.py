@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import httpx
 
 from app.telegraph import (
     InvalidHTML,
     NotAllowedTag,
     RetryAfterError,
     Telegraph,
-    TelegraphError,
     TelegraphHelper,
     html_to_nodes,
 )

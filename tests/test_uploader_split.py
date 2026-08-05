@@ -89,6 +89,7 @@ def test_parse_download_flags():
 def test_prepare_filename_and_caption_split_binary_naming(tmp_path: Path):
     """Verify filename >60 chars ending in .mp4.001 preserves real extension .mp4 and .001 suffix after truncation."""
     from unittest.mock import MagicMock
+
     from app.uploader.telegram.core import TelegramUploader
 
     long_filename = "a" * 65 + "_video_sample.mp4.001"
@@ -105,6 +106,7 @@ def test_prepare_filename_and_caption_split_binary_naming(tmp_path: Path):
 def test_prepare_filename_and_caption_single_numeric_extension(tmp_path: Path):
     """Verify filename >60 chars with a single numeric extension (e.g. .123) preserves .123 suffix."""
     from unittest.mock import MagicMock
+
     from app.uploader.telegram.core import TelegramUploader
 
     long_filename = "b" * 65 + "_data_file.123"

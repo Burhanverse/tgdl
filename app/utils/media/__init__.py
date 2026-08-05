@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from .audio import AUDIO_CONVERSION_EXT, convert_audio_async, probe_audio, probe_audio_async
+from .audio import (
+    AUDIO_CONVERSION_EXT,
+    convert_audio_async,
+    probe_audio,
+    probe_audio_async,
+)
 from .file_split import split_binary
 from .image import (
     convert_image_to_png_async,

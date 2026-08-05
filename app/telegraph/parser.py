@@ -96,19 +96,16 @@ _VOID_ELEMENTS = {
 class TelegraphError(Exception):
     """Base exception for Telegraph errors."""
 
-    pass
 
 
 class NotAllowedTag(TelegraphError):
     """Exception raised when an HTML tag is not allowed by Telegraph."""
 
-    pass
 
 
 class InvalidHTML(TelegraphError):
     """Exception raised when HTML is malformed."""
 
-    pass
 
 
 class RetryAfterError(TelegraphError):

@@ -75,7 +75,7 @@ Configure access control and security policies in `.env`:
 
 - `MAGNETIO_RPC_URL`: JSON-RPC 2.0 URL for the Magnetio scraper sidecar (default `http://magnetio-scraper:8080/rpc`).
 - `MAGNETIO_RPC_SECRET`: Shared secret authentication token matching the scraper sidecar (`RPC_SHARED_SECRET`).
-- `MAGNETIO_RPC_TIMEOUT`: Timeout in seconds for search RPC queries (default `20`).
-- `MAGNETIO_SEARCH_LIMIT`: Maximum search results fetched from the sidecar per query (default `50`).
+- `TORRENT_TIMEOUT`: Timeout in seconds for torrent downloads and search RPC requests (default `120`).
+- `SEARCH_LIMIT`: Maximum search results to fetch for Telegraph pagination (default `300`).
 
 

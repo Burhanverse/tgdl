@@ -779,7 +779,11 @@ class QueueManager:
                         job_state.current_download_url = url
                     job_state.trigger_event.set()
 
-                from ..downloader import DownloadResult, download_direct, download_via_aria2_async
+                from ..downloader import (
+                    DownloadResult,
+                    download_direct,
+                    download_via_aria2_async,
+                )
                 if args_dict.get("engine") == "aria2":
                     def on_aria_progress(
                         pct: float,
@@ -898,12 +902,6 @@ class QueueManager:
 
     async def _process_upload(self, job_state: JobState) -> None:
         job_state.active_upload_task = asyncio.current_task()
-        from ..utils.media import (
-            AUDIO_CONVERSION_EXT,
-            CONVERSION_EXT,
-            convert_audio_async,
-            convert_media_async,
-        )
         from ..handlers.conversion_state import conversion_session_store
         from ..utils.archive import (
             ARCHIVE_EXT,
@@ -911,6 +909,12 @@ class QueueManager:
             archive_session_store,
             extract_archive_async,
             get_split_archive_info,
+        )
+        from ..utils.media import (
+            AUDIO_CONVERSION_EXT,
+            CONVERSION_EXT,
+            convert_audio_async,
+            convert_media_async,
         )
 
         job = job_state.job
@@ -1717,13 +1721,13 @@ class QueueManager:
                     await asyncio.sleep(delay)
 
         async def run_uploader() -> None:
+            from ..uploader import should_ignore_file
             from ..utils.media import (
                 AUDIO_CONVERSION_EXT,
                 CONVERSION_EXT,
                 convert_audio_async,
                 convert_media_async,
             )
-            from ..uploader import should_ignore_file
             if is_torrent or has_archive_fmt:
                 while not job_state.downloader_done.is_set():
                     await asyncio.sleep(2.0)

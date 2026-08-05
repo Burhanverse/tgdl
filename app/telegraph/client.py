@@ -15,7 +15,7 @@ def _json_serialize(data: Any) -> str:
 class Telegraph:
     """Async API client for Telegraph / Graph.org services."""
 
-    __slots__ = ("access_token", "domain", "_client", "_owns_client")
+    __slots__ = ("_client", "_owns_client", "access_token", "domain")
 
     def __init__(
         self,

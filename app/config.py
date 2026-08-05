@@ -60,12 +60,10 @@ class Settings(BaseSettings):
     tg_max_concurrent_uploads: int = 1  # keep at 1 unless you know Telegram tolerates more
 
     # --- Torrent Search settings ---
-    torrent_timeout: int = Field(default=120, description="Torrent download timeout in seconds for dead/stalled torrents")
+    torrent_timeout: int = Field(default=120, description="Torrent download and RPC request timeout in seconds")
+    search_limit: int = Field(default=300, description="Limit of search results to fetch for Telegraph pagination")
     magnetio_rpc_url: str = Field(default="http://magnetio-scraper:8080/rpc", description="Magnetio JSON-RPC sidecar URL")
     magnetio_rpc_secret: str | None = Field(default=None, description="Optional Magnetio JSON-RPC secret token")
-    magnetio_rpc_timeout: int = Field(default=20, description="Magnetio JSON-RPC request timeout in seconds")
-    magnetio_search_limit: int = Field(default=50, description="Default max search results to fetch")
-    search_limit: int = Field(default=200, description="Limit of search results to fetch for Telegraph pagination")
 
     # --- Authorization / Access Control ---
     authorized_user_ids: list[int] | str = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")

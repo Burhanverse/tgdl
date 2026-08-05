@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import pytest
 
 from app.utils.filetype import detect_extension, ensure_extension, needs_extension_fix
-
 
 # Sample magic byte signatures for filetype detection
 ZIP_BYTES = b"PK\x03\x04\x14\x00\x00\x00\x08\x00\x00\x00\x00\x00" + b"\x00" * 50

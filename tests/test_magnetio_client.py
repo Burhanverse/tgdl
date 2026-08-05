@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.config import Settings
 from app.downloader.aria2c.torrent import (
-    SITES,
     MagnetioRPCError,
     initiate_search_tools,
-    search_torrents,
 )
 from app.downloader.aria2c.torrent.magnetio_client import (
     check_health_rpc,
@@ -91,9 +87,11 @@ async def test_search_torrents_rpc_jsonrpc_error() -> None:
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
-        with pytest.raises(MagnetioRPCError) as exc_info:
-            await search_torrents_rpc("Ubuntu")
+    with (
+        patch("aiohttp.ClientSession", return_value=mock_session),
+        pytest.raises(MagnetioRPCError) as exc_info,
+    ):
+        await search_torrents_rpc("Ubuntu")
 
     assert exc_info.value.code == -32001
     assert "Unauthorized" in str(exc_info.value)
@@ -112,9 +110,11 @@ async def test_search_torrents_rpc_http_error() -> None:
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
-        with pytest.raises(MagnetioRPCError):
-            await search_torrents_rpc("Ubuntu")
+    with (
+        patch("aiohttp.ClientSession", return_value=mock_session),
+        pytest.raises(MagnetioRPCError),
+    ):
+        await search_torrents_rpc("Ubuntu")
 
 
 @pytest.mark.asyncio

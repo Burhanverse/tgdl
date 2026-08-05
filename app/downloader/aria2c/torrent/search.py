@@ -6,11 +6,10 @@ import urllib.parse
 from typing import Any
 
 from app.config import settings
+
 from .magnetio_client import (
-    MagnetioRPCError,
     check_health_rpc,
     fetch_providers_rpc,
-    format_bytes,
     search_torrents_rpc,
 )
 
@@ -49,7 +48,7 @@ async def search_torrents(
     method: str = "apisearch",
 ) -> list[dict[str, Any]]:
     """Performs torrent search using the Magnetio JSON-RPC sidecar backend."""
-    limit = settings.magnetio_search_limit or 50
+    limit = settings.search_limit or 300
 
     providers = None
     if site and site not in ("all", "public"):
