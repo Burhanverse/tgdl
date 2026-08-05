@@ -9,9 +9,7 @@ services:
       - RPC_SHARED_SECRET=${MAGNETIO_RPC_SECRET:-}
       - REDIS_URL=${REDIS_URL:-}
       - SCRAPER_PROVIDER_TIMEOUT_MS=${SCRAPER_PROVIDER_TIMEOUT_MS:-20000}
-      - SCRAPER_EARLY_RETURN_MS=${SCRAPER_EARLY_RETURN_MS:-20000}
-      - SCRAPER_HARD_TIMEOUT_MS=${SCRAPER_HARD_TIMEOUT_MS:-25000}
-      - SCRAPER_MIN_EARLY_RESULTS=${SCRAPER_MIN_EARLY_RESULTS:-20}
+      - SCRAPER_HARD_TIMEOUT_MS=${SCRAPER_HARD_TIMEOUT_MS:-30000}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s

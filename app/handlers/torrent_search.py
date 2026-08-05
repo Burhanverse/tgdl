@@ -76,7 +76,7 @@ async def handle_torrent_search(client: Client, message: Message) -> None:
             telegraph_url = await telegraph_helper.generate_telegraph_page(results, query, "Magnetio")
             if telegraph_url:
                 reply_kb = InlineKeyboardMarkup([[InlineKeyboardButton("VIEW", url=telegraph_url)]])
-                msg = f"<b>Found {len(results)} result(s) for <i>{html.escape(query)}</i>\nTorrent Site: <i>Magnetio</i></b>"
+                msg = f"<b>Found {len(results)} result(s) for <i>{html.escape(query)}</i>\nSource: <i>Magnetio</i></b>"
                 await status_msg.edit_text(msg, reply_markup=reply_kb)
             else:
                 formatted_html = format_search_results_html(results, query, "Magnetio")
@@ -146,7 +146,7 @@ async def handle_torrent_search_callback(client: Client, callback: CallbackQuery
         telegraph_url = await telegraph_helper.generate_telegraph_page(results, query_text or "trending", site)
         if telegraph_url:
             reply_kb = InlineKeyboardMarkup([[InlineKeyboardButton("VIEW", url=telegraph_url)]])
-            msg = f"<b>Found {len(results)} result(s) for <i>{html.escape(query_text or 'trending')}</i>\nTorrent Site: <i>{html.escape(site.capitalize())}</i></b>"
+            msg = f"<b>Found {len(results)} result(s) for <i>{html.escape(query_text or 'trending')}</i>\nSource: <i>{html.escape(site.capitalize())}</i></b>"
             await callback.message.edit_text(msg, reply_markup=reply_kb)
         else:
             formatted_html = format_search_results_html(results, query_text or "trending", site)

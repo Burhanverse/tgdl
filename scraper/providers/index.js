@@ -3,28 +3,28 @@
  * and returns a unified, deduplicated list of torrent records.
  */
 import pLimit from 'p-limit';
-import * as yts              from './yts.js';
-import * as eztv             from './eztv.js';
-import * as thepiratebay     from './thepiratebay.js';
-import * as torrentgalaxy    from './torrentgalaxy.js';
-import * as leetx            from './leetx.js';
-import * as kickasstorrents  from './kickasstorrents.js';
-import * as nyaa             from './nyaa.js';
-import * as animesaturn      from './animesaturn.js';
-import * as rutor            from './rutor.js';
-import * as rutracker        from './rutracker.js';
-import * as limetorrents     from './limetorrents.js';
-import * as bitsearch        from './bitsearch.js';
-import * as bt4g             from './bt4g.js';
-import * as btdig            from './btdig.js';
-import * as glotorrents      from './glotorrents.js';
-import * as torlock          from './torlock.js';
+import * as yts from './yts.js';
+import * as eztv from './eztv.js';
+import * as thepiratebay from './thepiratebay.js';
+import * as torrentgalaxy from './torrentgalaxy.js';
+import * as leetx from './leetx.js';
+import * as kickasstorrents from './kickasstorrents.js';
+import * as nyaa from './nyaa.js';
+import * as animesaturn from './animesaturn.js';
+import * as rutor from './rutor.js';
+import * as rutracker from './rutracker.js';
+import * as limetorrents from './limetorrents.js';
+import * as bitsearch from './bitsearch.js';
+import * as bt4g from './bt4g.js';
+import * as btdig from './btdig.js';
+import * as glotorrents from './glotorrents.js';
+import * as torlock from './torlock.js';
 import * as torrentdownloads from './torrentdownloads.js';
-import * as therarbg         from './therarbg.js';
-import * as subsplease       from './subsplease.js';
-import * as animetosho       from './animetosho.js';
-import * as nekobt           from './nekobt.js';
-import * as torznab          from './torznab.js';
+import * as therarbg from './therarbg.js';
+import * as subsplease from './subsplease.js';
+import * as animetosho from './animetosho.js';
+import * as nekobt from './nekobt.js';
+import * as torznab from './torznab.js';
 import { logger } from '../lib/logger.js';
 
 const ALL_PROVIDERS = [
@@ -54,14 +54,11 @@ const ALL_PROVIDERS = [
 
 const limit = pLimit(Math.max(1, parseInt(process.env.SCRAPER_CONCURRENCY ?? '12', 10) || 12));
 const PROVIDER_TIMEOUT_MS = parseInt(process.env.SCRAPER_PROVIDER_TIMEOUT_MS ?? '20000', 10);
-const HARD_TIMEOUT_MS     = parseInt(process.env.SCRAPER_HARD_TIMEOUT_MS     ?? '25000', 10);
-const EARLY_RETURN_MS     = parseInt(process.env.SCRAPER_EARLY_RETURN_MS     ?? '20000', 10);
-const MIN_EARLY_RESULTS   = parseInt(process.env.SCRAPER_MIN_EARLY_RESULTS   ?? '20', 10);
+const HARD_TIMEOUT_MS = parseInt(process.env.SCRAPER_HARD_TIMEOUT_MS ?? '60000', 10);
 
 /**
  * Scrape all (or a subset of) providers for a given content item.
- * Uses early-return: responds after EARLY_RETURN_MS if enough results
- * are collected, without waiting for slow providers.
+ * Waits for all providers to complete (or time out individually / hit hard deadline).
  *
  * @param {string}   type        'movie' | 'series' | 'anime'
  * @param {object}   meta        From cinemeta: { name, year, imdbId, season, episode }
@@ -84,7 +81,6 @@ export async function scrapeAll(type, meta, providerIds = null, context = {}, st
     const finalize = () => {
       if (resolved) return;
       resolved = true;
-      clearTimeout(earlyTimer);
       clearTimeout(hardTimer);
 
       logger.info(`Scrape totals: ${collected.length} raw, ${completedCount}/${providers.length} providers responded`);
@@ -96,15 +92,7 @@ export async function scrapeAll(type, meta, providerIds = null, context = {}, st
       resolve(matched);
     };
 
-    // Early return: after EARLY_RETURN_MS, return if we have enough results
-    const earlyTimer = setTimeout(() => {
-      if (!resolved && collected.length >= MIN_EARLY_RESULTS) {
-        logger.info(`Early return: ${collected.length} results from ${completedCount}/${providers.length} providers after ${EARLY_RETURN_MS}ms`);
-        finalize();
-      }
-    }, EARLY_RETURN_MS);
-
-    // Hard deadline: cut off after HARD_TIMEOUT_MS even if providers are still pending
+    // Hard deadline: cut off after HARD_TIMEOUT_MS as fallback if providers hang
     const hardTimer = setTimeout(() => {
       if (!resolved) {
         logger.info(`Hard timeout: ${collected.length} results from ${completedCount}/${providers.length} providers after ${HARD_TIMEOUT_MS}ms`);

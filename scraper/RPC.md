@@ -152,12 +152,11 @@ Standard JSON-RPC 2.0 batch array requests are fully supported:
 
 ## Sidecar Timing & Concurrency Configuration
 
-The scraper sidecar uses the following environment variables to control provider timeouts and early-return behavior:
+The scraper sidecar waits for all enabled providers to finish scraping (or hit individual/hard timeouts) before returning results:
 
 | Environment Variable | Default Value | Description |
 |---|---|---|
 | `SCRAPER_PROVIDER_TIMEOUT_MS` | `20000` (20s) | Per-provider scrape timeout |
-| `SCRAPER_EARLY_RETURN_MS` | `20000` (20s) | Minimum time to collect results before triggering early return |
-| `SCRAPER_HARD_TIMEOUT_MS` | `25000` (25s) | Hard cutoff deadline for all providers in `scrapeAll()` |
-| `SCRAPER_MIN_EARLY_RESULTS` | `20` | Minimum deduplicated result count required to trigger early return |
+| `SCRAPER_HARD_TIMEOUT_MS` | `30000` (30s) | Hard cutoff deadline for all providers in `scrapeAll()` |
+
 
