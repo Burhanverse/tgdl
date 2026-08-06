@@ -286,7 +286,7 @@ class QueueManager:
                 except Exception as e:
                     log.debug("Failed parsing JSON array URL for job #%s: %s", job.id, e)
 
-            from ..downloader import is_direct_url
+            from ..downloader import is_direct_url, is_m3u8_url
 
             is_torrent = (
                 cleaned_url.startswith("magnet:") or
@@ -766,7 +766,7 @@ class QueueManager:
                             user_id=job.chat_id,
                         )
 
-            elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url):
+            elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url) or (await is_m3u8_url(cleaned_url)):
                 direct_url = cleaned_url.removeprefix("direct:")
                 async def on_direct_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
                     job_state.total_downloaded_bytes = current

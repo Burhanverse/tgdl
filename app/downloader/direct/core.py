@@ -57,7 +57,7 @@ async def is_url_private_ip(url: str) -> bool:
 
 DIRECT_FILE_EXTENSIONS = {
     # Video
-    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".3gp", ".m4v", ".ts", ".f4v", ".vob",
+    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".3gp", ".m4v", ".ts", ".f4v", ".vob", ".m3u8",
     # Audio
     ".mp3", ".flac", ".m4a", ".aac", ".opus", ".ogg", ".wav", ".wma", ".alac", ".aiff",
     # Archives & Compressed
@@ -97,6 +97,52 @@ def is_direct_url(url: str) -> bool:
         # expected: non-standard URL structure
         pass
     return False
+
+
+async def is_m3u8_url(url: str, session: aiohttp.ClientSession | None = None) -> bool:
+    """Checks if a URL is an M3U8/HLS stream playlist by extension or content sniffing."""
+    if not url:
+        return False
+    try:
+        clean_u = url.split("?", 1)[0].split("#", 1)[0]
+        parsed = urlparse(clean_u)
+        path_ext = Path(parsed.path).suffix.lower()
+        if path_ext == ".m3u8":
+            return True
+
+        if not settings.allow_private_network_urls:
+            if await is_url_private_ip(url):
+                return False
+
+        req_headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)",
+            "Range": "bytes=0-511",
+        }
+
+        async def _check(sess: aiohttp.ClientSession) -> bool:
+            try:
+                async with sess.get(url, headers=req_headers, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10.0)) as resp:
+                    if resp.status >= 400:
+                        return False
+                    ct = (resp.headers.get("Content-Type") or resp.headers.get("content-type") or "").lower()
+                    if any(m in ct for m in ("mpegurl", "vnd.apple.mpegurl", "x-mpegurl")):
+                        return True
+                    chunk = await resp.content.read(512)
+                    if b"#EXTM3U" in chunk:
+                        return True
+            except Exception as e:
+                log.debug("is_m3u8_url network check failed for %s: %s", url, e)
+                return False
+            return False
+
+        if session:
+            return await _check(session)
+        else:
+            async with aiohttp.ClientSession() as sess:
+                return await _check(sess)
+    except Exception as e:
+        log.debug("Error in is_m3u8_url: %s", e)
+        return False
 
 
 def get_filename_from_url(url: str, headers: dict[str, str] | None = None) -> str:
@@ -171,6 +217,50 @@ class DirectDownloader:
         if subpath:
             save_dir = save_dir / subpath
         save_dir.mkdir(parents=True, exist_ok=True)
+
+        clean_u = url.split("?", 1)[0].split("#", 1)[0]
+        parsed_url = urlparse(clean_u)
+        path_ext = Path(parsed_url.path).suffix.lower()
+
+        if path_ext == ".m3u8":
+            if not filename:
+                base_fn = get_filename_from_url(url)
+                if base_fn.lower().endswith(".m3u8"):
+                    filename = base_fn[:-5] + ".mp4"
+                else:
+                    filename = Path(base_fn).stem + ".mp4"
+            elif not filename.lower().endswith(".mp4"):
+                if filename.lower().endswith(".m3u8"):
+                    filename = filename[:-5] + ".mp4"
+                else:
+                    filename = Path(filename).stem + ".mp4"
+
+            self.current_filename = filename
+            out_file = save_dir / filename
+
+            from .hls import download_hls
+
+            async def progress_adapter(current: float, total: float, fn: str, u: str | None = None) -> None:
+                if self.progress_cb:
+                    pct_processed = int(current)
+                    pct_total = int(total)
+                    try:
+                        await self.progress_cb(pct_processed, pct_total, fn, url)
+                    except TypeError:
+                        try:
+                            await self.progress_cb(pct_processed, pct_total, fn)
+                        except Exception as pe:
+                            log.debug("Progress callback error in HLS download: %s", pe)
+                    except Exception as pe:
+                        log.debug("Progress callback error in HLS download: %s", pe)
+
+            return await download_hls(
+                url=url,
+                dest_path=out_file,
+                headers=self.custom_headers,
+                progress_cb=progress_adapter,
+                is_cancelled=lambda: self.is_cancelled,
+            )
 
         req_headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"}
         req_headers.update(self.custom_headers)
