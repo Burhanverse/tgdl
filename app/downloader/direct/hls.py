@@ -154,7 +154,7 @@ async def download_hls(
     def _do_remux() -> None:
         try:
             with av.open(media_url, options=pyav_options) as input_container:
-                with av.open(str(part_file), mode="w") as output_container:
+                with av.open(str(part_file), mode="w", format="mp4") as output_container:
                     streams_map = {}
                     main_stream_index = None
                     main_time_base = None

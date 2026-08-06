@@ -142,8 +142,9 @@ async def test_download_hls_success(tmp_path: Path):
 
     out_file = tmp_path / "video.mp4"
 
-    def mock_av_open(target, mode="r", options=None):
+    def mock_av_open(target, mode="r", options=None, format=None):
         if mode == "w":
+            assert format == "mp4"
             # create empty output file simulating PyAV writing
             part_path = Path(target)
             part_path.write_bytes(b"mock mp4 content")

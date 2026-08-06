@@ -12,7 +12,7 @@ def _remux_or_transcode(input_path: Path, output_path: Path) -> bool:
     # 1. Try remuxing (fast stream copy)
     try:
         log.info("Attempting PyAV fast stream copy (remuxing) for %s to %s", input_path.name, output_path.name)
-        with av.open(str(input_path)) as input_container, av.open(str(output_path), mode="w") as output_container:
+        with av.open(str(input_path)) as input_container, av.open(str(output_path), mode="w", format="mp4") as output_container:
             streams_map = {}
             for stream in input_container.streams:
                 if stream.type in ("video", "audio"):
@@ -47,7 +47,7 @@ def _remux_or_transcode(input_path: Path, output_path: Path) -> bool:
     # 2. Try transcoding fallback (H.264 + AAC)
     try:
         log.info("Starting PyAV transcoding fallback for %s to %s", input_path.name, output_path.name)
-        with av.open(str(input_path)) as input_container, av.open(str(output_path), mode="w") as output_container:
+        with av.open(str(input_path)) as input_container, av.open(str(output_path), mode="w", format="mp4") as output_container:
             in_video = next((s for s in input_container.streams if s.type == "video"), None)
             in_audio = next((s for s in input_container.streams if s.type == "audio"), None)
 
