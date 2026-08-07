@@ -46,25 +46,77 @@ def find_java_binary() -> str:
     return "java"
 
 
+def find_apksigner_binary() -> str | None:
+    """Finds available apksigner binary on the system."""
+    apk_cmd = shutil.which("apksigner")
+    if apk_cmd:
+        return apk_cmd
+
+    search_dirs = []
+    for env_var in ("ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_SDK"):
+        val = os.getenv(env_var)
+        if val:
+            search_dirs.append(Path(val) / "build-tools")
+
+    home = Path.home()
+    search_dirs.extend([
+        home / "Android/Sdk/build-tools",
+        Path("/usr/lib/android-sdk/build-tools"),
+        Path("/opt/android-sdk/build-tools"),
+    ])
+
+    for base_dir in search_dirs:
+        try:
+            if base_dir.is_dir():
+                for sub in base_dir.iterdir():
+                    candidate = sub / "apksigner"
+                    if candidate.is_file() and os.access(candidate, os.X_OK):
+                        return str(candidate)
+        except Exception:
+            pass
+
+    return None
+
+
 def find_jarsigner_binary() -> str | None:
-    """Finds available jarsigner binary on the system."""
+    """Finds available jarsigner binary on the system by resolving java symlinks and checking JDK paths."""
     js_cmd = shutil.which("jarsigner")
     if js_cmd:
         return js_cmd
 
-    java_bin = find_java_binary()
-    if java_bin and java_bin != "java":
-        candidate = Path(java_bin).parent / "jarsigner"
+    # Check JAVA_HOME
+    java_home = os.getenv("JAVA_HOME")
+    if java_home:
+        candidate = Path(java_home) / "bin" / "jarsigner"
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
+
+    # Check resolved symlink of java binary
+    java_bin = find_java_binary()
+    if java_bin:
+        try:
+            resolved_bin = Path(java_bin).resolve()
+            candidate = resolved_bin.parent / "jarsigner"
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        except Exception:
+            pass
 
     home = Path.home()
     candidates = [
         home / ".sdkman/candidates/java/current/bin/jarsigner",
         Path("/usr/lib/jvm/default-jvm/bin/jarsigner"),
-        Path("/usr/lib/jvm/java-21-openjdk/bin/jarsigner"),
-        Path("/usr/lib/jvm/java-17-openjdk/bin/jarsigner"),
     ]
+
+    try:
+        jvm_dir = Path("/usr/lib/jvm")
+        if jvm_dir.is_dir():
+            for p in jvm_dir.rglob("jarsigner"):
+                if p.is_file() and os.access(p, os.X_OK):
+                    candidates.append(p)
+    except Exception:
+        pass
+
     for c in candidates:
         if c.is_file() and os.access(c, os.X_OK):
             return str(c)
@@ -115,6 +167,44 @@ async def ensure_tools() -> tuple[Path, Path]:
     return APKEDITOR_JAR, TGPATCHER_PY
 
 
+def find_zipalign_binary() -> str | None:
+    """Finds available zipalign binary on the system (PATH, Termux, Android SDK)."""
+    za_cmd = shutil.which("zipalign")
+    if za_cmd:
+        return za_cmd
+
+    prefix = os.getenv("PREFIX")
+    if prefix:
+        candidate = Path(prefix) / "bin" / "zipalign"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+
+    search_dirs = []
+    for env_var in ("ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_SDK"):
+        val = os.getenv(env_var)
+        if val:
+            search_dirs.append(Path(val) / "build-tools")
+
+    home = Path.home()
+    search_dirs.extend([
+        home / "Android/Sdk/build-tools",
+        Path("/usr/lib/android-sdk/build-tools"),
+        Path("/opt/android-sdk/build-tools"),
+    ])
+
+    for base_dir in search_dirs:
+        try:
+            if base_dir.is_dir():
+                for sub in base_dir.iterdir():
+                    candidate = sub / "zipalign"
+                    if candidate.is_file() and os.access(candidate, os.X_OK):
+                        return str(candidate)
+        except Exception:
+            pass
+
+    return None
+
+
 def zipalign_pure_python(input_zip: Path, output_zip: Path, alignment: int = 4) -> None:
     """Pure Python 4-byte zip alignment for stored (uncompressed) entries in an APK."""
     with zipfile.ZipFile(input_zip, "r") as in_zf, zipfile.ZipFile(
@@ -137,20 +227,21 @@ async def align_apk(input_apk: Path, output_apk: Path) -> None:
     """Aligns APK entries using zipalign CLI if available, or pure Python fallback."""
     input_apk = Path(input_apk).resolve()
     output_apk = Path(output_apk).resolve()
-    zipalign_bin = shutil.which("zipalign")
+    zipalign_bin = find_zipalign_binary()
     if zipalign_bin:
         cmd = [zipalign_bin, "-p", "-f", "4", str(input_apk), str(output_apk)]
-        log.info("Running zipalign CLI: %s", " ".join(cmd))
+        log.info("Running zipalign CLI (%s)...", zipalign_bin)
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            log.warning("zipalign CLI failed (code %s): %s. Falling back to pure Python zipalign.", proc.returncode, stderr.decode())
-            zipalign_pure_python(input_apk, output_apk)
-    else:
-        log.info("zipalign binary not found in PATH. Using pure Python 4-byte zip alignment.")
-        await asyncio.to_thread(zipalign_pure_python, input_apk, output_apk)
+        if proc.returncode == 0:
+            log.info("Successfully aligned APK with zipalign CLI.")
+            return
+        log.warning("zipalign CLI failed (code %s): %s. Falling back to pure Python zipalign.", proc.returncode, stderr.decode())
+
+    log.info("Using pure Python 4-byte zip alignment.")
+    await asyncio.to_thread(zipalign_pure_python, input_apk, output_apk)
 
 
 async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
@@ -166,7 +257,7 @@ async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
         log.warning("Keystore file %s not found. Skipping signing.", ks_path)
         return False
 
-    apksigner_bin = shutil.which("apksigner")
+    apksigner_bin = find_apksigner_binary()
     if apksigner_bin:
         cmd = [
             apksigner_bin,
@@ -177,7 +268,7 @@ async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
             "--key-pass", f"pass:{key_pass}",
             str(apk_path),
         ]
-        log.info("Signing APK with apksigner...")
+        log.info("Signing APK with apksigner (%s)...", apksigner_bin)
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
@@ -199,7 +290,7 @@ async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
             str(apk_path),
             str(key_alias),
         ]
-        log.info("Signing APK with jarsigner...")
+        log.info("Signing APK with jarsigner (%s)...", jarsigner_bin)
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
@@ -210,7 +301,7 @@ async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
         log.error("jarsigner failed (code %s): %s", proc.returncode, stderr.decode())
         return False
 
-    log.warning("Neither apksigner nor jarsigner found. APK left unsigned.")
+    log.warning("Neither apksigner nor jarsigner found. APK left unsigned. Please ensure OpenJDK JDK is installed (e.g. apt install default-jdk / openjdk-21-jdk / pkg install openjdk-21).")
     return False
 
 
