@@ -180,6 +180,18 @@ def compile_queued_status_text(job_id: str, url: str, args_display: str) -> str:
                 f"> • **__Engine__**: __`aria2c`__"
             )
 
+    is_patch = (
+        cleaned_url.startswith("patch:") or
+        '"patch:' in cleaned_url or
+        "['patch:" in cleaned_url
+    )
+    if is_patch:
+        return (
+            f"**APK Patch Job Queued** `#${job_id}`\n"
+            f"> • **__Engine__**: __`APKEditor + tgpatcher + apksigner`__\n"
+            f"> • **__Status__**: __`Waiting for available worker...`__"
+        )
+
     is_gdrive = (
         cleaned_url.startswith("gdrive:") or
         cleaned_url.startswith("gd2tg:") or
@@ -370,6 +382,54 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
                 cleaned_url = parsed[0]
         except Exception:
             pass
+
+    is_patch = (
+        cleaned_url.startswith("patch:") or
+        '"patch:' in cleaned_url or
+        "['patch:" in cleaned_url
+    )
+    if is_patch:
+        orig_filename = "app.apk"
+        if job.args:
+            try:
+                a_data = json.loads(job.args)
+                if isinstance(a_data, dict) and a_data.get("original_filename"):
+                    orig_filename = a_data["original_filename"]
+            except Exception:
+                pass
+
+        if orig_filename.lower().endswith(".apk"):
+            out_name = f"{orig_filename[:-4]}_patched.apk"
+        else:
+            out_name = f"{orig_filename}_patched.apk"
+
+        stage = job_state.current_download_file or "Initializing patch pipeline..."
+        marquee = make_marquee_bar()
+
+        lines = [
+            f"**APK Patching Pipeline** `#${job.id}`\n",
+            f"> • **__Input File__**: __`{orig_filename}`__",
+            f"> • **__Output Target__**: __`{out_name}`__",
+            f"> • **__Engine__**: __`APKEditor + tgpatcher`__",
+            f"> • **__Signer__**: __`JKS Keystore`__\n",
+        ]
+
+        if not job_state.downloader_done.is_set():
+            dl_bytes_str = format_size(job_state.total_downloaded_bytes)
+            lines.append(
+                f"**Pipeline Metrics**\n"
+                f"> • **__Stage__**: __`{stage}`__\n"
+                f"> • **__State__**: __`[{marquee}]`__\n"
+                f"> • **__Processed Size__**: __`{dl_bytes_str}`__"
+            )
+        else:
+            lines.append(
+                f"**Uploader Metrics**\n"
+                f"> • **__File__**: __`{out_name}`__\n"
+                f"> • **__Status__**: __`Uploading patched APK to Telegram... [{marquee}]`__"
+            )
+
+        return "\n".join(lines)
 
     is_torrent = (
         cleaned_url.startswith("magnet:") or

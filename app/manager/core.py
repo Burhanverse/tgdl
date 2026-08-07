@@ -148,6 +148,7 @@ class QueueManager:
         job_state.trigger_event.set()
         shutil.rmtree(job_state.dest_dir, ignore_errors=True)
         shutil.rmtree(job_state.dest_dir.parent / f"{job_state.dest_dir.name}_extracted", ignore_errors=True)
+        shutil.rmtree(job_state.dest_dir.parent / f"{job_state.dest_dir.name}_patch_work", ignore_errors=True)
 
         from ..handlers.conversion_state import conversion_session_store
         from ..utils.archive import archive_session_store
@@ -553,65 +554,69 @@ class QueueManager:
                 orig_filename = args_dict.get("original_filename") or "app.apk"
                 user_id = args_dict.get("user_id") or chat_id
 
-                temp_input_apk = dest_dir / "input_temp.apk"
+                patch_work_dir = (dest_dir.parent / f"{dest_dir.name}_patch_work").resolve()
+                patch_work_dir.mkdir(parents=True, exist_ok=True)
+                temp_input_apk = patch_work_dir / "input_temp.apk"
 
-                if reply_msg_id:
-                    try:
-                        reply_msg = await self.client.get_messages(chat_id, message_ids=reply_msg_id)
-                        if reply_msg and (reply_msg.document or reply_msg.video or reply_msg.audio or reply_msg.photo):
-                            async def on_tg_download_progress(current: int, total: int, *args) -> None:
-                                job_state.total_downloaded_bytes = current
-                                if total > 0:
-                                    job_state.total_expected_bytes = total
-                                    job_state.download_pct = min(100.0, (current / total) * 100.0)
-                                job_state.current_download_file = orig_filename
-                                job_state.trigger_event.set()
+                try:
+                    if reply_msg_id:
+                        try:
+                            reply_msg = await self.client.get_messages(chat_id, message_ids=reply_msg_id)
+                            if reply_msg and (reply_msg.document or reply_msg.video or reply_msg.audio or reply_msg.photo):
+                                async def on_tg_download_progress(current: int, total: int, *args) -> None:
+                                    job_state.total_downloaded_bytes = current
+                                    if total > 0:
+                                        job_state.total_expected_bytes = total
+                                        job_state.download_pct = min(100.0, (current / total) * 100.0)
+                                    job_state.current_download_file = orig_filename
+                                    job_state.trigger_event.set()
 
-                            await download_telegram_media(
-                                self.client, reply_msg, dest_dir, progress_cb=on_tg_download_progress
-                            )
-                            downloaded_files = [p for p in dest_dir.rglob("*") if p.is_file() and p.name != "input_temp.apk"]
-                            if downloaded_files:
-                                temp_input_apk = downloaded_files[0]
-                    except Exception as e:
-                        log.exception("Failed to download Telegram APK document for patch job #%s: %s", job.id, e)
-                elif target_url:
-                    async def on_url_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
-                        job_state.total_downloaded_bytes = current
-                        if total > 0:
-                            job_state.total_expected_bytes = total
-                            job_state.download_pct = min(100.0, (current / total) * 100.0)
-                        job_state.current_download_file = filename or orig_filename
+                                await download_telegram_media(
+                                    self.client, reply_msg, patch_work_dir, progress_cb=on_tg_download_progress
+                                )
+                                downloaded_files = [p for p in patch_work_dir.rglob("*") if p.is_file() and p.name != "input_temp.apk"]
+                                if downloaded_files:
+                                    temp_input_apk = downloaded_files[0]
+                        except Exception as e:
+                            log.exception("Failed to download Telegram APK document for patch job #%s: %s", job.id, e)
+                    elif target_url:
+                        async def on_url_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
+                            job_state.total_downloaded_bytes = current
+                            if total > 0:
+                                job_state.total_expected_bytes = total
+                                job_state.download_pct = min(100.0, (current / total) * 100.0)
+                            job_state.current_download_file = filename or orig_filename
+                            job_state.trigger_event.set()
+
+                        downloaded_paths = await download_direct(target_url, patch_work_dir, progress_cb=on_url_progress)
+                        if downloaded_paths:
+                            temp_input_apk = downloaded_paths[0]
+
+                    if not temp_input_apk.is_file():
+                        raise RuntimeError("Failed to download input APK file for patching.")
+
+                    def on_patch_status(stage: str) -> None:
+                        job_state.current_download_file = stage
                         job_state.trigger_event.set()
 
-                    downloaded_paths = await download_direct(target_url, dest_dir, progress_cb=on_url_progress)
-                    if downloaded_paths:
-                        temp_input_apk = downloaded_paths[0]
+                    ks_info = settings.get_user_keystore_info(user_id)
+                    patched_file = await patch_apk_async(
+                        input_apk=temp_input_apk,
+                        output_dir=patch_work_dir,
+                        original_filename=orig_filename,
+                        keystore_info=ks_info,
+                        progress_cb=on_patch_status,
+                    )
 
-                if not temp_input_apk.is_file():
-                    raise RuntimeError("Failed to download input APK file for patching.")
+                    if not patched_file.is_file():
+                        raise RuntimeError("APK patcher did not produce an output APK file.")
 
-                def on_patch_status(stage: str) -> None:
-                    job_state.current_download_file = stage
-                    job_state.trigger_event.set()
-
-                ks_info = settings.get_user_keystore_info(user_id)
-                final_patched_apk = await patch_apk_async(
-                    input_apk=temp_input_apk,
-                    output_dir=dest_dir,
-                    original_filename=orig_filename,
-                    keystore_info=ks_info,
-                    progress_cb=on_patch_status,
-                )
-
-                if temp_input_apk.is_file() and temp_input_apk != final_patched_apk:
-                    try:
-                        temp_input_apk.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-
-                out_files = [final_patched_apk] if final_patched_apk.is_file() else [p for p in dest_dir.rglob("*") if p.is_file()]
-                result = DownloadResult(ok=True, files=out_files)
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    final_patched_apk = dest_dir / patched_file.name
+                    shutil.move(str(patched_file), str(final_patched_apk))
+                    result = DownloadResult(ok=True, files=[final_patched_apk])
+                finally:
+                    shutil.rmtree(patch_work_dir, ignore_errors=True)
             elif is_gdrive:
                 from ..downloader import DownloadResult
                 from ..gdrive import GoogleDriveDownloader, archive_all_folders_in_dir
@@ -1007,6 +1012,10 @@ class QueueManager:
             cleaned_url.startswith("mirror:") or
             cleaned_url.startswith("mirror_tg:")
         )
+
+        is_patch_job = cleaned_url.startswith("patch:")
+        if is_patch_job:
+            await job_state.downloader_done.wait()
 
         is_unzip_job = cleaned_url.startswith("unzip:")
         has_archive_fmt = False

@@ -205,10 +205,13 @@ def register_patch_handlers(app: Client) -> None:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("Cancel", callback_data=f"cancel_job:{job.id}")]
         ])
+        from ..manager.status.compiler import compile_queued_status_text
+        queued_text = compile_queued_status_text(job.id, job_url_val, "")
+
         status_msg = await safe_send(
             app,
             chat_id,
-            f"**Job #{job.id} Queued: APK Patch** (`{original_filename}`)\nWaiting for available download slot...",
+            queued_text,
             reply_markup=keyboard,
             link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
