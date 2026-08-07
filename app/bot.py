@@ -121,6 +121,8 @@ async def main() -> None:
             BotCommand("gofile", "Upload replied media to GoFile"),
             BotCommand("fileditch", "Upload replied media to FileDitch"),
             BotCommand("pdup", "Upload replied media to Pixeldrain"),
+            BotCommand("patch", "Decompile, patch, sign & upload Telegram APK"),
+            BotCommand("setkeystore", "Set or manage your JKS keystore for signing"),
             BotCommand("unzip", "Download & extract archive"),
             BotCommand("status", "Show active tasks & status"),
             BotCommand("cancel", "Cancel active or queued jobs"),

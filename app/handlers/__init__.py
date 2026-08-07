@@ -8,6 +8,7 @@ from .callbacks import register_choice_callback_handlers
 from .cancel import register_cancel_handlers
 from .download import register_download_handlers
 from .gdlconf import register_gdlconf_handlers
+from .patch import register_patch_handlers
 from .status import register_status_handlers
 from .torrent_search import register_torrent_search_handlers
 from .unzip import register_unzip_handlers
@@ -22,6 +23,7 @@ def register_all_handlers(app: Client) -> None:
     register_cancel_handlers(app)
     register_download_handlers(app)
     register_unzip_handlers(app)
+    register_patch_handlers(app)
     register_choice_callback_handlers(app)
     register_gdlconf_handlers(app)
     register_torrent_search_handlers(app)

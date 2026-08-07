@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     show_system_stats_on_job_card: bool = Field(default=True, description="Show host CPU/RAM/disk/network/uptime stats on individual job status cards")
 
 
+    # --- APK Patcher & JKS Keystore settings ---
+    keystore_path: Path | None = Field(default=None, description="Optional global JKS keystore file path")
+    keystore_pass: str | None = Field(default=None, description="Optional global JKS keystore password")
+    key_alias: str | None = Field(default=None, description="Optional global JKS key alias")
+    key_pass: str | None = Field(default=None, description="Optional global JKS key password")
+
     # --- Storage locations ---
     data_dir: Path = Field(default=Path("./data"))
     auth_dir: Path = Field(default=Path("./auth"))
@@ -161,6 +167,50 @@ class Settings(BaseSettings):
             missing.append("TG_BOT_TOKEN")
         if missing:
             raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+    def get_user_keystore_info(self, user_id: int | None = None) -> dict[str, Any] | None:
+        """Looks up JKS keystore for a given user ID, or falls back to global settings."""
+        import json
+        if user_id:
+            user_dir = self.auth_dir / str(user_id)
+            for ks_name in ("keystore.jks", "keystore.keystore", "user.jks"):
+                ks_path = user_dir / ks_name
+                cfg_path = user_dir / "keystore_config.json"
+                if ks_path.is_file() and cfg_path.is_file():
+                    try:
+                        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                        if cfg.get("store_pass") and cfg.get("key_alias"):
+                            return {
+                                "keystore_path": ks_path.resolve(),
+                                "store_pass": cfg["store_pass"],
+                                "key_alias": cfg["key_alias"],
+                                "key_pass": cfg.get("key_pass") or cfg["store_pass"],
+                            }
+                    except Exception:
+                        pass
+
+        # Fallback to global settings
+        if self.keystore_path:
+            p = Path(self.keystore_path)
+            if p.is_file():
+                return {
+                    "keystore_path": p.resolve(),
+                    "store_pass": self.keystore_pass or "",
+                    "key_alias": self.key_alias or "",
+                    "key_pass": self.key_pass or self.keystore_pass or "",
+                }
+
+        # Check default fallback locations in auth/data
+        for fallback_p in (self.auth_dir / "keystore.jks", self.data_dir / "keystore.jks"):
+            if fallback_p.is_file():
+                return {
+                    "keystore_path": fallback_p.resolve(),
+                    "store_pass": self.keystore_pass or "",
+                    "key_alias": self.key_alias or "",
+                    "key_pass": self.key_pass or self.keystore_pass or "",
+                }
+
+        return None
 
 
 settings = Settings()
