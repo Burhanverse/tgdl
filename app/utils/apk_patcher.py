@@ -17,9 +17,9 @@ from ..config import settings
 
 log = logging.getLogger(__name__)
 
-TOOLS_DIR = settings.data_dir / "tools"
-APKEDITOR_JAR = TOOLS_DIR / "APKEditor.jar"
-TGPATCHER_PY = TOOLS_DIR / "tgpatcher.py"
+TOOLS_DIR = (settings.data_dir / "tools").resolve()
+APKEDITOR_JAR = (TOOLS_DIR / "APKEditor.jar").resolve()
+TGPATCHER_PY = (TOOLS_DIR / "tgpatcher.py").resolve()
 
 APKEDITOR_RELEASE_API = "https://api.github.com/repos/REAndroid/APKEditor/releases/latest"
 TGPATCHER_URL = "https://raw.githubusercontent.com/AbhiTheModder/termux-scripts/refs/heads/main/tgpatcher.py"
@@ -135,6 +135,8 @@ def zipalign_pure_python(input_zip: Path, output_zip: Path, alignment: int = 4) 
 
 async def align_apk(input_apk: Path, output_apk: Path) -> None:
     """Aligns APK entries using zipalign CLI if available, or pure Python fallback."""
+    input_apk = Path(input_apk).resolve()
+    output_apk = Path(output_apk).resolve()
     zipalign_bin = shutil.which("zipalign")
     if zipalign_bin:
         cmd = [zipalign_bin, "-p", "-f", "4", str(input_apk), str(output_apk)]
@@ -153,7 +155,9 @@ async def align_apk(input_apk: Path, output_apk: Path) -> None:
 
 async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
     """Signs APK using apksigner or jarsigner with provided JKS keystore details."""
-    ks_path = keystore_info.get("keystore_path")
+    apk_path = Path(apk_path).resolve()
+    raw_ks = keystore_info.get("keystore_path")
+    ks_path = Path(raw_ks).resolve() if raw_ks else None
     store_pass = keystore_info.get("store_pass", "")
     key_alias = keystore_info.get("key_alias", "")
     key_pass = keystore_info.get("key_pass") or store_pass
@@ -224,7 +228,10 @@ async def patch_apk_async(
     if progress_cb:
         progress_cb("Ensuring APKEditor & tgpatcher tools...")
 
-    apkeditor_jar, tgpatcher_py = await ensure_tools()
+    input_apk = input_apk.resolve()
+    output_dir = output_dir.resolve()
+    apkeditor_jar = apkeditor_jar.resolve()
+    tgpatcher_py = tgpatcher_py.resolve()
     java_bin = find_java_binary()
 
     # Determine original filename base
@@ -235,15 +242,15 @@ async def patch_apk_async(
         orig_base = clean_orig or "app"
 
     out_filename = f"{orig_base}_patched.apk"
-    final_output_path = output_dir / out_filename
+    final_output_path = (output_dir / out_filename).resolve()
 
-    work_dir = output_dir / "patcher_tmp"
+    work_dir = (output_dir / "patcher_tmp").resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        decompiled_dir = work_dir / "plus"
-        unaligned_apk = work_dir / "unaligned_patched.apk"
-        aligned_apk = work_dir / "aligned_patched.apk"
+        decompiled_dir = (work_dir / "plus").resolve()
+        unaligned_apk = (work_dir / "unaligned_patched.apk").resolve()
+        aligned_apk = (work_dir / "aligned_patched.apk").resolve()
 
         # 1. Decompile APK
         if progress_cb:
