@@ -254,13 +254,15 @@ class DirectDownloader:
                     except Exception as pe:
                         log.debug("Progress callback error in HLS download: %s", pe)
 
-            return await download_hls(
+            res_path = await download_hls(
                 url=url,
                 dest_path=out_file,
                 headers=self.custom_headers,
                 progress_cb=progress_adapter,
                 is_cancelled=lambda: self.is_cancelled,
             )
+            self.current_filename = res_path.name
+            return res_path
 
         req_headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"}
         req_headers.update(self.custom_headers)

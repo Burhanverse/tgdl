@@ -185,3 +185,242 @@ async def test_direct_downloader_delegates_m3u8(tmp_path: Path):
             mock_hls.assert_called_once()
             _, kwargs = mock_hls.call_args
             assert kwargs["dest_path"].name == "sample.mp4"
+
+
+@pytest.mark.asyncio
+async def test_download_hls_subtitle_track_skipped(tmp_path: Path):
+    media_text_vod = (
+        "#EXTM3U\n"
+        "#EXT-X-TARGETDURATION:10\n"
+        "#EXTINF:10.0,\n"
+        "seq1.ts\n"
+        "#EXT-X-ENDLIST\n"
+    )
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.url = "https://example.com/vod.m3u8"
+    mock_resp.text = AsyncMock(return_value=media_text_vod)
+
+    mock_get = AsyncMock()
+    mock_get.__aenter__.return_value = mock_resp
+
+    mock_input = MagicMock()
+    mock_input.__enter__.return_value = mock_input
+    mock_output = MagicMock()
+    mock_output.__enter__.return_value = mock_output
+
+    v_stream = MagicMock(type="video", index=0, time_base=1 / 90000)
+    a_stream = MagicMock(type="audio", index=1, time_base=1 / 44100)
+    sub_stream = MagicMock(type="subtitle", index=2, time_base=1 / 1000)
+    data_stream = MagicMock(type="data", index=3, time_base=1 / 1000)
+
+    mock_input.streams = [v_stream, a_stream, sub_stream, data_stream]
+
+    v_packet = MagicMock(stream=v_stream, pts=900000, dts=900000)
+    v_packet.stream.index = 0
+    a_packet = MagicMock(stream=a_stream, pts=441000, dts=441000)
+    a_packet.stream.index = 1
+    sub_packet = MagicMock(stream=sub_stream, pts=10000, dts=10000)
+    sub_packet.stream.index = 2
+
+    mock_input.demux.return_value = [v_packet, a_packet, sub_packet]
+
+    copied_stream_types = []
+
+    def mock_add_stream(template=None):
+        copied_stream_types.append(template.type)
+        out_s = MagicMock()
+        out_s.type = template.type
+        return out_s
+
+    mock_output.add_stream_from_template.side_effect = mock_add_stream
+
+    out_file = tmp_path / "video.mp4"
+
+    def mock_av_open(target, mode="r", options=None, format=None):
+        if mode == "w":
+            part_path = Path(target)
+            part_path.write_bytes(b"mock mp4")
+            return mock_output
+        return mock_input
+
+    with patch("aiohttp.ClientSession.get", return_value=mock_get):
+        with patch("av.open", side_effect=mock_av_open):
+            res_path = await download_hls("https://example.com/vod.m3u8", out_file)
+            assert res_path == out_file
+            assert copied_stream_types == ["video", "audio"]
+            assert sub_stream.type not in copied_stream_types
+            assert data_stream.type not in copied_stream_types
+
+
+@pytest.mark.asyncio
+async def test_download_hls_mkv_fallback(tmp_path: Path):
+    media_text_vod = (
+        "#EXTM3U\n"
+        "#EXT-X-TARGETDURATION:10\n"
+        "#EXTINF:10.0,\n"
+        "seq1.ts\n"
+        "#EXT-X-ENDLIST\n"
+    )
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.url = "https://example.com/vod.m3u8"
+    mock_resp.text = AsyncMock(return_value=media_text_vod)
+
+    mock_get = AsyncMock()
+    mock_get.__aenter__.return_value = mock_resp
+
+    mock_input = MagicMock()
+    mock_input.__enter__.return_value = mock_input
+
+    mock_stream = MagicMock(type="video", index=0, time_base=1 / 90000)
+    mock_input.streams = [mock_stream]
+
+    mock_packet = MagicMock(pts=900000, dts=900000)
+    mock_packet.stream.index = 0
+    mock_input.demux.return_value = [mock_packet]
+
+    mock_output_mp4 = MagicMock()
+    mock_output_mp4.__enter__.return_value = mock_output_mp4
+    mock_output_mp4.mux.side_effect = ValueError("Invalid MP4 timestamp / PTS non-monotonic")
+
+    mock_output_mkv = MagicMock()
+    mock_output_mkv.__enter__.return_value = mock_output_mkv
+
+    out_file = tmp_path / "video.mp4"
+
+    def mock_av_open(target, mode="r", options=None, format=None):
+        if mode == "w":
+            part_path = Path(target)
+            if format == "mp4":
+                part_path.write_bytes(b"partial mp4")
+                return mock_output_mp4
+            elif format == "matroska":
+                part_path.write_bytes(b"mock mkv content")
+                return mock_output_mkv
+        return mock_input
+
+    with patch("aiohttp.ClientSession.get", return_value=mock_get):
+        with patch("av.open", side_effect=mock_av_open):
+            res_path = await download_hls("https://example.com/vod.m3u8", out_file)
+            assert res_path == tmp_path / "video.mkv"
+            assert res_path.exists()
+            assert res_path.read_bytes() == b"mock mkv content"
+            assert not (tmp_path / "video.mp4").exists()
+
+
+@pytest.mark.asyncio
+async def test_download_hls_discontinuity_packet_skipped(tmp_path: Path):
+    media_text_vod = (
+        "#EXTM3U\n"
+        "#EXT-X-TARGETDURATION:10\n"
+        "#EXTINF:10.0,\n"
+        "seq1.ts\n"
+        "#EXT-X-ENDLIST\n"
+    )
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.url = "https://example.com/vod.m3u8"
+    mock_resp.text = AsyncMock(return_value=media_text_vod)
+
+    mock_get = AsyncMock()
+    mock_get.__aenter__.return_value = mock_resp
+
+    mock_input = MagicMock()
+    mock_input.__enter__.return_value = mock_input
+    mock_output = MagicMock()
+    mock_output.__enter__.return_value = mock_output
+
+    mock_stream = MagicMock(type="video", index=0, time_base=1 / 90000)
+    mock_input.streams = [mock_stream]
+
+    p1 = MagicMock(pts=90000, dts=90000)
+    p1.stream.index = 0
+    p2 = MagicMock(pts=180000, dts=180000)  # Bad packet
+    p2.stream.index = 0
+    p3 = MagicMock(pts=270000, dts=270000)
+    p3.stream.index = 0
+    p4 = MagicMock(pts=360000, dts=360000)
+    p4.stream.index = 0
+
+    mock_input.demux.return_value = [p1, p2, p3, p4]
+
+    def mock_mux(pkt):
+        if pkt == p3:
+            raise ValueError("Corrupt frame discontinuity")
+
+    mock_output.mux.side_effect = mock_mux
+    out_file = tmp_path / "video.mp4"
+
+    def mock_av_open(target, mode="r", options=None, format=None):
+        if mode == "w":
+            Path(target).write_bytes(b"mock mp4 content")
+            return mock_output
+        return mock_input
+
+    with patch("aiohttp.ClientSession.get", return_value=mock_get):
+        with patch("av.open", side_effect=mock_av_open):
+            res_path = await download_hls("https://example.com/vod.m3u8", out_file)
+            assert res_path == out_file
+            assert out_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_hls_hard_failure_aborts(tmp_path: Path):
+    media_text_vod = (
+        "#EXTM3U\n"
+        "#EXT-X-TARGETDURATION:10\n"
+        "#EXTINF:10.0,\n"
+        "seq1.ts\n"
+        "#EXT-X-ENDLIST\n"
+    )
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.url = "https://example.com/vod.m3u8"
+    mock_resp.text = AsyncMock(return_value=media_text_vod)
+
+    mock_get = AsyncMock()
+    mock_get.__aenter__.return_value = mock_resp
+
+    mock_input = MagicMock()
+    mock_input.__enter__.return_value = mock_input
+    mock_output = MagicMock()
+    mock_output.__enter__.return_value = mock_output
+
+    mock_stream = MagicMock(type="video", index=0, time_base=1 / 90000)
+    mock_input.streams = [mock_stream]
+
+    good_packets = [MagicMock(pts=i * 90000, dts=i * 90000) for i in range(1, 5)]
+    for p in good_packets:
+        p.stream.index = 0
+
+    bad_packets = [MagicMock(pts=(i + 5) * 90000, dts=(i + 5) * 90000) for i in range(25)]
+    for p in bad_packets:
+        p.stream.index = 0
+
+    mock_input.demux.return_value = good_packets + bad_packets
+
+    def mock_mux(pkt):
+        if pkt in bad_packets:
+            raise ValueError("Persistent container error")
+
+    mock_output.mux.side_effect = mock_mux
+    out_file = tmp_path / "video.mp4"
+
+    def mock_av_open(target, mode="r", options=None, format=None):
+        if mode == "w":
+            Path(target).write_bytes(b"partial mp4")
+            return mock_output
+        return mock_input
+
+    with patch("aiohttp.ClientSession.get", return_value=mock_get):
+        with patch("av.open", side_effect=mock_av_open):
+            with pytest.raises(DirectDownloadError, match="consecutive packet mux failures"):
+                await download_hls("https://example.com/vod.m3u8", out_file)
+
+    assert not out_file.exists()
+

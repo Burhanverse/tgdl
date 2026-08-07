@@ -69,6 +69,11 @@ def calculate_playlist_duration(playlist_text: str) -> float:
     return total
 
 
+class _EarlyMuxError(Exception):
+    """Raised when MP4 muxing fails on the initial setup/packets, triggering MKV fallback."""
+    pass
+
+
 async def download_hls(
     url: str,
     dest_path: Path,
@@ -78,7 +83,8 @@ async def download_hls(
     quality: str = "best",
 ) -> Path:
     """
-    Download an HLS (.m3u8) video stream and remux it into a single MP4 container using PyAV.
+    Download an HLS (.m3u8) video stream and remux it into a single container using PyAV.
+    Defaults to MP4, falling back to Matroska (MKV) if MP4 muxing fails on initial setup/packets.
     """
     if is_cancelled and is_cancelled():
         raise asyncio.CancelledError("Download cancelled before starting HLS fetch.")
@@ -89,7 +95,6 @@ async def download_hls(
             raise DirectDownloadError(f"Access to private/internal network URL '{url}' is prohibited.")
 
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    part_file = dest_path.parent / f"{dest_path.name}.part"
 
     req_headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"}
     if headers:
@@ -151,10 +156,17 @@ async def download_hls(
 
     loop = asyncio.get_running_loop()
 
-    def _do_remux() -> None:
+    def _do_remux(fmt: str, current_part: Path, current_dest: Path) -> Path:
         try:
             with av.open(media_url, options=pyav_options) as input_container:
-                with av.open(str(part_file), mode="w", format="mp4") as output_container:
+                try:
+                    output_container = av.open(str(current_part), mode="w", format=fmt)
+                except Exception as container_err:
+                    if fmt == "mp4":
+                        raise _EarlyMuxError(f"Could not open MP4 output container: {container_err}") from container_err
+                    raise
+
+                with output_container:
                     streams_map = {}
                     main_stream_index = None
                     main_time_base = None
@@ -171,8 +183,12 @@ async def download_hls(
                                 if stream.type == "video" and main_stream_index is None:
                                     main_stream_index = stream.index
                                     main_time_base = stream.time_base
-                            except Exception as e:
-                                log.warning("Could not copy HLS stream %s: %s", stream, e)
+                            except Exception as stream_err:
+                                log.warning("Could not copy HLS stream %s: %s", stream, stream_err)
+                                if fmt == "mp4":
+                                    raise _EarlyMuxError(f"Could not add stream {stream} to MP4 container: {stream_err}") from stream_err
+                        else:
+                            log.debug("Skipping non-video/audio HLS stream %s of type '%s'", stream.index, stream.type)
 
                     if not streams_map:
                         raise DirectDownloadError("No copyable video or audio streams found in HLS playlist.")
@@ -183,6 +199,10 @@ async def download_hls(
                         main_time_base = input_container.streams[first_idx].time_base
 
                     packet_count = 0
+                    successful_packets = 0
+                    skipped_packets = 0
+                    consecutive_failures = 0
+                    max_consecutive_failures = 20
                     last_progress_time = 0.0
 
                     for packet in input_container.demux():
@@ -202,50 +222,103 @@ async def download_hls(
                                 if progress_cb:
                                     try:
                                         asyncio.run_coroutine_threadsafe(
-                                            progress_cb(elapsed_seconds, total_duration_seconds, dest_path.name, url),
+                                            progress_cb(elapsed_seconds, total_duration_seconds, current_dest.name, url),
                                             loop,
                                         )
                                     except Exception as pe:
                                         log.debug("HLS progress dispatch error: %s", pe)
 
                         packet.stream = streams_map[packet.stream.index]
-                        output_container.mux(packet)
+                        try:
+                            output_container.mux(packet)
+                            successful_packets += 1
+                            consecutive_failures = 0
+                        except Exception as mux_err:
+                            skipped_packets += 1
+                            consecutive_failures += 1
+                            log.warning(
+                                "Failed to mux packet for stream %s (pts=%s, dts=%s): %s",
+                                packet.stream.index,
+                                packet.pts,
+                                packet.dts,
+                                mux_err,
+                            )
+                            if fmt == "mp4" and successful_packets < 2:
+                                raise _EarlyMuxError(
+                                    f"MP4 muxing failed on initial packet (stream={packet.stream.index}, pts={packet.pts}): {mux_err}"
+                                ) from mux_err
+
+                            if consecutive_failures >= max_consecutive_failures:
+                                raise DirectDownloadError(
+                                    f"HLS remuxing failed: {consecutive_failures} consecutive packet mux failures (last error: {mux_err})"
+                                ) from mux_err
+
+                    if skipped_packets > 0:
+                        log.warning("HLS download remuxed with %d packets skipped due to discontinuities", skipped_packets)
 
                     if progress_cb and total_duration_seconds > 0:
                         try:
                             asyncio.run_coroutine_threadsafe(
-                                progress_cb(total_duration_seconds, total_duration_seconds, dest_path.name, url),
+                                progress_cb(total_duration_seconds, total_duration_seconds, current_dest.name, url),
                                 loop,
                             )
                         except Exception as pe:
                             log.debug("HLS final progress dispatch error: %s", pe)
+
+            if current_part.exists():
+                current_part.replace(current_dest)
+            return current_dest
         except Exception:
-            if part_file.exists():
+            if current_part.exists():
                 try:
-                    part_file.unlink(missing_ok=True)
+                    current_part.unlink(missing_ok=True)
                 except Exception:
                     pass
             raise
 
+    def _run_remux() -> Path:
+        mp4_dest = dest_path.with_suffix(".mp4") if dest_path.suffix.lower() != ".mp4" else dest_path
+        mp4_part = mp4_dest.parent / f"{mp4_dest.name}.part"
+
+        try:
+            return _do_remux(fmt="mp4", current_part=mp4_part, current_dest=mp4_dest)
+        except _EarlyMuxError as early_err:
+            log.warning("MP4 remuxing failed on initial setup/packets: %s. Falling back to Matroska (MKV) container.", early_err)
+            if mp4_part.exists():
+                try:
+                    mp4_part.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+            mkv_dest = dest_path.with_suffix(".mkv")
+            mkv_part = mkv_dest.parent / f"{mkv_dest.name}.part"
+            return _do_remux(fmt="matroska", current_part=mkv_part, current_dest=mkv_dest)
+
+    active_part_files = [
+        dest_path.parent / f"{dest_path.name}.part",
+        dest_path.with_suffix(".mp4").parent / f"{dest_path.with_suffix('.mp4').name}.part",
+        dest_path.with_suffix(".mkv").parent / f"{dest_path.with_suffix('.mkv').name}.part",
+    ]
+
     try:
-        await asyncio.to_thread(_do_remux)
-        if part_file.exists():
-            part_file.replace(dest_path)
-        log.info("HLS download completed successfully: %s", dest_path)
-        return dest_path
+        res = await asyncio.to_thread(_run_remux)
+        log.info("HLS download completed successfully: %s", res)
+        return res
     except asyncio.CancelledError:
-        if part_file.exists():
-            try:
-                part_file.unlink(missing_ok=True)
-            except Exception:
-                pass
+        for pf in active_part_files:
+            if pf.exists():
+                try:
+                    pf.unlink(missing_ok=True)
+                except Exception:
+                    pass
         raise
     except Exception as e:
-        if part_file.exists():
-            try:
-                part_file.unlink(missing_ok=True)
-            except Exception:
-                pass
+        for pf in active_part_files:
+            if pf.exists():
+                try:
+                    pf.unlink(missing_ok=True)
+                except Exception:
+                    pass
         if isinstance(e, DirectDownloadError):
             raise
         raise DirectDownloadError(f"HLS remuxing failed: {e}") from e
