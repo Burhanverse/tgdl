@@ -120,3 +120,85 @@ def test_prepare_filename_and_caption_single_numeric_extension(tmp_path: Path):
     assert ".123</code>" in caption
 
 
+def test_split_video_pyav_multistream_offset_timestamps(tmp_path: Path):
+    """Verify PyAV video segmenter rebases video and audio stream timestamps independently without negative pts/dts."""
+    from unittest.mock import MagicMock, patch
+    from app.utils.media.video.split import _split_video_pyav_sync
+
+    video_path = tmp_path / "sample.mp4"
+    video_path.write_bytes(b"dummy_video_bytes")
+
+    mock_v_stream = MagicMock()
+    mock_v_stream.type = "video"
+    mock_v_stream.index = 0
+    mock_v_stream.time_base = 1 / 1000
+
+    mock_a_stream = MagicMock()
+    mock_a_stream.type = "audio"
+    mock_a_stream.index = 1
+    mock_a_stream.time_base = 1 / 1000
+
+    pkt_a1 = MagicMock()
+    pkt_a1.stream = mock_a_stream
+    pkt_a1.pts = 2000
+    pkt_a1.dts = 2000
+    pkt_a1.is_keyframe = True
+    pkt_a1.size = 100
+
+    pkt_v1 = MagicMock()
+    pkt_v1.stream = mock_v_stream
+    pkt_v1.pts = 5000
+    pkt_v1.dts = 5000
+    pkt_v1.is_keyframe = True
+    pkt_v1.size = 100
+
+    pkt_a2 = MagicMock()
+    pkt_a2.stream = mock_a_stream
+    pkt_a2.pts = 2100
+    pkt_a2.dts = 2100
+    pkt_a2.is_keyframe = True
+    pkt_a2.size = 100
+
+    pkt_v2 = MagicMock()
+    pkt_v2.stream = mock_v_stream
+    pkt_v2.pts = 5100
+    pkt_v2.dts = 5100
+    pkt_v2.is_keyframe = True
+    pkt_v2.size = 100
+
+    packets = [pkt_a1, pkt_v1, pkt_a2, pkt_v2]
+
+    mock_input_container = MagicMock()
+    mock_input_container.streams = [mock_v_stream, mock_a_stream]
+    mock_input_container.demux.return_value = packets
+
+    muxed_packets = []
+
+    mock_output_container = MagicMock()
+    mock_output_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
+    mock_output_container.mux.side_effect = lambda p: muxed_packets.append((p.stream.index, p.pts, p.dts))
+
+    with patch("av.open") as mock_av_open:
+        def mock_open_impl(file, mode="r", **kwargs):
+            if mode == "w":
+                return mock_output_container
+            return mock_input_container
+
+        mock_av_open.side_effect = mock_open_impl
+
+        res = _split_video_pyav_sync(video_path, max_size_bytes=10 * 1024 * 1024)
+
+    assert len(res) >= 1
+    assert len(muxed_packets) == 4
+    for stream_idx, pts, dts in muxed_packets:
+        assert pts >= 0, f"Negative pts {pts} for stream {stream_idx}"
+        assert dts >= 0, f"Negative dts {dts} for stream {stream_idx}"
+
+    audio_pts = [pts for s_idx, pts, _ in muxed_packets if s_idx == 1]
+    assert audio_pts == [0, 100]
+
+    video_pts = [pts for s_idx, pts, _ in muxed_packets if s_idx == 0]
+    assert video_pts == [0, 100]
+
+
+

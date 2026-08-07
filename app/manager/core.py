@@ -1495,7 +1495,11 @@ class QueueManager:
                             except Exception:
                                 # expected: original video file already unlinked
                                 pass
-                            continue
+                            f = output_path
+                            try:
+                                f_rel = str(f.relative_to(extract_dir))
+                            except ValueError:
+                                f_rel = str(f.relative_to(dest_dir))
                         else:
                             log.error("Failed to convert video %s; keeping original file", f.name)
 
@@ -1596,6 +1600,11 @@ class QueueManager:
                                 except Exception:
                                     # expected: original audio file already unlinked
                                     pass
+                                f = output_path
+                                try:
+                                    f_rel = str(f.relative_to(extract_dir))
+                                except ValueError:
+                                    f_rel = str(f.relative_to(dest_dir))
 
                                 if conversion_prompt_msg_id:
                                     try:

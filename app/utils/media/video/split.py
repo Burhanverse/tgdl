@@ -32,10 +32,11 @@ def _split_video_pyav_sync(video_path: Path, max_size_bytes: int) -> list[Path]:
     output_container = None
     streams_map = {}
 
-    segment_start_time_seconds = None
+    segment_start_times: dict[int, float] = {}
+    last_muxed_dts: dict[int, int] = {}
 
     def open_next_segment():
-        nonlocal part_num, output_container, streams_map, current_segment_size, segment_start_time_seconds
+        nonlocal part_num, output_container, streams_map, current_segment_size, segment_start_times, last_muxed_dts
         if output_container:
             output_container.close()
 
@@ -58,7 +59,8 @@ def _split_video_pyav_sync(video_path: Path, max_size_bytes: int) -> list[Path]:
 
         part_num += 1
         current_segment_size = 0
-        segment_start_time_seconds = None
+        segment_start_times = {}
+        last_muxed_dts = {}
 
     try:
         open_next_segment()
@@ -77,20 +79,38 @@ def _split_video_pyav_sync(video_path: Path, max_size_bytes: int) -> list[Path]:
                 open_next_segment()
 
             out_stream = streams_map[packet.stream.index]
+            stream_idx = packet.stream.index
 
-            # Sync start of segment to 0
-            if segment_start_time_seconds is None:
+            # Sync start of segment to 0 per stream
+            if stream_idx not in segment_start_times:
                 if packet.pts is not None:
-                    segment_start_time_seconds = float(packet.pts * packet.stream.time_base)
+                    segment_start_times[stream_idx] = float(packet.pts * packet.stream.time_base)
                 else:
-                    segment_start_time_seconds = 0.0
+                    segment_start_times[stream_idx] = 0.0
+
+            baseline = segment_start_times[stream_idx]
 
             if packet.pts is not None:
                 packet_time = float(packet.pts * packet.stream.time_base)
-                packet.pts = int((packet_time - segment_start_time_seconds) / packet.stream.time_base)
+                rebased_pts = int((packet_time - baseline) / packet.stream.time_base)
+                packet.pts = max(0, rebased_pts)
             if packet.dts is not None:
                 packet_dts = float(packet.dts * packet.stream.time_base)
-                packet.dts = int((packet_dts - segment_start_time_seconds) / packet.stream.time_base)
+                rebased_dts = int((packet_dts - baseline) / packet.stream.time_base)
+                packet.dts = max(0, rebased_dts)
+
+            if packet.pts is not None and packet.dts is not None and packet.pts < packet.dts:
+                packet.pts = packet.dts
+
+            if packet.dts is not None:
+                last_dts = last_muxed_dts.get(stream_idx)
+                if last_dts is not None and packet.dts < last_dts:
+                    log.warning(
+                        "Dropping non-monotonic packet for stream %s: dts=%s < last_dts=%s",
+                        stream_idx, packet.dts, last_dts
+                    )
+                    continue
+                last_muxed_dts[stream_idx] = packet.dts
 
             packet.stream = out_stream
             output_container.mux(packet)

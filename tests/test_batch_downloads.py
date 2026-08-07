@@ -230,3 +230,64 @@ async def test_download_direct_magic_byte_sniff_html_rejected(tmp_path: Path):
     assert not (tmp_path / "movie.mp4").exists()
     assert not (tmp_path / "movie.mp4.part").exists()
 
+
+@pytest.mark.asyncio
+async def test_converted_video_passed_to_handle_large_file_and_uploaded(tmp_path: Path):
+    """Verify that after video conversion, converted file falls through to handle_large_file and is uploaded."""
+    mock_store = AsyncMock()
+    manager = QueueManager()
+    manager.client = MagicMock()
+    manager.store = mock_store
+
+    large_mov = tmp_path / "large_video.mov"
+    large_mov.write_bytes(b"ORIGINAL_MOV_CONTENT")
+
+    job = Job(
+        id="job999",
+        chat_id=100,
+        status_message_id=None,
+        url="https://example.com/large_video.mov",
+        status=JobStatus.DOWNLOADING,
+        total_files=0,
+        sent_files=0,
+        skipped_files=0,
+        error=None,
+        created_at=0,
+        updated_at=0,
+    )
+    job_state = JobState(job=job, dest_dir=tmp_path)
+    job_state.downloader_done.set()
+    mock_store.get_job.return_value = job
+
+    async def mock_convert(input_path, output_path):
+        in_p = Path(input_path)
+        out_p = Path(output_path)
+        out_p.write_bytes(b"CONVERTED_MP4_CONTENT")
+        in_p.unlink(missing_ok=True)
+        return True
+
+    handle_large_file_calls = []
+
+    async def mock_handle_large(f, split_flag):
+        handle_large_file_calls.append(Path(f))
+        return [Path(f)]
+
+    with patch("app.utils.media.convert_media_async", side_effect=mock_convert):
+        with patch("app.uploader.handle_large_file", side_effect=mock_handle_large):
+            with patch("app.manager.core.safe_send", new_callable=AsyncMock):
+                with patch("app.manager.core.safe_delete", new_callable=AsyncMock):
+                    with patch("app.uploader.telegram.core.TelegramUploader.upload", new_callable=AsyncMock) as mock_upload:
+                        mock_upload.return_value = MagicMock()
+                        await manager._process_upload(job_state)
+
+    # Assert converted file was passed to handle_large_file
+    assert len(handle_large_file_calls) == 1
+    assert handle_large_file_calls[0].name == "large_video_converted.mp4"
+
+    # Assert mark_uploaded was called for converted file
+    mock_store.mark_uploaded.assert_called_with("job999", "large_video_converted.mp4")
+
+    # Assert original file was removed
+    assert not large_mov.exists()
+
+
