@@ -180,3 +180,53 @@ async def test_manager_passes_mega_job_url(tmp_path: Path):
             mock_mega_dl.assert_called_once()
             called_url = mock_mega_dl.call_args[0][0]
             assert called_url == job_url_json
+
+
+@pytest.mark.asyncio
+async def test_download_direct_content_type_html_rejected(tmp_path: Path):
+    """Verify DirectDownloader rejects text/html Content-Type for binary extension (.mp4)."""
+    downloader = DirectDownloader(dest_dir=tmp_path)
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
+    mock_resp.content.read = AsyncMock(return_value=b"<html>Login required</html>")
+
+    mock_get = AsyncMock()
+    mock_get.__aenter__.return_value = mock_resp
+
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_get
+
+    with patch("app.downloader.direct.core.is_url_private_ip", return_value=False):
+        with pytest.raises(DirectDownloadError, match="Expected a file but got an HTML/text response"):
+            await downloader._download_content_item(mock_session, "https://example.com/video.mp4")
+
+    assert not (tmp_path / "video.mp4").exists()
+    assert not (tmp_path / "video.mp4.part").exists()
+
+
+@pytest.mark.asyncio
+async def test_download_direct_magic_byte_sniff_html_rejected(tmp_path: Path):
+    """Verify DirectDownloader magic-byte sniffing rejects HTML body with octet-stream Content-Type."""
+    downloader = DirectDownloader(dest_dir=tmp_path)
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.headers = {"Content-Type": "application/octet-stream"}
+    html_body = b"<!DOCTYPE html><html><body>Cloudflare Access Denied</body></html>"
+    mock_resp.content.read = AsyncMock(return_value=html_body)
+
+    mock_get = AsyncMock()
+    mock_get.__aenter__.return_value = mock_resp
+
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_get
+
+    with patch("app.downloader.direct.core.is_url_private_ip", return_value=False):
+        with pytest.raises(DirectDownloadError, match="Expected a file but got an HTML/text response"):
+            await downloader._download_content_item(mock_session, "https://example.com/movie.mp4")
+
+    assert not (tmp_path / "movie.mp4").exists()
+    assert not (tmp_path / "movie.mp4.part").exists()
+

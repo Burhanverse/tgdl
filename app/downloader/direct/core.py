@@ -278,6 +278,17 @@ class DirectDownloader:
             out_file = save_dir / filename
             part_file = save_dir / f"{filename}.part"
 
+            ext = Path(filename).suffix.lower()
+            raw_content_type = resp.headers.get("Content-Type", "")
+            content_type = raw_content_type.split(";")[0].strip().lower()
+            is_text_ext = ext in (".html", ".htm", ".txt", ".json", ".xml", ".xhtml")
+
+            # 1. Content-Type check
+            if (content_type in ("text/html", "text/plain") or content_type.startswith(("text/html", "text/plain"))) and not is_text_ext:
+                raise DirectDownloadError(
+                    f"Expected a file but got an HTML/text response (Content-Type: {raw_content_type}) — the URL may be restricted, expired, or require authentication."
+                )
+
             file_size = 0
             if "Content-Length" in resp.headers:
                 try:
@@ -285,6 +296,21 @@ class DirectDownloader:
                 except Exception:
                     # expected: invalid or non-integer Content-Length header
                     file_size = 0
+
+            # 3. Size sanity flag (log warning only)
+            from ...utils.media import VIDEO_EXT
+            large_media_ext = VIDEO_EXT | {".zip", ".rar", ".7z", ".tar", ".gz", ".xz", ".iso", ".bin", ".dmg", ".apk", ".exe", ".mp3", ".flac", ".m4a", ".wav"}
+            if 0 < file_size < 50 * 1024 and ext in large_media_ext:
+                log.warning("File '%s' has a suspiciously small size (%d bytes) for media type '%s'", filename, file_size, ext)
+
+            # 2. Magic-byte sniff (~512 bytes)
+            peek_chunk = await resp.content.read(512)
+            if peek_chunk and not is_text_ext:
+                peek_text = peek_chunk.decode("utf-8", errors="ignore").lstrip()
+                if peek_text.lower().startswith(("<!doctype html", "<html", "<?xml")):
+                    raise DirectDownloadError(
+                        f"Expected a file but got an HTML/text response (Content-Type: {raw_content_type}) — the URL may be restricted, expired, or require authentication."
+                    )
 
             self.total_bytes += file_size
             item_processed = 0
@@ -296,6 +322,18 @@ class DirectDownloader:
 
             try:
                 async with aiopen(part_file, "wb") as f:
+                    if peek_chunk:
+                        if self.is_cancelled:
+                            if part_file.exists():
+                                part_file.unlink(missing_ok=True)
+                            raise asyncio.CancelledError("Download cancelled during file stream.")
+
+                        await f.write(peek_chunk)
+                        chunk_len = len(peek_chunk)
+                        await throttler.consume(chunk_len)
+                        item_processed += chunk_len
+                        self.processed_bytes += chunk_len
+
                     async for chunk in resp.content.iter_chunked(_CHUNK_SIZE):
                         if self.is_cancelled:
                             if part_file.exists():
