@@ -14,6 +14,7 @@ from app.utils.apk_patcher import (
     align_apk,
     find_jarsigner_binary,
     find_java_binary,
+    patch_apk_async,
     sign_apk,
     zipalign_pure_python,
 )

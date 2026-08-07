@@ -230,6 +230,7 @@ async def patch_apk_async(
 
     input_apk = input_apk.resolve()
     output_dir = output_dir.resolve()
+    apkeditor_jar, tgpatcher_py = await ensure_tools()
     apkeditor_jar = apkeditor_jar.resolve()
     tgpatcher_py = tgpatcher_py.resolve()
     java_bin = find_java_binary()
