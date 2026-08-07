@@ -33,11 +33,11 @@ def register_patch_handlers(app: Client) -> None:
     @app.on_message(filters.command(["setkeystore", "keystore"]) & authorized_filter)
     async def set_keystore_cmd(_, message: Message) -> None:
         user_id = message.from_user.id if message.from_user else message.chat.id
-        user_dir = settings.auth_dir / str(user_id)
+        user_dir = (settings.auth_dir / str(user_id)).resolve()
         user_dir.mkdir(parents=True, exist_ok=True)
 
-        ks_file = user_dir / "keystore.jks"
-        cfg_file = user_dir / "keystore_config.json"
+        ks_file = (user_dir / "keystore.jks").resolve()
+        cfg_file = (user_dir / "keystore_config.json").resolve()
 
         text = (message.text or message.caption or "").strip()
         parts = text.split(maxsplit=3)
@@ -45,8 +45,10 @@ def register_patch_handlers(app: Client) -> None:
 
         # Handle deletion
         if args and args[0].lower() in ("del", "delete", "remove", "clear"):
-            if ks_file.is_file():
-                ks_file.unlink(missing_ok=True)
+            for f in user_dir.glob("*.jks"):
+                f.unlink(missing_ok=True)
+            for f in user_dir.glob("*.keystore"):
+                f.unlink(missing_ok=True)
             if cfg_file.is_file():
                 cfg_file.unlink(missing_ok=True)
             await message.reply_text("✓ Your personal JKS keystore and credentials have been deleted.")
@@ -62,7 +64,7 @@ def register_patch_handlers(app: Client) -> None:
         if target_doc_msg:
             doc = target_doc_msg.document
             fname = doc.file_name or "keystore.jks"
-            if not (fname.endswith(".jks") or fname.endswith(".keystore")):
+            if not (fname.lower().endswith(".jks") or fname.lower().endswith(".keystore")):
                 await message.reply_text("Please upload a valid `.jks` or `.keystore` file.")
                 return
 
@@ -78,10 +80,15 @@ def register_patch_handlers(app: Client) -> None:
             key_alias = args[1]
             key_pass = args[2] if len(args) > 2 else store_pass
 
-            # Download document to user directory
+            # Download document to user directory using absolute path
             status_msg = await message.reply_text("Downloading and saving your JKS keystore...")
             try:
-                await target_doc_msg.download(file_name=str(ks_file))
+                dl_res = await target_doc_msg.download(file_name=str(ks_file))
+                dl_p = Path(dl_res).resolve() if dl_res else ks_file
+                if dl_p.is_file() and dl_p != ks_file:
+                    import shutil
+                    shutil.move(str(dl_p), str(ks_file))
+
                 cfg_data = {
                     "store_pass": store_pass,
                     "key_alias": key_alias,

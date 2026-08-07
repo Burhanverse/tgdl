@@ -171,30 +171,48 @@ class Settings(BaseSettings):
     def get_user_keystore_info(self, user_id: int | None = None) -> dict[str, Any] | None:
         """Looks up JKS keystore for a given user ID, or falls back to global settings."""
         import json
+        import shutil
         if user_id:
-            user_dir = self.auth_dir / str(user_id)
-            for ks_name in ("keystore.jks", "keystore.keystore", "user.jks"):
-                ks_path = user_dir / ks_name
-                cfg_path = user_dir / "keystore_config.json"
-                if ks_path.is_file() and cfg_path.is_file():
-                    try:
-                        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-                        if cfg.get("store_pass") and cfg.get("key_alias"):
+            user_dir = (self.auth_dir / str(user_id)).resolve()
+            # Migration check: if Pyrogram saved to data/auth/<user_id>, move files to auth/<user_id>
+            data_user_dir = (self.data_dir / "auth" / str(user_id)).resolve()
+            if data_user_dir.is_dir() and data_user_dir != user_dir:
+                user_dir.mkdir(parents=True, exist_ok=True)
+                for item in data_user_dir.iterdir():
+                    if item.is_file():
+                        target_path = user_dir / item.name
+                        if not target_path.exists():
+                            try:
+                                shutil.move(str(item), str(target_path))
+                            except Exception:
+                                pass
+                try:
+                    shutil.rmtree(data_user_dir, ignore_errors=True)
+                except Exception:
+                    pass
+
+            cfg_path = user_dir / "keystore_config.json"
+            if cfg_path.is_file():
+                try:
+                    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                    if cfg.get("store_pass") and cfg.get("key_alias"):
+                        ks_files = sorted(list(user_dir.glob("*.jks")) + list(user_dir.glob("*.keystore")))
+                        if ks_files:
                             return {
-                                "keystore_path": ks_path.resolve(),
+                                "keystore_path": ks_files[0].resolve(),
                                 "store_pass": cfg["store_pass"],
                                 "key_alias": cfg["key_alias"],
                                 "key_pass": cfg.get("key_pass") or cfg["store_pass"],
                             }
-                    except Exception:
-                        pass
+                except Exception as e:
+                    log.warning("Failed loading user keystore config for user %s: %s", user_id, e)
 
         # Fallback to global settings
         if self.keystore_path:
-            p = Path(self.keystore_path)
+            p = Path(self.keystore_path).resolve()
             if p.is_file():
                 return {
-                    "keystore_path": p.resolve(),
+                    "keystore_path": p,
                     "store_pass": self.keystore_pass or "",
                     "key_alias": self.key_alias or "",
                     "key_pass": self.key_pass or self.keystore_pass or "",
@@ -202,9 +220,10 @@ class Settings(BaseSettings):
 
         # Check default fallback locations in auth/data
         for fallback_p in (self.auth_dir / "keystore.jks", self.data_dir / "keystore.jks"):
-            if fallback_p.is_file():
+            p = fallback_p.resolve()
+            if p.is_file():
                 return {
-                    "keystore_path": fallback_p.resolve(),
+                    "keystore_path": p,
                     "store_pass": self.keystore_pass or "",
                     "key_alias": self.key_alias or "",
                     "key_pass": self.key_pass or self.keystore_pass or "",

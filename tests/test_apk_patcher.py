@@ -71,6 +71,30 @@ async def test_keystore_resolution(tmp_dir: Path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_keystore_migration_recovery(tmp_dir: Path):
+    user_id = 887766
+    data_user_dir = settings.data_dir / "auth" / str(user_id)
+    auth_user_dir = settings.auth_dir / str(user_id)
+
+    data_user_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        (data_user_dir / "aquamods.jks").write_bytes(b"dummy_jks_bytes")
+        (data_user_dir / "keystore_config.json").write_text(
+            json.dumps({"store_pass": "pass123", "key_alias": "myalias", "key_pass": "pass123"})
+        )
+
+        ks_info = settings.get_user_keystore_info(user_id)
+        assert ks_info is not None
+        assert ks_info["keystore_path"].name == "aquamods.jks"
+        assert ks_info["keystore_path"].parent == auth_user_dir.resolve()
+        assert ks_info["store_pass"] == "pass123"
+    finally:
+        shutil.rmtree(auth_user_dir, ignore_errors=True)
+        shutil.rmtree(data_user_dir, ignore_errors=True)
+
+
+@pytest.mark.asyncio
 async def test_jks_signing(tmp_dir: Path):
     java_bin = find_java_binary()
     jarsigner_bin = find_jarsigner_binary()
