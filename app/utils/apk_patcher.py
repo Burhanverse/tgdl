@@ -308,7 +308,7 @@ async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
             "--ks", str(ks_path),
             "--ksAlias", str(key_alias),
             "--ksPass", str(store_pass),
-            "--keyPass", str(key_pass),
+            "--ksKeyPass", str(key_pass),
             "--overwrite",
         ]
         log.info("Signing APK with uber-apk-signer (v1+v2+v3+v4)...")
@@ -380,7 +380,7 @@ async def sign_and_align_apk(
                     "--ks", str(ks_path),
                     "--ksAlias", str(key_alias),
                     "--ksPass", str(store_pass),
-                    "--keyPass", str(key_pass),
+                    "--ksKeyPass", str(key_pass),
                 ])
 
         log.info("Running uber-apk-signer (zipalign + v1+v2+v3+v4 sign)...")
