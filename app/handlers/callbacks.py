@@ -105,8 +105,8 @@ def register_choice_callback_handlers(app: Client) -> None:
             await query.answer("Unauthorized.", show_alert=True)
             return
 
-        if choice == "mp4":
-            choice_str = "Convert to MP4"
+        if choice == "mp4" or choice == "mkv":
+            choice_str = "Convert to MKV"
         elif choice == "mp3":
             choice_str = "Convert to MP3 (Pedalboard Mastered)"
         else:

@@ -266,7 +266,7 @@ def compile_conversion_prompt_text(job_id: str, filename: str) -> str:
     return (
         f"**Media Conversion Prompt**\n\n"
         f"> • **File**: `{filename}`\n\n"
-        "> __Convert video to MP4 first or upload original document?__"
+        "> __Convert video to MKV container first or upload original document?__"
     )
 
 
@@ -295,8 +295,8 @@ def compile_extraction_status_text(job_id: str, filename: str) -> str:
 
 def compile_conversion_running_status_text(job_id: str, filename: str) -> str:
     return (
-        f"**Media Transcoding Active**\n\n"
-        f"> • **Transcoding**: `{filename}` to MP4 container..."
+        f"**Media Remuxing Active**\n\n"
+        f"> • **Remuxing**: `{filename}` to MKV container..."
     )
 
 
@@ -526,10 +526,10 @@ def compile_job_status_text(job: Job, job_state: JobState) -> str:
             lines.append("")
         conv_file = getattr(job_state, "conversion_file", "media file")
         lines.append(
-            f"**Media Transcoding**\n"
-            f"> • **__Engine__**: __`FFmpeg / PyAV`__\n"
+            f"**Media Processing**\n"
+            f"> • **__Engine__**: __`PyAV`__\n"
             f"> • **__Converting__**: __`{conv_file}`__\n"
-            f"> • **__Status__**: __`Transcoding to standard MP4 container...`__"
+            f"> • **__Status__**: __`Remuxing to MKV container...`__"
         )
 
     web_mirror_info = getattr(job_state, "web_mirror_info", None)

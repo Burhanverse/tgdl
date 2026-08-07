@@ -15,7 +15,7 @@ VIDEO_EXT = {
 }
 
 CONVERSION_EXT = {
-    ".ts", ".f4v", ".tts", ".flv", ".avi", ".wmv", ".asf", ".mkv", ".m4v",
+    ".ts", ".f4v", ".tts", ".flv", ".avi", ".wmv", ".asf", ".m4v",
     ".webm", ".mov", ".3gp", ".mpeg", ".mpg", ".vob"
 }
 
