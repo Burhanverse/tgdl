@@ -8,11 +8,18 @@ import av
 
 log = logging.getLogger(__name__)
 
-def _remux_or_transcode(input_path: Path, output_path: Path) -> bool:
-    # 1. Try remuxing (fast stream copy)
+
+def _remux(input_path: Path, output_path: Path, output_format: str = "mp4") -> bool:
+    """Try remuxing (fast stream copy) into the specified container format."""
     try:
-        log.info("Attempting PyAV fast stream copy (remuxing) for %s to %s", input_path.name, output_path.name)
-        with av.open(str(input_path)) as input_container, av.open(str(output_path), mode="w", format="mp4") as output_container:
+        log.info(
+            "Attempting PyAV fast stream copy (remuxing) %s → %s (format=%s)",
+            input_path.name, output_path.name, output_format,
+        )
+        with (
+            av.open(str(input_path)) as input_container,
+            av.open(str(output_path), mode="w", format=output_format) as output_container,
+        ):
             streams_map = {}
             for stream in input_container.streams:
                 if stream.type in ("video", "audio"):
@@ -34,77 +41,39 @@ def _remux_or_transcode(input_path: Path, output_path: Path) -> bool:
                     continue
                 if packet.dts is None:
                     continue
-                # Assign to output stream
                 packet.stream = streams_map[packet.stream.index]
                 output_container.mux(packet)
 
         log.info("Fast stream copy (remuxing) successful for %s", input_path.name)
         return True
     except Exception as remux_err:
-        log.warning("Fast stream copy failed for %s: %s. Falling back to full transcoding.", input_path.name, remux_err)
-        output_path.unlink(missing_ok=True)
-
-    # 2. Try transcoding fallback (H.264 + AAC)
-    try:
-        log.info("Starting PyAV transcoding fallback for %s to %s", input_path.name, output_path.name)
-        with av.open(str(input_path)) as input_container, av.open(str(output_path), mode="w", format="mp4") as output_container:
-            in_video = next((s for s in input_container.streams if s.type == "video"), None)
-            in_audio = next((s for s in input_container.streams if s.type == "audio"), None)
-
-            out_video = None
-            out_audio = None
-
-            if in_video:
-                # Add libx264 video stream
-                # Default to 30 fps if rate is not set
-                fps = in_video.average_rate if in_video.average_rate else 30
-                out_video = output_container.add_stream("libx264", rate=fps)
-                out_video.width = in_video.width
-                out_video.height = in_video.height
-                out_video.pix_fmt = "yuv420p"
-                out_video.options = {"preset": "superfast", "crf": "18"}
-
-            if in_audio:
-                # Add AAC audio stream
-                rate = in_audio.rate if in_audio.rate else 44100
-                out_audio = output_container.add_stream("aac", rate=rate)
-                if in_audio.channels:
-                    out_audio.channels = in_audio.channels
-                if in_audio.layout:
-                    out_audio.layout = in_audio.layout
-
-            if not out_video and not out_audio:
-                raise ValueError("No video or audio stream to transcode")
-
-            # Decode and encode frame-by-frame
-            for frame in input_container.decode():
-                if isinstance(frame, av.VideoFrame) and out_video:
-                    # Let encoder automatically compute timestamps
-                    frame.pts = None
-                    frame.time_base = None
-                    for packet in out_video.encode(frame):
-                        output_container.mux(packet)
-                elif isinstance(frame, av.AudioFrame) and out_audio:
-                    frame.pts = None
-                    frame.time_base = None
-                    for packet in out_audio.encode(frame):
-                        output_container.mux(packet)
-
-            # Flush encoders
-            if out_video:
-                for packet in out_video.encode():
-                    output_container.mux(packet)
-            if out_audio:
-                for packet in out_audio.encode():
-                    output_container.mux(packet)
-
-        log.info("Transcoding successful for %s", input_path.name)
-        return True
-    except Exception as trans_err:
-        log.exception("Transcoding failed for %s: %s", input_path.name, trans_err)
+        log.warning(
+            "Fast stream copy failed for %s (format=%s): %s",
+            input_path.name, output_format, remux_err,
+        )
         output_path.unlink(missing_ok=True)
         return False
 
+
+def _remux_or_transcode(input_path: Path, output_path: Path) -> bool:
+    """Remux video to MP4, falling back to MKV if MP4 muxing is incompatible.
+
+    MKV (Matroska) accepts virtually any codec and is playable in Telegram.
+    """
+    if _remux(input_path, output_path):
+        return True
+
+    mkv_output = output_path.with_suffix(".mkv")
+    log.info(
+        "MP4 remux failed for %s — retrying with Matroska (.mkv) container",
+        input_path.name,
+    )
+    return _remux(input_path, mkv_output, output_format="matroska")
+
+
 async def convert_video_async(input_path: Path, output_path: Path) -> bool:
-    """Asynchronously convert video to MP4 container using PyAV."""
+    """Asynchronously remux video to a Telegram-compatible container using PyAV.
+
+    Tries MP4 first, falls back to MKV if MP4 remux fails.
+    """
     return await asyncio.to_thread(_remux_or_transcode, input_path, output_path)

@@ -1489,6 +1489,13 @@ class QueueManager:
                                 pass
 
                         if success:
+                            # Converter may have fallen back to MKV if MP4 muxing was incompatible
+                            if not output_path.exists():
+                                mkv_path = output_path.with_suffix(".mkv")
+                                if mkv_path.exists():
+                                    log.info("Converter produced MKV fallback: %s", mkv_path.name)
+                                    output_path = mkv_path
+                                    output_name = mkv_path.name
                             log.info("Successfully converted video %s to %s", f.name, output_name)
                             try:
                                 f.unlink(missing_ok=True)
@@ -1759,7 +1766,13 @@ class QueueManager:
                                 log.info("Converting incompatible torrent file %s to %s", f.name, output_path.name)
                                 success = await convert_media_async(f, output_path)
                                 if success:
-                                    log.info("Successfully converted incompatible torrent file %s", f.name)
+                                    # Converter may have fallen back to MKV
+                                    if not output_path.exists():
+                                        mkv_path = output_path.with_suffix(".mkv")
+                                        if mkv_path.exists():
+                                            log.info("Converter produced MKV fallback: %s", mkv_path.name)
+                                            output_path = mkv_path
+                                    log.info("Successfully converted incompatible torrent file %s to %s", f.name, output_path.name)
                                     try:
                                         f.unlink(missing_ok=True)
                                     except Exception:

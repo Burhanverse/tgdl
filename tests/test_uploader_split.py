@@ -201,4 +201,110 @@ def test_split_video_pyav_multistream_offset_timestamps(tmp_path: Path):
     assert video_pts == [0, 100]
 
 
+def test_split_video_pyav_early_mux_failure_raises(tmp_path: Path):
+    """Verify early mux failure on first packet raises _EarlyMuxError."""
+    from unittest.mock import MagicMock, patch
+    import pytest
+    from app.utils.media.video.split import _split_video_pyav_sync, _EarlyMuxError
+
+    video_path = tmp_path / "test_video.mp4"
+    video_path.write_bytes(b"dummy")
+
+    mock_v_stream = MagicMock()
+    mock_v_stream.type = "video"
+    mock_v_stream.index = 0
+    mock_v_stream.time_base = 1 / 1000
+
+    pkt_v1 = MagicMock()
+    pkt_v1.stream = mock_v_stream
+    pkt_v1.pts = 0
+    pkt_v1.dts = 0
+    pkt_v1.is_keyframe = True
+    pkt_v1.size = 100
+
+    mock_input_container = MagicMock()
+    mock_input_container.streams = [mock_v_stream]
+    mock_input_container.demux.return_value = [pkt_v1]
+
+    mock_output_container = MagicMock()
+    mock_output_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
+    mock_output_container.mux.side_effect = Exception("Invalid argument: returned 22")
+
+    with patch("av.open") as mock_av_open:
+        def mock_open_impl(file, mode="r", **kwargs):
+            if mode == "w":
+                return mock_output_container
+            return mock_input_container
+
+        mock_av_open.side_effect = mock_open_impl
+
+        with pytest.raises(_EarlyMuxError):
+            _split_video_pyav_sync(video_path, max_size_bytes=10 * 1024 * 1024)
+
+    # Part file cleaned up
+    assert not (tmp_path / "test_video_part001.mp4").exists()
+
+
+def test_split_video_mkv_fallback_on_early_mux_failure(tmp_path: Path):
+    """Verify _split_video_with_fallback retries with MKV when MP4 mux fails early."""
+    from unittest.mock import MagicMock, patch, call
+    from app.utils.media.video.split import _split_video_with_fallback
+
+    video_path = tmp_path / "test_video.mp4"
+    video_path.write_bytes(b"dummy")
+
+    mock_v_stream = MagicMock()
+    mock_v_stream.type = "video"
+    mock_v_stream.index = 0
+    mock_v_stream.time_base = 1 / 1000
+
+    pkt_v1 = MagicMock()
+    pkt_v1.stream = mock_v_stream
+    pkt_v1.pts = 0
+    pkt_v1.dts = 0
+    pkt_v1.is_keyframe = True
+    pkt_v1.size = 100
+
+    mock_input_container = MagicMock()
+    mock_input_container.streams = [mock_v_stream]
+    mock_input_container.demux.return_value = [pkt_v1]
+
+    mp4_fail_container = MagicMock()
+    mp4_fail_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
+    mp4_fail_container.mux.side_effect = Exception("Invalid argument: returned 22")
+
+    mkv_muxed = []
+    mkv_ok_container = MagicMock()
+    mkv_ok_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
+    mkv_ok_container.mux.side_effect = lambda p: mkv_muxed.append(p)
+
+    call_count = 0
+
+    with patch("av.open") as mock_av_open:
+        def mock_open_impl(file, mode="r", **kwargs):
+            nonlocal call_count
+            if mode == "r":
+                return mock_input_container
+            # First write-mode open = MP4 attempt, second = MKV attempt
+            call_count += 1
+            if call_count == 1:
+                return mp4_fail_container
+            return mkv_ok_container
+
+        mock_av_open.side_effect = mock_open_impl
+
+        res = _split_video_with_fallback(video_path, max_size_bytes=10 * 1024 * 1024)
+
+    assert len(res) >= 1
+    # Output parts should have .mkv extension
+    for part in res:
+        assert part.suffix == ".mkv", f"Expected .mkv but got {part.suffix}"
+    assert part.name == "test_video_part001.mkv"
+    # MKV muxer was used successfully
+    assert len(mkv_muxed) == 1
+
+    # av.open was called with format="matroska" for the MKV attempt
+    write_calls = [c for c in mock_av_open.call_args_list if c.kwargs.get("mode") == "w" or (len(c.args) > 1 and c.args[1] == "w")]
+    assert any(c.kwargs.get("format") == "matroska" for c in write_calls), \
+        f"Expected matroska format in av.open calls: {write_calls}"
 
