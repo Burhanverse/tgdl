@@ -351,27 +351,32 @@ class DirectDownloader:
                 if isinstance(parsed, list):
                     for u in parsed:
                         if isinstance(u, str) and u.strip():
-                            items.append({"url": u.strip(), "filename": "", "path": ""})
+                            clean_u = u.strip().removeprefix("direct:").removeprefix("mirror:")
+                            items.append({"url": clean_u, "filename": "", "path": ""})
             except Exception as e:
                 log.debug("Failed parsing JSON contents in DirectDownloader: %s", e)
 
             if not items:
-                lines = [u.strip() for u in contents.split() if u.strip().startswith(("http://", "https://"))]
+                lines = [u.strip() for u in contents.split() if u.strip().startswith(("http://", "https://", "direct:", "mirror:"))]
                 if len(lines) > 1:
                     for u in lines:
-                        items.append({"url": u, "filename": "", "path": ""})
+                        clean_u = u.removeprefix("direct:").removeprefix("mirror:")
+                        items.append({"url": clean_u, "filename": "", "path": ""})
                 else:
-                    items.append({"url": contents.strip(), "filename": "", "path": ""})
+                    clean_u = contents.strip().removeprefix("direct:").removeprefix("mirror:")
+                    items.append({"url": clean_u, "filename": "", "path": ""})
         elif isinstance(contents, list):
             for c in contents:
                 if isinstance(c, dict) and "url" in c:
+                    clean_u = str(c["url"]).removeprefix("direct:").removeprefix("mirror:")
                     items.append({
-                        "url": c["url"],
+                        "url": clean_u,
                         "filename": c.get("filename", ""),
                         "path": c.get("path", ""),
                     })
                 elif isinstance(c, str) and c.strip():
-                    items.append({"url": c.strip(), "filename": "", "path": ""})
+                    clean_u = c.strip().removeprefix("direct:").removeprefix("mirror:")
+                    items.append({"url": clean_u, "filename": "", "path": ""})
 
         if not items:
             raise DirectDownloadError("No direct URLs provided for download.")

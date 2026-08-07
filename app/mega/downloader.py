@@ -98,6 +98,8 @@ class MegaDownloader:
 
         try:
             await self.client.ensure_logged_in(user_id=self.user_id)
+            failed_count = 0
+            last_err = None
             for raw_url in urls:
                 clean_url = raw_url
                 clean_url = clean_url.removeprefix("mega:")
@@ -106,8 +108,14 @@ class MegaDownloader:
                 try:
                     await self.client.download_url(clean_url, output_dir=dest_dir)
                 except Exception as e:
+                    failed_count += 1
+                    last_err = e
                     log.error("Failed downloading MEGA URL '%s': %s", clean_url, e)
-                    raise
+
+            if failed_count == len(urls) and len(urls) > 0:
+                if last_err:
+                    raise last_err
+                raise RuntimeError(f"All {len(urls)} MEGA downloads failed.")
         finally:
             progress._PROGRESS_HOOK_FACTORY.reset(token)
             if self._own_client:

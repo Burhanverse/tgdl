@@ -32,24 +32,70 @@ class GoogleDriveDownloader:
         self.downloaded_bytes = 0
         self.start_time = time.time()
 
-    async def download_link(self, link_or_id: str, dest_dir: Path) -> Path:
-        file_id = get_id_from_url(link_or_id)
-        meta = await asyncio.to_thread(self.client.get_file_metadata, file_id)
-
+    async def download_link(self, link_or_id: str, dest_dir: Path) -> Path | list[Path]:
         dest_dir.mkdir(parents=True, exist_ok=True)
-        raw_name = meta.get("name", file_id)
-        name = sanitize_filename(raw_name)
-        mime_type = meta.get("mimeType", "")
+        urls: list[str] = []
 
-        self.start_time = time.time()
+        if not link_or_id:
+            return []
 
-        if mime_type == G_DRIVE_DIR_MIME_TYPE:
-            folder_path = dest_dir / name
-            await self._download_folder(file_id, folder_path)
-            return folder_path
-        else:
-            file_path = await self._download_file(meta, dest_dir)
-            return file_path
+        if link_or_id.startswith("[") and link_or_id.endswith("]"):
+            try:
+                import json
+                parsed = json.loads(link_or_id)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        u = str(item).strip()
+                        if u:
+                            urls.append(u)
+            except Exception as e:
+                log.debug("Failed parsing JSON array in GoogleDriveDownloader: %s", e)
+
+        if not urls:
+            lines = [u.strip() for u in link_or_id.split() if u.strip()]
+            for u in lines:
+                urls.append(u)
+
+        if not urls:
+            urls = [link_or_id.strip()]
+
+        res_paths: list[Path] = []
+        failed_count = 0
+        last_err = None
+
+        for raw_url in urls:
+            clean_url = raw_url
+            for prefix in ("gdrive:", "gd2tg:"):
+                clean_url = clean_url.removeprefix(prefix)
+
+            try:
+                file_id = get_id_from_url(clean_url)
+                meta = await asyncio.to_thread(self.client.get_file_metadata, file_id)
+
+                raw_name = meta.get("name", file_id)
+                name = sanitize_filename(raw_name)
+                mime_type = meta.get("mimeType", "")
+
+                self.start_time = time.time()
+
+                if mime_type == G_DRIVE_DIR_MIME_TYPE:
+                    folder_path = dest_dir / name
+                    await self._download_folder(file_id, folder_path)
+                    res_paths.append(folder_path)
+                else:
+                    file_path = await self._download_file(meta, dest_dir)
+                    res_paths.append(file_path)
+            except Exception as e:
+                failed_count += 1
+                last_err = e
+                log.error("Failed downloading Google Drive URL/ID '%s': %s", clean_url, e)
+
+        if failed_count == len(urls) and len(urls) > 0:
+            if last_err:
+                raise last_err
+            raise RuntimeError(f"All {len(urls)} Google Drive downloads failed.")
+
+        return res_paths[0] if len(res_paths) == 1 else res_paths
 
     async def _download_folder(self, folder_id: str, folder_path: Path) -> None:
         folder_path.mkdir(parents=True, exist_ok=True)

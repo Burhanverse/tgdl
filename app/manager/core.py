@@ -547,7 +547,7 @@ class QueueManager:
                 from ..downloader import DownloadResult
                 from ..gdrive import GoogleDriveDownloader, archive_all_folders_in_dir
 
-                gdrive_link = cleaned_url
+                gdrive_link = job.url
                 for prefix in ("gdrive:", "gd2tg:"):
                     gdrive_link = gdrive_link.removeprefix(prefix)
 
@@ -608,9 +608,6 @@ class QueueManager:
                 from ..downloader import DownloadResult
                 from ..mega import MegaDownloader
 
-                mega_link = cleaned_url
-                mega_link = mega_link.removeprefix("mega:")
-
                 def on_mega_progress(downloaded: int, speed: float, filename: str) -> None:
                     job_state.total_downloaded_bytes = downloaded
                     job_state.download_speed = speed
@@ -618,7 +615,7 @@ class QueueManager:
                     job_state.trigger_event.set()
 
                 downloader = MegaDownloader(user_id=chat_id, progress_callback=on_mega_progress)
-                await downloader.download_link(mega_link, dest_dir)
+                await downloader.download_link(job.url, dest_dir)
 
                 final_files = [p for p in dest_dir.rglob("*") if p.is_file()]
                 result = DownloadResult(ok=True, files=final_files)
@@ -767,7 +764,7 @@ class QueueManager:
                         )
 
             elif cleaned_url.startswith("direct:") or is_direct_url(cleaned_url) or (await is_m3u8_url(cleaned_url)):
-                direct_url = cleaned_url.removeprefix("direct:")
+                direct_url = job.url if (job.url.startswith("[") and job.url.endswith("]")) else job.url.removeprefix("direct:")
                 async def on_direct_progress(current: int, total: int, filename: str, url: str | None = None) -> None:
                     job_state.total_downloaded_bytes = current
                     job_state.total_expected_bytes = total
@@ -804,7 +801,7 @@ class QueueManager:
                         direct_url, dest_dir, options=args_dict.get("aria_options") or {}, on_progress=on_aria_progress, register_proc=reg
                     )
                 else:
-                    downloaded_paths = await download_direct(direct_url, dest_dir, progress_cb=on_direct_progress)
+                    downloaded_paths = await download_direct(job.url, dest_dir, progress_cb=on_direct_progress)
                     result = DownloadResult(ok=True, files=downloaded_paths)
             else:
                 extra_args_list: list[str] = []
