@@ -262,7 +262,7 @@ async def test_converted_video_passed_to_handle_large_file_and_uploaded(tmp_path
     async def mock_convert(input_path, output_path):
         in_p = Path(input_path)
         out_p = Path(output_path)
-        out_p.write_bytes(b"CONVERTED_MP4_CONTENT")
+        out_p.write_bytes(b"CONVERTED_MKV_CONTENT")
         in_p.unlink(missing_ok=True)
         return True
 
@@ -282,10 +282,10 @@ async def test_converted_video_passed_to_handle_large_file_and_uploaded(tmp_path
 
     # Assert converted file was passed to handle_large_file
     assert len(handle_large_file_calls) == 1
-    assert handle_large_file_calls[0].name == "large_video_converted.mp4"
+    assert handle_large_file_calls[0].name == "large_video_converted.mkv"
 
     # Assert mark_uploaded was called for converted file
-    mock_store.mark_uploaded.assert_called_with("job999", "large_video_converted.mp4")
+    mock_store.mark_uploaded.assert_called_with("job999", "large_video_converted.mkv")
 
     # Assert original file was removed
     assert not large_mov.exists()

@@ -1457,8 +1457,8 @@ class QueueManager:
                     if f.name not in conversion_session_store.get_converted_files(job.id):
                         conversion_session_store.add_converted_file(job.id, f.name)
 
-                        log.info("Automatically converting video %s to MP4 for job %s", f.name, job.id)
-                        output_name = f.stem + "_converted.mp4"
+                        log.info("Automatically converting video %s to MKV for job %s", f.name, job.id)
+                        output_name = f.stem + "_converted.mkv"
                         output_path = f.parent / output_name
 
                         conv_msg = await safe_send(
@@ -1759,9 +1759,9 @@ class QueueManager:
                                 job_state.conversion_file = f.name
                                 job_state.trigger_event.set()
 
-                                output_path = f.with_suffix(".mp4")
+                                output_path = f.with_suffix(".mkv")
                                 if output_path.exists():
-                                    output_path = f.with_name(f"{f.stem}_converted.mp4")
+                                    output_path = f.with_name(f"{f.stem}_converted.mkv")
 
                                 log.info("Converting incompatible torrent file %s to %s", f.name, output_path.name)
                                 success = await convert_media_async(f, output_path)

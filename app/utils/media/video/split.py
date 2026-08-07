@@ -9,35 +9,15 @@ import av
 log = logging.getLogger(__name__)
 
 _MAX_CONSECUTIVE_MUX_FAILURES = 20
+_MAX_SKIPPED_PACKETS_RATIO = 0.10
 
 
-class _EarlyMuxError(Exception):
-    """Raised when mux() fails on the very first packets, triggering container-format fallback."""
-    pass
+def _split_video_pyav_sync(video_path: Path, max_size_bytes: int) -> list[Path]:
+    """Split a video at keyframe boundaries using PyAV stream copy into MKV parts.
 
-
-def _split_video_pyav_sync(
-    video_path: Path,
-    max_size_bytes: int,
-    output_format: str = "mp4",
-    output_suffix: str | None = None,
-) -> list[Path]:
-    """Split a video at keyframe boundaries using PyAV stream copy.
-
-    Args:
-        video_path: Path to the source video.
-        max_size_bytes: Maximum size per segment.
-        output_format: Container format for av.open (e.g. "mp4", "matroska").
-        output_suffix: File extension for output parts (e.g. ".mp4", ".mkv").
-                       Defaults to video_path.suffix.
+    Always outputs Matroska (.mkv) files as it is the most permissive container format.
     """
-    if output_suffix is None:
-        output_suffix = video_path.suffix
-
-    log.info(
-        "Splitting video %s using PyAV segmenter (format=%s, suffix=%s)",
-        video_path.name, output_format, output_suffix,
-    )
+    log.info("Splitting video %s using PyAV segmenter (Matroska output)", video_path.name)
     parts: list[Path] = []
 
     try:
@@ -68,10 +48,10 @@ def _split_video_pyav_sync(
         if output_container:
             output_container.close()
 
-        part_path = video_path.parent / f"{video_path.stem}_part{part_num:03d}{output_suffix}"
+        part_path = video_path.parent / f"{video_path.stem}_part{part_num:03d}.mkv"
         parts.append(part_path)
 
-        output_container = av.open(str(part_path), mode="w", format=output_format)
+        output_container = av.open(str(part_path), mode="w", format="matroska")
         streams_map = {}
         for stream in input_container.streams:
             if stream.type in ("video", "audio"):
@@ -157,19 +137,12 @@ def _split_video_pyav_sync(
                 consecutive_failures += 1
                 skipped_packets += 1
 
-                if successful_packets < 2:
-                    log.warning(
-                        "PyAV mux failed on early packet %d (format=%s) for %s: %s",
-                        successful_packets, output_format, video_path.name, mux_err,
-                    )
-                    raise _EarlyMuxError(str(mux_err)) from mux_err
-
                 if consecutive_failures >= _MAX_CONSECUTIVE_MUX_FAILURES:
                     log.error(
-                        "Aborting PyAV split for %s: %d consecutive mux failures",
-                        video_path.name, consecutive_failures,
+                        "Aborting PyAV split for %s: %d consecutive mux failures (last error: %s)",
+                        video_path.name, consecutive_failures, mux_err,
                     )
-                    raise
+                    raise RuntimeError(f"Consecutive mux failures limit reached: {mux_err}")
 
                 log.warning(
                     "Skipping packet mux error for stream %s pts=%s dts=%s: %s",
@@ -182,6 +155,19 @@ def _split_video_pyav_sync(
 
         if output_container:
             output_container.close()
+            output_container = None
+
+        total_packets = successful_packets + skipped_packets
+        if total_packets > 0:
+            skip_ratio = skipped_packets / total_packets
+            if skip_ratio > _MAX_SKIPPED_PACKETS_RATIO:
+                log.error(
+                    "Aborting PyAV split for %s: skipped packets ratio (%.2f) exceeds threshold (%.2f)",
+                    video_path.name, skip_ratio, _MAX_SKIPPED_PACKETS_RATIO,
+                )
+                for p in parts:
+                    p.unlink(missing_ok=True)
+                return []
 
         if skipped_packets:
             log.info(
@@ -189,16 +175,6 @@ def _split_video_pyav_sync(
                 video_path.name, skipped_packets,
             )
 
-    except _EarlyMuxError:
-        # Let this propagate so the caller can retry with a different format
-        if output_container:
-            try:
-                output_container.close()
-            except Exception:
-                pass
-        for p in parts:
-            p.unlink(missing_ok=True)
-        raise
     except Exception as e:
         log.exception("Error during PyAV video splitting: %s", e)
         if output_container:
@@ -215,34 +191,6 @@ def _split_video_pyav_sync(
     return parts
 
 
-def _split_video_with_fallback(video_path: Path, max_size_bytes: int) -> list[Path]:
-    """Try splitting with the source container format first, then fall back to MKV.
-
-    MP4 muxing via stream copy fails for certain codec profiles (e.g. some H.264
-    high profiles, non-standard parameter sets). Matroska (MKV) accepts virtually
-    any codec and is playable in Telegram, so it's used as the fallback container.
-    """
-    try:
-        return _split_video_pyav_sync(video_path, max_size_bytes)
-    except _EarlyMuxError:
-        log.info(
-            "MP4 mux failed early for %s — retrying with Matroska (.mkv) container",
-            video_path.name,
-        )
-
-    # Retry with Matroska
-    return _split_video_pyav_sync(
-        video_path,
-        max_size_bytes,
-        output_format="matroska",
-        output_suffix=".mkv",
-    )
-
-
 async def split_video_async(video_path: Path, max_size_bytes: int) -> list[Path]:
-    """Asynchronously split a video using PyAV stream copier at keyframe boundaries.
-
-    Tries the source format (MP4) first; on early mux failure, retries with
-    Matroska (.mkv) which is more permissive with codec parameters.
-    """
-    return await asyncio.to_thread(_split_video_with_fallback, video_path, max_size_bytes)
+    """Asynchronously split a video using PyAV stream copier at keyframe boundaries into MKV parts."""
+    return await asyncio.to_thread(_split_video_pyav_sync, video_path, max_size_bytes)

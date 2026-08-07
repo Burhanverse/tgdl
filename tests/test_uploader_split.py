@@ -120,8 +120,34 @@ def test_prepare_filename_and_caption_single_numeric_extension(tmp_path: Path):
     assert ".123</code>" in caption
 
 
+@pytest.mark.asyncio
+async def test_mkv_always_uploaded_as_video_media(tmp_path: Path):
+    """Verify that .mkv files are uploaded via send_video as video media even if as_doc=True is set."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from app.uploader.telegram.core import TelegramUploader
+
+    mkv_file = tmp_path / "sample_video.mkv"
+    mkv_file.write_bytes(b"dummy_mkv_content")
+
+    client = MagicMock()
+    client.send_video = AsyncMock()
+    client.send_document = AsyncMock()
+
+    uploader = TelegramUploader(client=client, path=mkv_file, chat_id=123, as_doc=True)
+
+    with patch("app.uploader.telegram.core.probe_video", new_callable=AsyncMock) as mock_probe:
+        mock_probe.return_value = {"duration": 60, "width": 1920, "height": 1080, "decodable": True}
+        with patch("app.uploader.telegram.core.extract_video_thumbnail", new_callable=AsyncMock) as mock_thumb:
+            mock_thumb.return_value = None
+            await uploader.upload()
+
+    # send_video must be called, send_document must NOT be called for .mkv
+    assert client.send_video.called
+    assert not client.send_document.called
+
+
 def test_split_video_pyav_multistream_offset_timestamps(tmp_path: Path):
-    """Verify PyAV video segmenter rebases video and audio stream timestamps independently without negative pts/dts."""
+    """Verify PyAV video segmenter rebases video and audio stream timestamps independently into .mkv without negative pts/dts."""
     from unittest.mock import MagicMock, patch
     from app.utils.media.video.split import _split_video_pyav_sync
 
@@ -189,6 +215,8 @@ def test_split_video_pyav_multistream_offset_timestamps(tmp_path: Path):
         res = _split_video_pyav_sync(video_path, max_size_bytes=10 * 1024 * 1024)
 
     assert len(res) >= 1
+    assert res[0].suffix == ".mkv"
+    assert res[0].name == "sample_part001.mkv"
     assert len(muxed_packets) == 4
     for stream_idx, pts, dts in muxed_packets:
         assert pts >= 0, f"Negative pts {pts} for stream {stream_idx}"
@@ -201,11 +229,10 @@ def test_split_video_pyav_multistream_offset_timestamps(tmp_path: Path):
     assert video_pts == [0, 100]
 
 
-def test_split_video_pyav_early_mux_failure_raises(tmp_path: Path):
-    """Verify early mux failure on first packet raises _EarlyMuxError."""
+def test_split_video_pyav_consecutive_mux_failures_returns_empty(tmp_path: Path):
+    """Verify consecutive mux failures exceeding cap aborts split and returns []."""
     from unittest.mock import MagicMock, patch
-    import pytest
-    from app.utils.media.video.split import _split_video_pyav_sync, _EarlyMuxError
+    from app.utils.media.video.split import _split_video_pyav_sync
 
     video_path = tmp_path / "test_video.mp4"
     video_path.write_bytes(b"dummy")
@@ -215,20 +242,23 @@ def test_split_video_pyav_early_mux_failure_raises(tmp_path: Path):
     mock_v_stream.index = 0
     mock_v_stream.time_base = 1 / 1000
 
-    pkt_v1 = MagicMock()
-    pkt_v1.stream = mock_v_stream
-    pkt_v1.pts = 0
-    pkt_v1.dts = 0
-    pkt_v1.is_keyframe = True
-    pkt_v1.size = 100
+    packets = []
+    for i in range(25):
+        pkt = MagicMock()
+        pkt.stream = mock_v_stream
+        pkt.pts = i * 10
+        pkt.dts = i * 10
+        pkt.is_keyframe = (i == 0)
+        pkt.size = 100
+        packets.append(pkt)
 
     mock_input_container = MagicMock()
     mock_input_container.streams = [mock_v_stream]
-    mock_input_container.demux.return_value = [pkt_v1]
+    mock_input_container.demux.return_value = packets
 
     mock_output_container = MagicMock()
     mock_output_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
-    mock_output_container.mux.side_effect = Exception("Invalid argument: returned 22")
+    mock_output_container.mux.side_effect = Exception("Mux error")
 
     with patch("av.open") as mock_av_open:
         def mock_open_impl(file, mode="r", **kwargs):
@@ -238,19 +268,18 @@ def test_split_video_pyav_early_mux_failure_raises(tmp_path: Path):
 
         mock_av_open.side_effect = mock_open_impl
 
-        with pytest.raises(_EarlyMuxError):
-            _split_video_pyav_sync(video_path, max_size_bytes=10 * 1024 * 1024)
+        res = _split_video_pyav_sync(video_path, max_size_bytes=10 * 1024 * 1024)
 
-    # Part file cleaned up
-    assert not (tmp_path / "test_video_part001.mp4").exists()
+    assert res == []
+    assert not (tmp_path / "test_video_part001.mkv").exists()
 
 
-def test_split_video_mkv_fallback_on_early_mux_failure(tmp_path: Path):
-    """Verify _split_video_with_fallback retries with MKV when MP4 mux fails early."""
-    from unittest.mock import MagicMock, patch, call
-    from app.utils.media.video.split import _split_video_with_fallback
+def test_split_video_pyav_high_skipped_ratio_returns_empty(tmp_path: Path):
+    """Verify high fraction of skipped packets exceeding ratio threshold aborts split and returns []."""
+    from unittest.mock import MagicMock, patch
+    from app.utils.media.video.split import _split_video_pyav_sync
 
-    video_path = tmp_path / "test_video.mp4"
+    video_path = tmp_path / "test_video.mov"
     video_path.write_bytes(b"dummy")
 
     mock_v_stream = MagicMock()
@@ -258,53 +287,43 @@ def test_split_video_mkv_fallback_on_early_mux_failure(tmp_path: Path):
     mock_v_stream.index = 0
     mock_v_stream.time_base = 1 / 1000
 
-    pkt_v1 = MagicMock()
-    pkt_v1.stream = mock_v_stream
-    pkt_v1.pts = 0
-    pkt_v1.dts = 0
-    pkt_v1.is_keyframe = True
-    pkt_v1.size = 100
+    # 10 packets, 3 fail non-consecutively (3/10 = 30% > 10% threshold)
+    packets = []
+    for i in range(10):
+        pkt = MagicMock()
+        pkt.stream = mock_v_stream
+        pkt.pts = i * 10
+        pkt.dts = i * 10
+        pkt.is_keyframe = (i == 0)
+        pkt.size = 100
+        packets.append(pkt)
 
     mock_input_container = MagicMock()
     mock_input_container.streams = [mock_v_stream]
-    mock_input_container.demux.return_value = [pkt_v1]
+    mock_input_container.demux.return_value = packets
 
-    mp4_fail_container = MagicMock()
-    mp4_fail_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
-    mp4_fail_container.mux.side_effect = Exception("Invalid argument: returned 22")
+    mux_count = 0
 
-    mkv_muxed = []
-    mkv_ok_container = MagicMock()
-    mkv_ok_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
-    mkv_ok_container.mux.side_effect = lambda p: mkv_muxed.append(p)
+    def mock_mux(p):
+        nonlocal mux_count
+        mux_count += 1
+        # Every 3rd packet fails (non-consecutive)
+        if mux_count % 3 == 0:
+            raise Exception("Intermittent mux error")
 
-    call_count = 0
+    mock_output_container = MagicMock()
+    mock_output_container.add_stream_from_template.side_effect = lambda s: MagicMock(type=s.type, index=s.index, time_base=s.time_base)
+    mock_output_container.mux.side_effect = mock_mux
 
     with patch("av.open") as mock_av_open:
         def mock_open_impl(file, mode="r", **kwargs):
-            nonlocal call_count
-            if mode == "r":
-                return mock_input_container
-            # First write-mode open = MP4 attempt, second = MKV attempt
-            call_count += 1
-            if call_count == 1:
-                return mp4_fail_container
-            return mkv_ok_container
+            if mode == "w":
+                return mock_output_container
+            return mock_input_container
 
         mock_av_open.side_effect = mock_open_impl
 
-        res = _split_video_with_fallback(video_path, max_size_bytes=10 * 1024 * 1024)
+        res = _split_video_pyav_sync(video_path, max_size_bytes=10 * 1024 * 1024)
 
-    assert len(res) >= 1
-    # Output parts should have .mkv extension
-    for part in res:
-        assert part.suffix == ".mkv", f"Expected .mkv but got {part.suffix}"
-    assert part.name == "test_video_part001.mkv"
-    # MKV muxer was used successfully
-    assert len(mkv_muxed) == 1
-
-    # av.open was called with format="matroska" for the MKV attempt
-    write_calls = [c for c in mock_av_open.call_args_list if c.kwargs.get("mode") == "w" or (len(c.args) > 1 and c.args[1] == "w")]
-    assert any(c.kwargs.get("format") == "matroska" for c in write_calls), \
-        f"Expected matroska format in av.open calls: {write_calls}"
-
+    assert res == []
+    assert not (tmp_path / "test_video_part001.mkv").exists()

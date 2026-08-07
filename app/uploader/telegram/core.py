@@ -14,6 +14,7 @@ from pyrogram.errors import BadRequest, FloodPremiumWait, FloodWait, RPCError
 from pyrogram.types import (
     InputMediaDocument,
     InputMediaPhoto,
+    InputMediaVideo,
     Message,
 )
 from tenacity import (
@@ -153,7 +154,7 @@ class TelegramUploader:
 
         if self.media_group:
             for f in files_to_upload:
-                match = re.search(r'(.+?)(?:\.part\d+\.[^.]+$|\.0*\d+$)', f.name, re.IGNORECASE)
+                match = re.search(r'(.+?)(?:(?:_part|\.part)\d+\.[^.]+$|\.0*\d+$)', f.name, re.IGNORECASE)
                 if match:
                     group_key = match.group(1)
                     if group_key not in split_groups:
@@ -186,10 +187,14 @@ class TelegramUploader:
             if self.is_cancelled:
                 return
             batch = group_files[i : i + 10]
-            media_list: list[InputMediaDocument] = []
+            media_list: list[InputMediaDocument | InputMediaVideo] = []
             for f in batch:
                 cap_mono, f_renamed = self._prepare_filename_and_caption(f)
-                media_list.append(InputMediaDocument(media=str(f_renamed), caption=cap_mono))
+                ext = f_renamed.suffix.lower()
+                if ext in VIDEO_EXT:
+                    media_list.append(InputMediaVideo(media=str(f_renamed), caption=cap_mono, supports_streaming=True))
+                else:
+                    media_list.append(InputMediaDocument(media=str(f_renamed), caption=cap_mono))
 
             await telegram_limiter.acquire_upload(self.chat_id)
             try:
@@ -253,6 +258,9 @@ class TelegramUploader:
             return
 
         ext = file_path.suffix.lower()
+        if ext == ".mkv":
+            force_document = False
+
         is_video = ext in VIDEO_EXT
         is_audio = ext in AUDIO_EXT
         is_image = ext in IMAGE_EXT and ext not in CONVERTIBLE_IMAGE_EXT

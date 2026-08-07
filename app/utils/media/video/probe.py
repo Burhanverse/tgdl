@@ -21,7 +21,7 @@ CONVERSION_EXT = {
 
 
 async def convert_media_async(input_path: Path | str, output_path: Path | str) -> bool:
-    """Asynchronously convert video media to standard MP4 using PyAV."""
+    """Asynchronously convert video media to MKV container using PyAV."""
     from .convert import convert_video_async
     return await convert_video_async(input_path, output_path)
 
