@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     magnetio_rpc_secret: str | None = Field(default=None, description="Optional Magnetio JSON-RPC secret token")
 
     # --- Authorization / Access Control ---
+    owner_id: int | None = Field(default=1623457379, description="Telegram User ID of the bot owner (env OWNER_ID)")
     authorized_user_ids: list[int] | str = Field(default_factory=list, description="List of allowed Telegram user IDs (comma-separated env AUTHORIZED_USER_IDS)")
 
     # --- Job & Disk limits ---
@@ -93,6 +94,18 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.strip().upper()
         return v
+
+    @field_validator("owner_id", mode="before")
+    @classmethod
+    def _parse_owner_id(cls, v: Any) -> int | None:
+        if v == "" or v is None:
+            return None
+        if isinstance(v, str):
+            v_clean = v.strip()
+            if not v_clean or not v_clean.lstrip("-").isdigit():
+                return None
+            return int(v_clean)
+        return int(v) if str(v).strip().lstrip("-").isdigit() else None
 
     @field_validator("authorized_user_ids", mode="before")
     @classmethod

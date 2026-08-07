@@ -28,6 +28,37 @@ def is_authorized_user(update: Message | CallbackQuery) -> bool:
     return False
 
 
+def is_owner(user_id_or_update: int | Message | CallbackQuery | None) -> bool:
+    """Checks whether a user ID or Telegram update belongs to the bot OWNER.
+
+    Priority:
+    1. settings.owner_id (env OWNER_ID) if explicitly set.
+    2. First user ID in settings.authorized_user_ids (env AUTHORIZED_USER_IDS[0]).
+    """
+    if user_id_or_update is None:
+        return False
+
+    if isinstance(user_id_or_update, (Message, CallbackQuery)):
+        user_id = (
+            getattr(user_id_or_update.from_user, "id", None)
+            if hasattr(user_id_or_update, "from_user") and user_id_or_update.from_user
+            else None
+        )
+    else:
+        user_id = user_id_or_update
+
+    if not user_id:
+        return False
+
+    if settings.owner_id is not None:
+        return user_id == settings.owner_id
+
+    if settings.authorized_user_ids:
+        return user_id == settings.authorized_user_ids[0]
+
+    return False
+
+
 is_authorized_user_or_chat = is_authorized_user
 
 

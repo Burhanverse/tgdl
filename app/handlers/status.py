@@ -5,7 +5,7 @@ import logging
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message
 
-from ..auth import authorized_filter
+from ..auth import authorized_filter, is_owner
 from ..manager.core import queue_manager
 from ..manager.status import (
     MirrorStatus,
@@ -33,17 +33,33 @@ def register_status_handlers(app: Client) -> None:
 
     @app.on_message(filters.command("status") & authorized_filter)
     async def status_cmd(_, message: Message) -> None:
+        sender_id = message.from_user.id if message.from_user else message.chat.id
         text = message.text.split()
-        if len(text) > 1:
-            user_id = message.from_user.id if text[1] == "me" else int(text[1])
+        user_is_owner = is_owner(sender_id)
+
+        if user_is_owner:
+            if len(text) > 1:
+                arg = text[1].lower()
+                if arg == "me":
+                    user_id = sender_id
+                elif arg == "all":
+                    user_id = 0
+                else:
+                    try:
+                        user_id = int(text[1])
+                    except ValueError:
+                        user_id = 0
+            else:
+                user_id = 0
         else:
-            user_id = 0
-            sid = message.chat.id
-            async with task_dict_lock:
-                if obj := intervals["status"].get(sid):
-                    if not obj.done():
-                        obj.cancel()
-                    del intervals["status"][sid]
+            user_id = sender_id
+
+        sid = user_id or message.chat.id
+        async with task_dict_lock:
+            if obj := intervals["status"].get(sid):
+                if not obj.done():
+                    obj.cancel()
+                del intervals["status"][sid]
 
         await send_status_message(message, user_id)
         await delete_message(message)
@@ -61,6 +77,12 @@ def register_status_handlers(app: Client) -> None:
             await query.answer("Invalid callback key!", show_alert=True)
             return
 
+        user_id = query.from_user.id if query.from_user else query.message.chat.id
+        if not is_owner(user_id):
+            if key == 0 or (key != query.message.chat.id and key != user_id):
+                await query.answer("Not Yours!", show_alert=True)
+                return
+
         action = data[2]
 
         if action == "cancel":
@@ -68,12 +90,11 @@ def register_status_handlers(app: Client) -> None:
             if not gid:
                 await query.answer("Invalid request!", show_alert=True)
                 return
-            user_id = query.from_user.id
             task = await get_task_by_gid(gid)
             if task is None:
                 await query.answer("Task not found or already finished!", show_alert=True)
                 return
-            if task.user_id and task.user_id != user_id and task.user_id != query.message.chat.id:
+            if not is_owner(user_id) and task.user_id and task.user_id != user_id and task.user_id != query.message.chat.id:
                 await query.answer("Not Yours!", show_alert=True)
                 return
             await query.answer(f"Cancelling job #{gid}...")

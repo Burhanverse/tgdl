@@ -112,8 +112,8 @@ def get_help_content(page: str = "main") -> tuple[str, InlineKeyboardMarkup]:
             "> _Plus Messenger patcher: decompiles, applies anti-patch, recompiles, zip-aligns, signs with JKS keystore, and uploads <original_filename>_patched.apk to Telegram._\n\n"
             "• `/setkeystore <store_pass> <key_alias> [key_pass]` (Reply to `.jks` file)\n"
             "> _Upload or manage your personal JKS keystore (`./auth/<user_id>/keystore.jks`) for APK signing._\n\n"
-            "• `/status [user_id | me]`\n"
-            "> _Real-time task dashboard showing speeds, progress bars, active downloads/uploads, queue, overview, and pagination._\n\n"
+            "• `/status [me | all | user_id]`\n"
+            "> _Real-time task dashboard showing speeds, progress bars, active downloads/uploads, queue, overview, and pagination. Defaults to user-specific status._\n\n"
             "• `/cancel [job_id]`\n"
             "> _Cancel an active or queued job by ID or choose from an interactive job list._"
         )
