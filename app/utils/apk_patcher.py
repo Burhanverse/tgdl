@@ -19,9 +19,11 @@ log = logging.getLogger(__name__)
 
 TOOLS_DIR = (settings.data_dir / "tools").resolve()
 APKEDITOR_JAR = (TOOLS_DIR / "APKEditor.jar").resolve()
+UBER_APK_SIGNER_JAR = (TOOLS_DIR / "uber-apk-signer.jar").resolve()
 TGPATCHER_PY = (TOOLS_DIR / "tgpatcher.py").resolve()
 
 APKEDITOR_RELEASE_API = "https://api.github.com/repos/REAndroid/APKEditor/releases/latest"
+UBER_APK_SIGNER_RELEASE_API = "https://api.github.com/repos/patrickfav/uber-apk-signer/releases/latest"
 TGPATCHER_URL = "https://raw.githubusercontent.com/AbhiTheModder/termux-scripts/refs/heads/main/tgpatcher.py"
 
 
@@ -147,7 +149,26 @@ async def ensure_tools() -> tuple[Path, Path]:
             APKEDITOR_JAR.write_bytes(jar_resp.content)
             log.info("APKEditor.jar saved to %s", APKEDITOR_JAR)
 
-        # 2. Download tgpatcher.py if missing
+        # 2. Download uber-apk-signer.jar if missing
+        if not UBER_APK_SIGNER_JAR.is_file() or UBER_APK_SIGNER_JAR.stat().st_size == 0:
+            log.info("Fetching uber-apk-signer.jar release info from GitHub...")
+            try:
+                resp = await client.get(UBER_APK_SIGNER_RELEASE_API)
+                resp.raise_for_status()
+                release_info = resp.json()
+                assets = release_info.get("assets", [])
+                jar_asset = next((a for a in assets if str(a.get("name", "")).endswith(".jar")), None)
+                if jar_asset and "browser_download_url" in jar_asset:
+                    download_url = jar_asset["browser_download_url"]
+                    log.info("Downloading uber-apk-signer.jar from %s...", download_url)
+                    jar_resp = await client.get(download_url)
+                    jar_resp.raise_for_status()
+                    UBER_APK_SIGNER_JAR.write_bytes(jar_resp.content)
+                    log.info("uber-apk-signer.jar saved to %s", UBER_APK_SIGNER_JAR)
+            except Exception as e:
+                log.warning("Could not download uber-apk-signer.jar: %s", e)
+
+        # 3. Download tgpatcher.py if missing
         if not TGPATCHER_PY.is_file() or TGPATCHER_PY.stat().st_size == 0:
             log.info("Downloading tgpatcher.py from %s...", TGPATCHER_URL)
             py_resp = await client.get(TGPATCHER_URL)
@@ -245,7 +266,7 @@ async def align_apk(input_apk: Path, output_apk: Path) -> None:
 
 
 async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
-    """Signs APK using apksigner or jarsigner with provided JKS keystore details."""
+    """Signs APK using apksigner, uber-apk-signer, or jarsigner with provided JKS keystore details."""
     apk_path = Path(apk_path).resolve()
     raw_ks = keystore_info.get("keystore_path")
     ks_path = Path(raw_ks).resolve() if raw_ks else None
@@ -276,7 +297,29 @@ async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
         if proc.returncode == 0:
             log.info("Successfully signed APK with apksigner.")
             return True
-        log.warning("apksigner failed (code %s): %s. Trying jarsigner...", proc.returncode, stderr.decode())
+        log.warning("apksigner failed (code %s): %s. Trying uber-apk-signer...", proc.returncode, stderr.decode())
+
+    java_bin = find_java_binary()
+    if UBER_APK_SIGNER_JAR.is_file() and UBER_APK_SIGNER_JAR.stat().st_size > 0:
+        cmd = [
+            java_bin,
+            "-jar", str(UBER_APK_SIGNER_JAR),
+            "--apks", str(apk_path),
+            "--ks", str(ks_path),
+            "--ksAlias", str(key_alias),
+            "--ksPass", str(store_pass),
+            "--keyPass", str(key_pass),
+            "--overwrite",
+        ]
+        log.info("Signing APK with uber-apk-signer (v1+v2+v3+v4)...")
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode == 0:
+            log.info("Successfully signed APK with uber-apk-signer.")
+            return True
+        log.warning("uber-apk-signer failed (code %s): %s. Trying jarsigner...", proc.returncode, stderr.decode())
 
     jarsigner_bin = find_jarsigner_binary()
     if jarsigner_bin:
@@ -301,8 +344,74 @@ async def sign_apk(apk_path: Path, keystore_info: dict) -> bool:
         log.error("jarsigner failed (code %s): %s", proc.returncode, stderr.decode())
         return False
 
-    log.warning("Neither apksigner nor jarsigner found. APK left unsigned. Please ensure OpenJDK JDK is installed (e.g. apt install default-jdk / openjdk-21-jdk / pkg install openjdk-21).")
     return False
+
+
+async def sign_and_align_apk(
+    unaligned_apk: Path,
+    output_apk: Path,
+    keystore_info: dict | None = None,
+) -> bool:
+    """Uses uber-apk-signer.jar as primary tool to zip-align, sign (v1+v2+v3+v4), and verify APK in a single step."""
+    unaligned_apk = Path(unaligned_apk).resolve()
+    output_apk = Path(output_apk).resolve()
+    java_bin = find_java_binary()
+
+    # 1. Primary Tool: uber-apk-signer.jar (Zip-aligns & signs with v1+v2+v3+v4 in one step)
+    if UBER_APK_SIGNER_JAR.is_file() and UBER_APK_SIGNER_JAR.stat().st_size > 0:
+        cmd = [
+            java_bin,
+            "-jar", str(UBER_APK_SIGNER_JAR),
+            "--apks", str(unaligned_apk),
+            "--out", str(output_apk.parent),
+        ]
+
+        has_keystore = False
+        if keystore_info:
+            raw_ks = keystore_info.get("keystore_path")
+            ks_path = Path(raw_ks).resolve() if raw_ks else None
+            store_pass = keystore_info.get("store_pass", "")
+            key_alias = keystore_info.get("key_alias", "")
+            key_pass = keystore_info.get("key_pass") or store_pass
+
+            if ks_path and ks_path.is_file():
+                has_keystore = True
+                cmd.extend([
+                    "--ks", str(ks_path),
+                    "--ksAlias", str(key_alias),
+                    "--ksPass", str(store_pass),
+                    "--keyPass", str(key_pass),
+                ])
+
+        log.info("Running uber-apk-signer (zipalign + v1+v2+v3+v4 sign)...")
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+
+        # uber-apk-signer names output as <stem>-aligned-signed.apk (or -aligned-unsigned.apk)
+        signed_out = output_apk.parent / f"{unaligned_apk.stem}-aligned-signed.apk"
+        unsigned_out = output_apk.parent / f"{unaligned_apk.stem}-aligned-unsigned.apk"
+
+        target_out = signed_out if signed_out.is_file() else (unsigned_out if unsigned_out.is_file() else None)
+        if target_out and target_out.is_file():
+            if output_apk.exists():
+                output_apk.unlink()
+            shutil.move(str(target_out), str(output_apk))
+            log.info("Successfully zip-aligned & signed APK with uber-apk-signer.")
+            return True
+        log.warning("uber-apk-signer finished but output not found (stdout: %s, stderr: %s). Falling back...", stdout.decode(), stderr.decode())
+
+    # Fallback 1: align_apk
+    log.info("Falling back to align_apk...")
+    await align_apk(unaligned_apk, output_apk)
+
+    # Fallback 2: sign_apk
+    if keystore_info:
+        log.info("Falling back to sign_apk...")
+        await sign_apk(output_apk, keystore_info)
+
+    return output_apk.is_file()
 
 
 async def patch_apk_async(
@@ -313,11 +422,11 @@ async def patch_apk_async(
     progress_cb: Callable[[str], None] | None = None,
 ) -> Path:
     """Pure Python implementation of patch.sh:
-    Decompiles APK -> Patches via tgpatcher.py --anti -> Recompiles -> Zip-aligns -> Signs with JKS keystore.
+    Decompiles APK -> Patches via tgpatcher.py --anti -> Recompiles -> Zip-aligns & Signs (v1-v4) via uber-apk-signer.jar.
     Final product name: <original_filename>_patched.apk
     """
     if progress_cb:
-        progress_cb("Ensuring APKEditor & tgpatcher tools...")
+        progress_cb("Ensuring APKEditor, tgpatcher & uber-apk-signer tools...")
 
     input_apk = input_apk.resolve()
     output_dir = output_dir.resolve()
@@ -342,7 +451,6 @@ async def patch_apk_async(
     try:
         decompiled_dir = (work_dir / "plus").resolve()
         unaligned_apk = (work_dir / "unaligned_patched.apk").resolve()
-        aligned_apk = (work_dir / "aligned_patched.apk").resolve()
 
         # 1. Decompile APK
         if progress_cb:
@@ -382,21 +490,11 @@ async def patch_apk_async(
         if proc.returncode != 0:
             raise RuntimeError(f"Recompilation failed (code {proc.returncode}): {stderr.decode()}")
 
-        # 4. Zip Align
+        # 4. Zip-align & Sign APK via uber-apk-signer.jar (v1+v2+v3+v4)
         if progress_cb:
-            progress_cb("Zip-aligning APK entries...")
-        await align_apk(unaligned_apk, aligned_apk)
+            progress_cb("Zip-aligning & Signing APK (v1+v2+v3+v4) with uber-apk-signer...")
+        await sign_and_align_apk(unaligned_apk, final_output_path, keystore_info)
 
-        # 5. Sign APK
-        if keystore_info:
-            if progress_cb:
-                progress_cb("Signing APK with JKS keystore...")
-            await sign_apk(aligned_apk, keystore_info)
-        else:
-            log.warning("No keystore info provided. APK was aligned but not signed.")
-
-        # 6. Move final product to output_dir / <original_filename>_patched.apk
-        shutil.move(str(aligned_apk), str(final_output_path))
         log.info("Patching completed successfully! Output file: %s", final_output_path)
         return final_output_path
 
